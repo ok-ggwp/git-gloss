@@ -14,6 +14,10 @@ function fenced(lang: string, body: string): string {
   return `${fence}${lang}\n${body}\n${fence}`
 }
 
+// Author text is JSON-quoted so it stays on one line and can't fake a heading
+// or end the material section.
+const q = (s: string) => JSON.stringify(s)
+
 const hunkLine = (h: Hunk) =>
   `- ${h.id} ${h.oldFile && h.oldFile !== h.file ? `${h.oldFile} → ` : ''}${h.file} ` +
   `(-${h.oldStart},${h.oldLines} +${h.newStart},${h.newLines}, +${h.added} -${h.removed})`
@@ -30,11 +34,11 @@ export function run(argv: string[]): number {
 
   const groups = gloss.groups.map(({ group: g, hunks }) => [
     `### Group \`${g.id}\` [${g.necessity}]`,
-    `- intent: ${g.intent}`,
-    `- serves: ${g.serves}`,
-    `- if removed: ${g.removal_impact}`,
-    ...(g.evidence ? [`- evidence: ${g.evidence}`] : []),
-    ...(g.notes ? [`- notes: ${g.notes}`] : []),
+    `- intent: ${q(g.intent)}`,
+    `- serves: ${q(g.serves)}`,
+    `- if removed: ${q(g.removal_impact)}`,
+    ...(g.evidence ? [`- evidence: ${q(g.evidence)}`] : []),
+    ...(g.notes ? [`- notes: ${q(g.notes)}`] : []),
     '',
     fenced('diff', hunks.map((h) =>
       !h.current ? `(hunk ${h.id} is no longer in this commit's diff)`
@@ -65,8 +69,8 @@ For each finding, cite the group id and explain briefly. If the annotation is ac
     '---\n\n# Material under review',
     `## Commit ${sha.slice(0, 10)}: ${gloss.subject}`,
     ...gloss.warnings.map((w) => `> **Warning from git-gloss:** ${w}`),
-    `**Task (author's statement):** ${a.task}`,
-    ...(a.summary ? [`**Summary (author's statement):** ${a.summary}`] : []),
+    `**Task (author's statement):** ${q(a.task)}`,
+    ...(a.summary ? [`**Summary (author's statement):** ${q(a.summary)}`] : []),
     `## Hunk layout\n\nAll hunks in the commit, as \`git gloss hunks --stat\` lists them:\n\n${allHunks.map(hunkLine).join('\n')}`,
     '## Groups',
     ...groups,
@@ -78,9 +82,9 @@ For each finding, cite the group id and explain briefly. If the annotation is ac
     )
   }
   if (a.alternatives?.length) {
-    sections.push(`## Alternatives the author considered\n\n${a.alternatives.map((x) => `- ${x.option}: ${x.rejected_because}`).join('\n')}`)
+    sections.push(`## Alternatives the author considered\n\n${a.alternatives.map((x) => `- ${q(x.option)}, rejected because ${q(x.rejected_because)}`).join('\n')}`)
   }
-  if (a.risks?.length) sections.push(`## Risks the author listed\n\n${a.risks.map((r) => `- ${r}`).join('\n')}`)
+  if (a.risks?.length) sections.push(`## Risks the author listed\n\n${a.risks.map((r) => `- ${q(r)}`).join('\n')}`)
 
   console.log(sections.join('\n\n'))
   return 0

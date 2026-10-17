@@ -30,6 +30,35 @@ export type LoadedGloss = {
 const locationKey = (h: HunkLocation) =>
   [h.file, h.oldFile ?? '', h.oldStart, h.oldLines, h.newStart, h.newLines].join('\0')
 
+// Pair each stored hunk with a current one: first by the hash of its changes
+// (it may have moved in a rebase), then by location (same place, different
+// changes). Hash matches all go first so a location fallback can't take a
+// hunk that a later stored hunk matches exactly.
+export function matchHunks(stored: HunkLocation[], current: Hunk[]): Map<string, ResolvedHunk> {
+  const used = new Set<Hunk>()
+  const resolved = new Map<string, ResolvedHunk>()
+  for (const s of stored) {
+    const match = s.hash ? current.find((h) => h.hash === s.hash && !used.has(h)) : undefined
+    if (match) {
+      used.add(match)
+      resolved.set(s.id, { id: s.id, stored: s, current: match, status: 'ok' })
+    }
+  }
+  const byLocation = new Map(current.map((h) => [locationKey(h), h]))
+  for (const s of stored) {
+    if (resolved.has(s.id)) continue
+    const match = byLocation.get(locationKey(s))
+    if (match && !used.has(match)) {
+      used.add(match)
+      // Glosses written before hashes existed can only be matched by location.
+      resolved.set(s.id, { id: s.id, stored: s, current: match, status: s.hash ? 'changed' : 'ok' })
+    } else {
+      resolved.set(s.id, { id: s.id, stored: s, current: null, status: 'missing' })
+    }
+  }
+  return resolved
+}
+
 // Hunks are matched by their stored location and content hash, never by id
 // alone: ids are positional, so any change in diff output would otherwise put
 // the wrong code under a group without anyone noticing.
@@ -38,23 +67,7 @@ export function loadGloss(sha: string): LoadedGloss | null {
   if (!note) return null
 
   const current = parseDiff(commitDiff(sha))
-  const byLocation = new Map(current.map((h) => [locationKey(h), h]))
-  const used = new Set<Hunk>()
-  const resolved = new Map<string, ResolvedHunk>()
-  for (const stored of note.hunks) {
-    // Same changes anywhere in the file (it may have moved in a rebase), else
-    // the same location with different changes, else gone.
-    let match = stored.hash ? current.find((h) => h.hash === stored.hash && !used.has(h)) : undefined
-    let status: HunkStatus = 'ok'
-    if (!match) {
-      match = byLocation.get(locationKey(stored))
-      if (match && used.has(match)) match = undefined
-      if (match && stored.hash) status = 'changed'
-    }
-    if (!match) status = 'missing'
-    if (match) used.add(match)
-    resolved.set(stored.id, { id: stored.id, stored, current: match ?? null, status })
-  }
+  const resolved = matchHunks(note.hunks, current)
 
   const groups = note.annotation.groups.map((group) => ({
     group,

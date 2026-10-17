@@ -104,7 +104,7 @@ export function parseDiff(diff: string): Hunk[] {
     // Hash only what the hunk changes, so a rebase that shifts line numbers or
     // context lines doesn't make an otherwise identical hunk look different.
     const body = h.text.startsWith('@@')
-      ? h.text.split('\n').slice(1).filter((l) => l[0] === '+' || l[0] === '-').join('\n')
+      ? h.text.split('\n').slice(1).filter((l) => l[0] === '+' || l[0] === '-' || l[0] === '\\').join('\n')
       : h.text
     h.hash = createHash('sha256').update(h.file + '\0' + body).digest('hex').slice(0, 16)
   })

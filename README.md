@@ -30,7 +30,7 @@ npm link                      # puts git-gloss on PATH, so `git gloss` works
 ln -s "$PWD/skills/gloss" ~/.claude/skills/gloss   # teach Claude Code to write glosses
 ```
 
-In each repo you use it in, run `git gloss init`. Share glosses with `git push origin refs/notes/gloss`. `git fetch` then stores origin's glosses in `refs/notes/remotes/origin/gloss`; merge them into yours with `git notes --ref refs/notes/gloss merge refs/notes/remotes/origin/gloss`.
+In each repo you use it in, run `git gloss init`. Share glosses with `git push origin refs/notes/gloss`. `git fetch` then stores origin's glosses in `refs/notes/remotes/origin/gloss`; merge them into yours with `git notes --ref refs/notes/gloss merge -s ours refs/notes/remotes/origin/gloss` (`-s theirs` to prefer origin's where both glossed a commit). Other merge strategies would join two JSON glosses into one unreadable note.
 
 ## Caveats
 

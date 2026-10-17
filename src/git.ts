@@ -14,6 +14,8 @@ export function git(args: string[], input?: string): string {
     return execFileSync('git', args, {
       encoding: 'utf8',
       input,
+      // Untranslated messages: readNote recognises "no note found" by its text.
+      env: { ...process.env, LC_ALL: 'C' },
       maxBuffer: 256 * 1024 * 1024,
       stdio: ['pipe', 'pipe', 'pipe'],
     })
@@ -47,11 +49,11 @@ export function commitSubject(sha: string): string {
 export function commitDiff(sha: string): string {
   const parent = gitTry(['rev-parse', '--verify', '--quiet', `${sha}^1`])?.trim() || EMPTY_TREE
   return git([
-    '-c', 'core.quotePath=false',
+    '-c', 'core.quotePath=false', '-c', 'diff.suppressBlankEmpty=false',
     'diff', '--no-color', '--no-ext-diff', '--no-textconv', '--find-renames',
     '--src-prefix=a/', '--dst-prefix=b/', '-U3',
     '-O/dev/null', '--diff-algorithm=myers', '--indent-heuristic',
-    '--inter-hunk-context=0', '--no-relative',
+    '--inter-hunk-context=0', '--no-relative', '--submodule=short', '-l1000',
     parent, sha,
   ])
 }
@@ -64,15 +66,25 @@ export function readNote(sha: string): GlossNote | null {
     if (/no note found/i.test((err as Error).message)) return null
     throw err
   }
-  const broken = `the gloss on ${sha.slice(0, 10)} is malformed; replace it with \`git gloss add --force\``
+  const at = `the gloss on ${sha.slice(0, 10)}`
   let data: Partial<GlossNote>
   try {
     data = JSON.parse(raw)
   } catch {
-    throw new GlossError(broken)
+    // notes.rewriteMode=concatenate joins two notes when a rebase squashes
+    // glossed commits together.
+    if (/}\s*\n\s*{/.test(raw)) {
+      throw new GlossError(`${at} holds several glosses joined together (from a squash or fixup); re-gloss it with \`git gloss add --force\``)
+    }
+    throw new GlossError(`${at} is not valid JSON; replace it with \`git gloss add --force\``)
+  }
+  if (typeof data?.gloss === 'number' && data.gloss > 1) {
+    throw new GlossError(`${at} was written by a newer git-gloss (format ${data.gloss}); upgrade to read it`)
   }
   const annotation = Annotation.safeParse(data?.annotation)
-  if (data?.gloss !== 1 || !Array.isArray(data.hunks) || !annotation.success) throw new GlossError(broken)
+  if (data?.gloss !== 1 || !Array.isArray(data.hunks) || !annotation.success) {
+    throw new GlossError(`${at} is malformed; replace it with \`git gloss add --force\``)
+  }
   return { ...(data as GlossNote), annotation: annotation.data }
 }
 
