@@ -10,9 +10,11 @@ Glosses are stored in git notes (`refs/notes/gloss`), so they don't touch histor
 git gloss init                        follow amends/rebases; fetch origin's glosses
 git gloss hunks [<commit>]            list hunks with the ids annotations refer to
 git gloss add [<commit>] -f a.json    attach an annotation (validated against the diff)
-git gloss show [<commit>]             show the diff grouped by intent
+git gloss show [<commit>]             summary: one line per group, risks
+      -g <group>                      ...expand groups, with their code
+      --full                          ...every group's details
+      --diff                          ...every group's details and code
       --only speculative,incidental   ...just the parts you might cut
-      --no-diff                       ...annotations only
 git gloss why <file>:<line> [--json]  explain why a line exists (via blame)
 git gloss review [<commit>]           print a review prompt: git gloss review | claude -p
 git gloss schema                      print the annotation JSON Schema
