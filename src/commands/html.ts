@@ -4,7 +4,6 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { resolveCommits } from '../git.ts'
-import { loadGloss } from '../loader.ts'
 import { buildPageData } from '../html/data.ts'
 import { renderPage } from '../html/page.ts'
 
@@ -25,14 +24,16 @@ export function run(argv: string[]): number {
     allowPositionals: true,
     options: { output: { type: 'string', short: 'o' }, open: { type: 'boolean' } },
   })
-  const { shas, range } = resolveCommits(positionals[0] ?? 'HEAD')
+  const { shas, merges, range } = resolveCommits(positionals[0] ?? 'HEAD')
+  const data = buildPageData(shas, range, merges)
   // A single commit must be glossed; a range may include unglossed commits,
   // which the page lists with their whole diff as unannotated.
-  if (!range && !loadGloss(shas[0])) {
+  if (!range && !data.commits[0].glossed) {
     console.error(`${shas[0].slice(0, 10)} has no gloss (annotate it with \`git gloss add\`)`)
     return 1
   }
-  const name = range ? `${shas[0].slice(0, 10)}..${shas[shas.length - 1].slice(0, 10)}` : shas[0].slice(0, 10)
+  const all = [...shas, ...merges]
+  const name = range ? `${all[0].slice(0, 10)}..${all[all.length - 1].slice(0, 10)}` : shas[0].slice(0, 10)
 
   // Default to the user's cache directory: one file per commit, overwritten on
   // regeneration, and private to the user (a fixed /tmp path could be
@@ -40,7 +41,7 @@ export function run(argv: string[]): number {
   const cache = process.env.XDG_CACHE_HOME || join(homedir(), '.cache')
   const file = values.output ? resolve(values.output) : join(cache, 'git-gloss', `${name}.html`)
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 })
-  writeFileSync(file, renderPage(buildPageData(shas, range)))
+  writeFileSync(file, renderPage(data))
   console.log(file)
   if (values.open) openInBrowser(file)
   return 0

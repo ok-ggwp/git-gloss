@@ -135,7 +135,7 @@
 
   // One commit's groups, unannotated changes, risks and alternatives, with its
   // entries in the sidebar.
-  function commitBody(c, main, toc) {
+  function commitBody(c, main) {
     var tocList = el('ol')
     var groupsEl = el('section', 'groups')
     c.groups.forEach(function (g) {
@@ -203,6 +203,10 @@
         else if (c.warnings.length) add(li, el('span', 'stale', 'stale gloss'))
         list.appendChild(li)
       })
+      data.merges.forEach(function (m) {
+        list.appendChild(add(el('li'), el('span', 'sha', m.sha.slice(0, 7)), document.createTextNode(' ' + m.subject),
+          el('span', 'stale', 'merge, not reviewed')))
+      })
       add(main, list)
     } else {
       var only = data.commits[0]
@@ -264,7 +268,7 @@
         c.warnings.forEach(function (w) { add(target, el('div', 'warning', '⚠ ' + w)) })
         add(main, target)
       }
-      var tocList = commitBody(c, target, toc)
+      var tocList = commitBody(c, target)
       var heading = multi ? c.sha.slice(0, 7) + ' ' + c.subject : 'Groups'
       var tocHead = el('h2', multi ? 'commit-head' : null, heading)
       if (multi) tocHead.title = c.subject

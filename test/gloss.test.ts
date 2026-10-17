@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseDiff } from '../src/diff.ts'
@@ -642,4 +642,29 @@ test('an empty range is an error', () => {
   const r = gloss(dir, ['review', 'HEAD..HEAD'])
   assert.equal(r.code, 1)
   assert.match(r.err, /no commits in HEAD\.\.HEAD/)
+})
+
+test('ranges list skipped merges, reject "...", say "1 commit", and never read options', () => {
+  const dir = branchRepo()
+  const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
+  g('checkout', '-qb', 'side', 'HEAD~1'); writeFileSync(join(dir, 'side.txt'), 's\n'); g('add', '.'); g('commit', '-qm', 'side work')
+  g('checkout', '-q', 'main'); g('merge', '-q', '--no-ff', '-m', 'merge side', 'side')
+
+  let r = gloss(dir, ['review', 'HEAD~3..HEAD'])
+  assert.equal(r.code, 0, r.err)
+  assert.match(r.out, /Merge commits in the range are not included[\s\S]*"merge side"/)
+  const { page } = htmlPage(dir, 'HEAD~3..HEAD')
+  assert.deepEqual(page.merges.map((m: { subject: string }) => m.subject), ['merge side'])
+
+  r = gloss(dir, ['review', 'HEAD~1...HEAD'])
+  assert.equal(r.code, 1)
+  assert.match(r.err, /"\.\.\." includes commits from both sides/)
+
+  assert.match(htmlPage(dir, 'HEAD~2..HEAD~1').html, /\(1 commit\)<\/title>/)
+  assert.match(gloss(dir, ['review', 'HEAD~2..HEAD~1']).out, /a branch \(1 commit, oldest first\)/)
+
+  const target = join(dir, 'pwn..x')
+  r = gloss(dir, ['review', '--', `--output=${target}`])
+  assert.notEqual(r.code, 0)
+  assert.ok(!existsSync(target), 'the range argument must not be read as a git option')
 })

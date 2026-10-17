@@ -2,7 +2,7 @@ import { parseArgs } from 'node:util'
 import { commitDiff, commitSubject, resolveCommits } from '../git.ts'
 import { parseDiff, type Hunk } from '../diff.ts'
 import { refLabel, sliceText } from '../selection.ts'
-import { loadGloss } from '../loader.ts'
+import { loadGloss, type LoadedGloss } from '../loader.ts'
 import { NECESSITY_HELP, servesOf } from '../schema.ts'
 
 export const usage = 'review [<commit> | <range>]   print a review prompt for a commit or a branch (pipe it to an agent, e.g. `| claude -p`)'
@@ -25,8 +25,7 @@ const hunkLine = (h: Hunk) =>
 
 // The material for one commit: its gloss and the code under each group, or,
 // for an unglossed commit in a range, its whole diff.
-function commitMaterial(sha: string): string[] {
-  const gloss = loadGloss(sha)
+function commitMaterial(sha: string, gloss: LoadedGloss | null): string[] {
   if (!gloss) {
     return [
       `## Commit ${sha.slice(0, 10)}: ${commitSubject(sha)}`,
@@ -35,10 +34,9 @@ function commitMaterial(sha: string): string[] {
     ]
   }
   const a = gloss.note.annotation
-  const sub = '###'
 
   const groups = gloss.groups.map(({ group: g, hunks }) => [
-    `${sub}# Group \`${g.id}\` [${g.necessity}]`,
+    `#### Group \`${g.id}\` [${g.necessity}]`,
     `- intent: ${q(g.intent)}`,
     `- serves: ${servesOf(g).map(q).join(', ')}`,
     `- if removed: ${q(g.removal_impact)}`,
@@ -62,33 +60,34 @@ function commitMaterial(sha: string): string[] {
     ...gloss.warnings.map((w) => `> **Warning from git-gloss:** ${w}`),
     `**Task (author's statement):** ${q(a.task)}`,
     ...(a.summary ? [`**Summary (author's statement):** ${q(a.summary)}`] : []),
-    `${sub} Hunk layout\n\nAll hunks in the commit, as \`git gloss hunks --stat\` lists them. A group may claim a whole hunk (\`h6\`) or some of its changed lines (\`h6:5-12\`, counting only + and - lines from 1). In a group's diff, a line starting with ⋯ stands for changed lines that belong to other groups.\n\n${allHunks.map(hunkLine).join('\n')}`,
-    `${sub} Groups`,
+    `### Hunk layout\n\nAll hunks in the commit, as \`git gloss hunks --stat\` lists them. A group may claim a whole hunk (\`h6\`) or some of its changed lines (\`h6:5-12\`, counting only + and - lines from 1). In a group's diff, a line starting with ⋯ stands for changed lines that belong to other groups.\n\n${allHunks.map(hunkLine).join('\n')}`,
+    `### Groups`,
     ...groups,
   ]
   if (gloss.unannotated.length) {
     sections.push(
-      `${sub} Unannotated changes\n\nThese changes (${gloss.unannotated.map((u) => refLabel(u.hunk.id, u.lines)).join(', ')}) are in the commit but the author did not assign them to any group. Review them too.`,
+      `### Unannotated changes\n\nThese changes (${gloss.unannotated.map((u) => refLabel(u.hunk.id, u.lines)).join(', ')}) are in the commit but the author did not assign them to any group. Review them too.`,
       fenced('diff', gloss.unannotated.map((u) => sliceText(u.hunk, u.lines)).join('\n')),
     )
   }
   if (a.alternatives?.length) {
-    sections.push(`${sub} Alternatives the author considered\n\n${a.alternatives.map((x) => `- ${q(x.option)}, rejected because ${q(x.rejected_because)}`).join('\n')}`)
+    sections.push(`### Alternatives the author considered\n\n${a.alternatives.map((x) => `- ${q(x.option)}, rejected because ${q(x.rejected_because)}`).join('\n')}`)
   }
-  if (a.risks?.length) sections.push(`${sub} Risks the author listed\n\n${a.risks.map((r) => `- ${q(r)}`).join('\n')}`)
+  if (a.risks?.length) sections.push(`### Risks the author listed\n\n${a.risks.map((r) => `- ${q(r)}`).join('\n')}`)
   return sections
 }
 
 export function run(argv: string[]): number {
   const { positionals } = parseArgs({ args: argv, allowPositionals: true })
-  const { shas, range } = resolveCommits(positionals[0] ?? 'HEAD')
-  if (!range && !loadGloss(shas[0])) {
+  const { shas, merges, range } = resolveCommits(positionals[0] ?? 'HEAD')
+  const glosses = shas.map((sha) => loadGloss(sha))
+  if (!range && !glosses[0]) {
     console.error(`${shas[0].slice(0, 10)} has no gloss to review`)
     return 1
   }
 
   const intro = range
-    ? `You are reviewing a branch (${shas.length} commits, oldest first). The author of each commit (usually an AI agent) annotated each part of it with its intent and how necessary it is. The annotations are self-reported and may be wrong or self-serving. Your job is to check them against the code, commit by commit and for the branch as a whole.`
+    ? `You are reviewing a branch (${shas.length} commit${shas.length === 1 ? '' : 's'}, oldest first). The author of each commit (usually an AI agent) annotated each part of it with its intent and how necessary it is. The annotations are self-reported and may be wrong or self-serving. Your job is to check them against the code, commit by commit and for the branch as a whole.`
     : `You are reviewing a commit whose author (usually an AI agent) annotated each part of the change with its intent and how necessary it is. The annotations are self-reported and may be wrong or self-serving. Your job is to check them against the code.`
 
   const sections = [
@@ -111,9 +110,12 @@ For each finding, cite the ${range ? 'commit and ' : ''}group id and explain bri
     '---\n\n# Material under review',
   ]
   if (range) {
-    sections.push(`## Branch ${range}\n\n${shas.map((sha) => `- ${sha.slice(0, 10)} ${q(commitSubject(sha))}`).join('\n')}`)
+    sections.push(`## Branch ${range}\n\n${shas.map((sha) => `- ${sha.slice(0, 10)} ${q(commitSubject(sha))}`).join('\n')}` +
+      (merges.length
+        ? `\n\nMerge commits in the range are not included below. A merge can still carry conflict resolutions or edits of its own; check them with \`git show <sha>\`:\n\n${merges.map((sha) => `- ${sha.slice(0, 10)} ${q(commitSubject(sha))}`).join('\n')}`
+        : ''))
   }
-  for (const sha of shas) sections.push(...commitMaterial(sha))
+  shas.forEach((sha, i) => sections.push(...commitMaterial(sha, glosses[i])))
 
   console.log(sections.join('\n\n'))
   return 0

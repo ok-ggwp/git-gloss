@@ -64,6 +64,8 @@ export type CommitData = {
 export type PageData = {
   // The range as given (e.g. "main..feature"), or null for a single commit.
   range: string | null
+  // Merge commits in the range, which the page lists but doesn't review.
+  merges: { sha: string; subject: string }[]
   necessity: { name: Necessity; help: string }[]
   commits: CommitData[]
   generated: string
@@ -192,9 +194,10 @@ function unglossedData(sha: string): CommitData {
   }
 }
 
-export function buildPageData(shas: string[], range: string | null = null): PageData {
+export function buildPageData(shas: string[], range: string | null = null, merges: string[] = []): PageData {
   return {
     range,
+    merges: merges.map((sha) => ({ sha, subject: commitSubject(sha) })),
     necessity: NECESSITY.map((name) => ({ name, help: NECESSITY_HELP[name] })),
     commits: shas.map((sha) => {
       const gloss = loadGloss(sha)

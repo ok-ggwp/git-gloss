@@ -24,7 +24,7 @@ export function renderPage(data: PageData): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
-<title>${data.range ? `gloss ${escapeHtml(data.range)} (${data.commits.length} commits)` : `gloss ${escapeHtml(data.commits[0].sha.slice(0, 7))}: ${escapeHtml(data.commits[0].subject)}`}</title>
+<title>${data.range ? `gloss ${escapeHtml(data.range)} (${data.commits.length} commit${data.commits.length === 1 ? '' : 's'})` : `gloss ${escapeHtml(data.commits[0].sha.slice(0, 7))}: ${escapeHtml(data.commits[0].subject)}`}</title>
 <style nonce="${nonce}">
 ${asset('./style.css')}
 </style>

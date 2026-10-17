@@ -39,14 +39,22 @@ export function resolveCommit(rev: string): string {
   return sha.trim()
 }
 
-// A commit, or the non-merge commits in a range such as "main..feature",
-// oldest first. Merges are skipped: their diff against the first parent would
-// repeat the merged branch's commits.
-export function resolveCommits(arg: string): { shas: string[]; range: string | null } {
-  if (!arg.includes('..')) return { shas: [resolveCommit(arg)], range: null }
-  const shas = git(['rev-list', '--reverse', '--no-merges', arg, '--']).split('\n').filter(Boolean)
-  if (!shas.length) throw new GitError(`no commits in ${arg}`)
-  return { shas, range: arg }
+// A commit, or the commits in a range such as "main..feature", oldest first.
+// Merges are not reviewed (their first-parent diff repeats the merged
+// commits) but are returned so views can say they were skipped: a merge can
+// still carry conflict resolutions or edits of its own.
+export function resolveCommits(arg: string): { shas: string[]; merges: string[]; range: string | null } {
+  if (!arg.includes('..')) return { shas: [resolveCommit(arg)], merges: [], range: null }
+  if (arg.includes('...')) {
+    throw new GitError(`${arg}: "..." includes commits from both sides; use A..B for the commits on B since A`)
+  }
+  // --end-of-options: the argument is a revision range, never an option.
+  const list = (...flags: string[]) =>
+    git(['rev-list', '--reverse', ...flags, '--end-of-options', arg, '--']).split('\n').filter(Boolean)
+  const shas = list('--no-merges')
+  const merges = list('--merges')
+  if (!shas.length && !merges.length) throw new GitError(`no commits in ${arg}`)
+  return { shas, merges, range: arg }
 }
 
 export function commitSubject(sha: string): string {
