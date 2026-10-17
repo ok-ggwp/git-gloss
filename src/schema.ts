@@ -16,7 +16,7 @@ export type Necessity = (typeof NECESSITY)[number]
 
 export const NECESSITY_HELP: Record<Necessity, string> = {
   required: 'The task cannot be done without this change',
-  supporting: 'Needed only because another group needs it (name that group in `serves`)',
+  supporting: 'Needed only because other groups need it (name them in `serves`)',
   mechanical: 'Follow-on edits with no design content: renames, imports, formatting, lockfiles',
   incidental: 'Drive-by cleanup or refactor the task did not ask for',
   defensive: 'Guards edge cases or failures nobody asked about',
@@ -31,8 +31,8 @@ export const Group = z.object({
   intent: z.string().min(1).describe('What this group of changes does, in one short sentence (under ~80 characters)'),
   necessity: z.enum(NECESSITY).describe('How necessary the change is to the task'),
   serves: z
-    .string()
-    .describe('"task" if it serves the task directly, otherwise the id of the group it supports'),
+    .union([z.string(), z.array(z.string()).min(1)])
+    .describe('"task" if it serves the task directly, otherwise the id of the group it supports, or a list of ids when it supports several (e.g. tests)'),
   removal_impact: z
     .string()
     .min(1)
@@ -68,6 +68,19 @@ export const Annotation = z.object({
 })
 
 export type Group = z.infer<typeof Group>
+
+// A group's serves targets as a list, whichever form the gloss used.
+export const servesOf = (g: Pick<Group, 'serves'>): string[] => (Array.isArray(g.serves) ? g.serves : [g.serves])
+
+// Note formats: 1 whole-hunk references only; 2 line ranges ("h3:2-5");
+// 3 serves lists. A note is written with the lowest format that can hold it,
+// so older readers only refuse notes that use something they can't read.
+export const NOTE_FORMAT = 3
+export function noteFormat(a: Annotation): 1 | 2 | 3 {
+  if (a.groups.some((g) => Array.isArray(g.serves))) return 3
+  if (a.groups.some((g) => g.hunks.some((ref) => ref.includes(':')))) return 2
+  return 1
+}
 export type Annotation = z.infer<typeof Annotation>
 
 export type HunkLocation = {
@@ -86,11 +99,10 @@ export type HunkLocation = {
 
 // What is actually stored in the git note: the annotation plus where each hunk
 // was, so `why` can map a blamed line back to a group without re-diffing.
-// Format 2 marks notes that use line ranges ("h3:2-5"), so versions that only
-// understand whole-hunk references report "written by a newer git-gloss"
-// instead of silently treating ranged groups as missing.
+// See NOTE_FORMAT: versions that don't understand a feature report "written
+// by a newer git-gloss" instead of misreading the note.
 export type GlossNote = {
-  gloss: 1 | 2
+  gloss: 1 | 2 | 3
   commit: string
   created_at: string
   annotation: Annotation

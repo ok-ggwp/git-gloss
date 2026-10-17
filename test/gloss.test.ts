@@ -219,7 +219,7 @@ test('notes joined by a squash, or from a newer version, get specific errors', (
     execFileSync('git', ['notes', '--ref', 'refs/notes/gloss', 'add', '-f', '-m', body], { cwd: dir })
   note('{"gloss": 1}\n\n{"gloss": 1}')
   assert.match(gloss(dir, ['show']).err, /several glosses joined together/)
-  note('{"gloss": 3, "future": true}')
+  note('{"gloss": 4, "future": true}')
   let r = gloss(dir, ['show'])
   assert.match(r.err, /newer git-gloss/)
   r = gloss(dir, ['add'], annotation([retryCore, config]))
@@ -570,4 +570,28 @@ test('notes without ranges stay format 1', () => {
   gloss(dir, ['add'], annotation([retryCore, config]))
   const note = JSON.parse(execFileSync('git', ['notes', '--ref', 'refs/notes/gloss', 'show'], { cwd: dir, encoding: 'utf8' }))
   assert.equal(note.gloss, 1)
+})
+
+test('serves can list several groups; cycles through lists are rejected', () => {
+  const dir = splitRepo()
+  const tests = { ...config, id: 'tests', intent: 'Tests', necessity: 'supporting', serves: ['fix', 'tail'], hunks: ['h1:5'] }
+  const narrowTail = { ...tail, hunks: ['h1:3-4'] }
+  let r = gloss(dir, ['add', '--dry-run'], annotation([fix, narrowTail, { ...tests, serves: ['fix', 'task'] }]))
+  assert.match(r.err, /serves "task" and groups/)
+  r = gloss(dir, ['add', '--dry-run'], annotation([fix, narrowTail, { ...tests, serves: ['fix', 'nope'] }]))
+  assert.match(r.err, /serves unknown group "nope"/)
+  r = gloss(dir, ['add', '--dry-run'], annotation([{ ...fix, necessity: 'supporting', serves: ['tests'] }, narrowTail, tests]))
+  assert.match(r.err, /"fix" is in a serves cycle/)
+
+  r = gloss(dir, ['add'], annotation([fix, narrowTail, tests]))
+  assert.equal(r.code, 0, r.err)
+  const note = JSON.parse(execFileSync('git', ['notes', '--ref', 'refs/notes/gloss', 'show'], { cwd: dir, encoding: 'utf8' }))
+  assert.equal(note.gloss, 3, 'serves lists are format 3')
+
+  const why = JSON.parse(gloss(dir, ['why', 'f.js:6', '--json']).out)
+  assert.deepEqual(why.groups.map((g: { id: string; serves_chain: string[] }) => [g.id, g.serves_chain]), [['tests', ['fix', 'tail']]])
+  r = gloss(dir, ['show', '-g', 'tests'])
+  assert.match(r.out, /serves: fix, tail/)
+  assert.match(gloss(dir, ['review']).out, /- serves: "fix", "tail"/)
+  assert.deepEqual(htmlPage(dir).data.groups.find((g: { id: string }) => g.id === 'tests').serves, ['fix', 'tail'])
 })

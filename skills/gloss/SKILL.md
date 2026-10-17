@@ -28,7 +28,7 @@ If you amend or rebase a glossed commit, `show` will report the gloss as stale. 
 Self-grading tends to call everything "required". Resist that. Use these categories:
 
 - `required`: the task cannot be done without it.
-- `supporting`: needed only because another group needs it. Set `serves` to that group's id.
+- `supporting`: needed only because other groups need it. Set `serves` to that group's id, or a list of ids.
 - `mechanical`: follow-on edits with no design content (renames, imports, formatting, lockfiles). Keep these short.
 - `incidental`: a drive-by cleanup or refactor the task did not ask for.
 - `defensive`: guards edge cases or failures nobody asked about.
@@ -36,7 +36,7 @@ Self-grading tends to call everything "required". Resist that. Use these categor
 
 Test each group with "what concretely breaks if this is removed?" and write the answer in `removal_impact`. If the honest answer is "nothing the task needs", the group is `incidental`, `defensive` or `speculative`. Saying so is the useful outcome; it tells the reviewer what can be dropped.
 
-Tests are `supporting`, with `serves` set to the main group they verify. Groups they cover can cite them in `evidence`.
+Tests are `supporting`, with `serves` listing every group they verify: `"serves": ["retry-core", "retry-config"]`. The same goes for a shared helper that several groups need. Groups the tests cover can cite them in `evidence`.
 
 Where you can, set `evidence` to a test that exercises the change or the line of the task that requires it.
 

@@ -2,7 +2,7 @@ import { git } from '../git.ts'
 import type { Hunk } from '../diff.ts'
 import type { GroupHunk, LoadedGloss } from '../loader.ts'
 import { bodyLines, changedCount, gapText, isGap, refLabel, slice, sliceStats } from '../selection.ts'
-import { NECESSITY, NECESSITY_HELP, type Necessity } from '../schema.ts'
+import { NECESSITY, NECESSITY_HELP, servesOf, type Necessity } from '../schema.ts'
 
 // Everything the page needs, precomputed so the client only lays it out.
 export type PageLine =
@@ -27,7 +27,7 @@ export type PageGroup = {
   id: string
   intent: string
   necessity: Necessity
-  serves: string
+  serves: string[]
   removal_impact: string
   evidence?: string
   notes?: string
@@ -131,7 +131,7 @@ export function buildPageData(gloss: LoadedGloss): PageData {
         id: g.id,
         intent: g.intent,
         necessity: g.necessity,
-        serves: g.serves,
+        serves: servesOf(g),
         removal_impact: g.removal_impact,
         evidence: g.evidence,
         notes: g.notes,

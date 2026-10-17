@@ -3,7 +3,7 @@ import { styleText } from 'node:util'
 import type { Hunk } from './diff.ts'
 import { gitTry } from './git.ts'
 import { refLabel, sliceStats } from './selection.ts'
-import type { Group, GlossNote, Necessity } from './schema.ts'
+import { servesOf, type Group, type GlossNote, type Necessity } from './schema.ts'
 
 type Style = Parameters<typeof styleText>[0]
 
@@ -76,7 +76,7 @@ export function groupHeader(g: Group): string[] {
   const out = wrap(g.intent, termWidth() - prefix.length).map((l, i) =>
     (i === 0 ? `${style('bold', '■')} ${necessityTag(g.necessity)} ` : ' '.repeat(prefix.length)) + style('bold', l))
   out[out.length - 1] += ' ' + style('dim', `(${g.id})`)
-  if (g.serves !== 'task') out.push(...field('serves:', g.serves))
+  if (servesOf(g)[0] !== 'task') out.push(...field('serves:', servesOf(g).join(', ')))
   out.push(...field('if removed:', g.removal_impact))
   if (g.evidence) out.push(...field('evidence:', g.evidence))
   if (g.notes) out.push(...field('notes:', g.notes))

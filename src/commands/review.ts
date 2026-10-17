@@ -3,7 +3,7 @@ import { resolveCommit } from '../git.ts'
 import type { Hunk } from '../diff.ts'
 import { refLabel, sliceText } from '../selection.ts'
 import { loadGloss } from '../loader.ts'
-import { NECESSITY_HELP } from '../schema.ts'
+import { NECESSITY_HELP, servesOf } from '../schema.ts'
 
 export const usage = 'review [<commit>]   print a review prompt (pipe it to an agent, e.g. `| claude -p`)'
 
@@ -36,7 +36,7 @@ export function run(argv: string[]): number {
   const groups = gloss.groups.map(({ group: g, hunks }) => [
     `### Group \`${g.id}\` [${g.necessity}]`,
     `- intent: ${q(g.intent)}`,
-    `- serves: ${q(g.serves)}`,
+    `- serves: ${servesOf(g).map(q).join(', ')}`,
     `- if removed: ${q(g.removal_impact)}`,
     ...(g.evidence ? [`- evidence: ${q(g.evidence)}`] : []),
     ...(g.notes ? [`- notes: ${q(g.notes)}`] : []),

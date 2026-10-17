@@ -1,7 +1,7 @@
 import { parseArgs } from 'node:util'
 import { blameLine, commitSubject } from '../git.ts'
 import { loadGloss } from '../loader.ts'
-import type { Group } from '../schema.ts'
+import { servesOf, type Group } from '../schema.ts'
 import { groupHeader, style } from '../render.ts'
 import { bodyLines } from '../selection.ts'
 
@@ -41,14 +41,21 @@ export function run(argv: string[]): number {
     }))
     .map((g) => g.group)
 
-  // Follow `serves` links up to the task so the reader sees the whole chain.
-  // `add` rejects cycles; the seen set guards glosses written before it did.
+  // Every group this one serves, directly or through others, nearest first,
+  // so the reader sees how it connects to the task. `add` rejects cycles; the
+  // seen set guards glosses written before it did.
   const byId = new Map(gloss?.note.annotation.groups.map((g) => [g.id, g]) ?? [])
   const chain = (g: Group): Group[] => {
     const seen = new Set([g.id])
     const out: Group[] = []
-    let cur = byId.get(g.serves)
-    while (cur && !seen.has(cur.id)) { seen.add(cur.id); out.push(cur); cur = byId.get(cur.serves) }
+    const queue = servesOf(g)
+    while (queue.length) {
+      const next = byId.get(queue.shift()!)
+      if (!next || seen.has(next.id)) continue
+      seen.add(next.id)
+      out.push(next)
+      queue.push(...servesOf(next))
+    }
     return out
   }
 

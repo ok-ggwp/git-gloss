@@ -3,7 +3,7 @@ import { parseArgs } from 'node:util'
 import { z } from 'zod'
 import { commitDiff, readNote, resolveCommit, writeNote } from '../git.ts'
 import { location, parseDiff } from '../diff.ts'
-import { Annotation } from '../schema.ts'
+import { Annotation, noteFormat } from '../schema.ts'
 import { validate } from '../validate.ts'
 
 export const usage = 'add [<commit>] [-f <file>] [--force] [--partial] [--dry-run]   attach an annotation (JSON from file or stdin)'
@@ -65,7 +65,7 @@ export function run(argv: string[]): number {
   }
 
   writeNote(sha, {
-    gloss: parsed.data.groups.some((g) => g.hunks.some((ref) => ref.includes(':'))) ? 2 : 1,
+    gloss: noteFormat(parsed.data),
     commit: sha,
     created_at: new Date().toISOString(),
     annotation: parsed.data,

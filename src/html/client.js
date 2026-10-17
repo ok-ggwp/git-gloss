@@ -87,7 +87,11 @@
       if (!value) return
       add(facts, el('dt', null, label), typeof value === 'string' ? el('dd', null, value) : add(el('dd'), value))
     }
-    if (g.serves !== 'task') fact('serves', groupLink(g.serves))
+    if (g.serves[0] !== 'task') {
+      var links = el('span')
+      g.serves.forEach(function (id, i) { if (i) links.appendChild(document.createTextNode(', ')); links.appendChild(groupLink(id)) })
+      fact('serves', links)
+    }
     fact('if removed', g.removal_impact)
     fact('evidence', g.evidence)
     fact('notes', g.notes)

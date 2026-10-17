@@ -1,4 +1,4 @@
-import type { Annotation } from './schema.ts'
+import { servesOf, type Annotation } from './schema.ts'
 import type { Hunk } from './diff.ts'
 import { changedCount, parseRef, refLabel, selections, uncovered, type Claim } from './selection.ts'
 
@@ -30,21 +30,32 @@ export function validate(annotation: Annotation, hunks: Hunk[]): ValidationResul
       const h = byHunkId.get(id)
       if (h) claims.push({ hunk: h, lines })
     }
-    if (g.serves !== 'task' && !groupIds.has(g.serves)) {
-      errors.push(`group "${g.id}" serves unknown group "${g.serves}" (use "task" or a group id)`)
+    const targets = servesOf(g)
+    for (const t of targets) {
+      if (t !== 'task' && !groupIds.has(t)) errors.push(`group "${g.id}" serves unknown group "${t}" (use "task" or group ids)`)
+      if (t === g.id) errors.push(`group "${g.id}" cannot serve itself`)
     }
-    if (g.serves === g.id) errors.push(`group "${g.id}" cannot serve itself`)
-    if (g.necessity === 'supporting' && g.serves === 'task') {
-      errors.push(`group "${g.id}" is "supporting" but serves "task"; name the group it supports`)
+    if (targets.length > 1 && targets.includes('task')) {
+      errors.push(`group "${g.id}" serves "task" and groups; use "task" alone or list only groups`)
+    }
+    if (new Set(targets).size < targets.length) errors.push(`group "${g.id}" lists a serves target twice`)
+    if (g.necessity === 'supporting' && targets.includes('task')) {
+      errors.push(`group "${g.id}" is "supporting" but serves "task"; name the group(s) it supports`)
     }
   }
 
+  // A group is in a cycle if it can reach itself by following serves links.
   const byId = new Map(annotation.groups.map((g) => [g.id, g]))
   for (const g of annotation.groups) {
-    const seen = new Set([g.id])
-    let cur = byId.get(g.serves)
-    while (cur && !seen.has(cur.id)) { seen.add(cur.id); cur = byId.get(cur.serves) }
-    if (cur?.id === g.id) errors.push(`group "${g.id}" is in a serves cycle; every chain must end at "task"`)
+    const seen = new Set<string>()
+    const queue = servesOf(g).filter((t) => t !== 'task')
+    while (queue.length) {
+      const id = queue.shift()!
+      if (id === g.id) { errors.push(`group "${g.id}" is in a serves cycle; every chain must end at "task"`); break }
+      if (seen.has(id)) continue
+      seen.add(id)
+      queue.push(...servesOf(byId.get(id) ?? { serves: 'task' }).filter((t) => t !== 'task'))
+    }
   }
 
   return { errors, uncovered: uncovered(hunks, claims).map((u) => refLabel(u.hunk.id, u.lines)) }
