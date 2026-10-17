@@ -384,13 +384,14 @@ test('refs parse, format and slice by changed-line number', () => {
   assert.deepEqual(s.map((l) => ('gap' in l ? `gap${l.gap}` : l.raw)), ['gap2', ' c5', '-b', '+B'])
 })
 
-function htmlPage(dir: string): { code: number | null; html: string; data: any } {
+// data is the page's single commit; page is the whole embedded payload.
+function htmlPage(dir: string, rev?: string): { code: number | null; html: string; data: any; page: any } {
   const out = join(dir, 'view.html')
-  const r = gloss(dir, ['html', '-o', out])
+  const r = gloss(dir, ['html', ...(rev ? [rev] : []), '-o', out])
   assert.equal(r.code, 0, r.err)
   const html = readFileSync(out, 'utf8')
-  const json = /<script type="application\/json" id="gloss-data">(.*?)<\/script>/s.exec(html)![1]
-  return { code: r.code, html, data: JSON.parse(json) }
+  const page = JSON.parse(/<script type="application\/json" id="gloss-data">(.*?)<\/script>/s.exec(html)![1])
+  return { code: r.code, html, data: page.commits[0], page }
 }
 
 test('html writes a self-contained page with the gloss data', () => {
@@ -604,4 +605,41 @@ test('one-item serves lists keep the lowest note format; why --json always gives
   assert.equal(note.annotation.groups[0].serves, 'task', 'stored as a plain string')
   const why = JSON.parse(gloss(dir, ['why', 'f.js:1', '--json']).out)
   assert.deepEqual(why.groups[0].serves, ['task'])
+})
+
+// base → glossed change → unglossed change, for range views.
+function branchRepo(): string {
+  const dir = repo()
+  gloss(dir, ['add'], annotation([retryCore, config]))
+  writeFileSync(join(dir, 'notes.txt'), 'unexplained\n')
+  execFileSync('git', ['add', '.'], { cwd: dir })
+  execFileSync('git', ['commit', '-qm', 'sneak in a file'], { cwd: dir })
+  return dir
+}
+
+test('html of a range shows every commit, with unglossed ones as unexplained diffs', () => {
+  const dir = branchRepo()
+  const { page, html } = htmlPage(dir, 'HEAD~2..HEAD')
+  assert.equal(page.range, 'HEAD~2..HEAD')
+  assert.deepEqual(page.commits.map((c: { subject: string; glossed: boolean }) => [c.subject, c.glossed]),
+    [['add retry', true], ['sneak in a file', false]])
+  assert.match(page.commits[1].unannotated[0].lines.map((l: { text: string }) => l.text).join('\n'), /unexplained/)
+  assert.match(html, /<title>gloss HEAD~2\.\.HEAD \(2 commits\)<\/title>/)
+})
+
+test('review of a range covers each commit and asks branch-level questions', () => {
+  const dir = branchRepo()
+  const r = gloss(dir, ['review', 'HEAD~2..HEAD'])
+  assert.equal(r.code, 0, r.err)
+  assert.match(r.out, /You are reviewing a branch \(2 commits, oldest first\)/)
+  assert.match(r.out, /6\. \*\*Across the branch\*\*/)
+  assert.match(r.out, /## Commit [0-9a-f]{10}: add retry[\s\S]*#### Group `retry-core`/)
+  assert.match(r.out, /## Commit [0-9a-f]{10}: sneak in a file\n\nThis commit has no gloss[\s\S]*\+unexplained/)
+})
+
+test('an empty range is an error', () => {
+  const dir = repo()
+  const r = gloss(dir, ['review', 'HEAD..HEAD'])
+  assert.equal(r.code, 1)
+  assert.match(r.err, /no commits in HEAD\.\.HEAD/)
 })

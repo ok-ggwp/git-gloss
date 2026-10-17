@@ -5,6 +5,10 @@
   var data = JSON.parse(document.getElementById('gloss-data').textContent)
   var app = document.getElementById('app')
   var hidden = new Set() // necessity values filtered out
+  var multi = data.commits.length > 1 || data.range !== null
+  // Group ids are unique within a commit, not across a range, so a range page
+  // keys cards by commit too: #g-<sha7>-<group>.
+  function key(c, id) { return multi ? c.sha.slice(0, 7) + '-' + id : id }
 
   function el(tag, cls, text) {
     var e = document.createElement(tag)
@@ -24,15 +28,15 @@
   function stats(added, removed) {
     return add(el('span', 'stats'), el('span', 'plus', '+' + added), document.createTextNode(' '), el('span', 'minus', '−' + removed))
   }
-  function groupLink(id) {
+  function groupLink(c, id) {
     var a = el('a', null, id)
-    a.href = '#g-' + id
-    a.addEventListener('click', function (ev) { ev.preventDefault(); focusGroup(id, true) })
+    a.href = '#g-' + key(c, id)
+    a.addEventListener('click', function (ev) { ev.preventDefault(); focusGroup(key(c, id), true) })
     return a
   }
 
   // ---- diff rendering ----
-  function hunkView(h) {
+  function hunkView(c, h) {
     var head = add(el('div', 'hunk-head'),
       el('span', 'range', h.ref),
       el('span', 'file', h.oldFile ? h.oldFile + ' → ' + h.file : h.file),
@@ -45,7 +49,7 @@
     }
     if (h.alsoIn.length) {
       var also = add(el('span', 'also'), document.createTextNode('shares lines with '))
-      h.alsoIn.forEach(function (id, i) { if (i) also.appendChild(document.createTextNode(', ')); also.appendChild(groupLink(id)) })
+      h.alsoIn.forEach(function (id, i) { if (i) also.appendChild(document.createTextNode(', ')); also.appendChild(groupLink(c, id)) })
       add(head, also)
     }
     var table = el('table', 'diff')
@@ -69,9 +73,9 @@
 
   // ---- group cards ----
   var cards = []
-  function groupCard(g) {
+  function groupCard(c, g) {
     var card = color(el('article', 'group'), g.necessity)
-    card.id = 'g-' + g.id
+    card.id = 'g-' + key(c, g.id)
     card.tabIndex = -1
     card.dataset.necessity = g.necessity
 
@@ -89,7 +93,7 @@
     }
     if (g.serves[0] !== 'task') {
       var links = el('span')
-      g.serves.forEach(function (id, i) { if (i) links.appendChild(document.createTextNode(', ')); links.appendChild(groupLink(id)) })
+      g.serves.forEach(function (id, i) { if (i) links.appendChild(document.createTextNode(', ')); links.appendChild(groupLink(c, id)) })
       fact('serves', links)
     }
     fact('if removed', g.removal_impact)
@@ -105,7 +109,7 @@
       toggle.type = 'button'
       var rendered = false
       function setOpen(open) {
-        if (open && !rendered) { g.hunks.forEach(function (h) { code.appendChild(hunkView(h)) }); rendered = true }
+        if (open && !rendered) { g.hunks.forEach(function (h) { code.appendChild(hunkView(c, h)) }); rendered = true }
         code.hidden = !open
         toggle.textContent = (open ? '▾ Hide code' : '▸ Show code') + ' · ' + plural(g.hunks.length, 'hunk')
         toggle.setAttribute('aria-expanded', String(open))
@@ -121,30 +125,101 @@
   }
 
   // ---- page ----
+  function statement(parent, label, text) {
+    if (text) add(parent, add(el('p', 'statement'), el('span', 'label', label), document.createTextNode(text)))
+  }
+  function commitMeta(c) {
+    return add(el('div', 'commit'), el('span', 'sha', c.sha.slice(0, 10)),
+      el('span', null, c.author), el('span', null, new Date(c.date).toLocaleString()))
+  }
+
+  // One commit's groups, unannotated changes, risks and alternatives, with its
+  // entries in the sidebar.
+  function commitBody(c, main, toc) {
+    var tocList = el('ol')
+    var groupsEl = el('section', 'groups')
+    c.groups.forEach(function (g) {
+      groupsEl.appendChild(groupCard(c, g))
+      var li = el('li')
+      li.dataset.necessity = g.necessity
+      li.dataset.key = key(c, g.id)
+      var a = add(el('a'), color(el('span', 'dot'), g.necessity), el('span', null, g.id))
+      a.href = '#g-' + key(c, g.id)
+      a.title = g.intent
+      a.addEventListener('click', function (ev) { ev.preventDefault(); focusGroup(key(c, g.id), false) })
+      tocList.appendChild(add(li, a))
+    })
+    add(main, groupsEl)
+
+    var h = multi ? 'h3' : 'h2'
+    if (c.unannotated.length) {
+      var unId = 'unannotated' + (multi ? '-' + c.sha.slice(0, 7) : '')
+      var un = add(el('section', 'section'), el(h, null, (c.glossed ? 'Unannotated changes' : 'Changes') + ' (' + c.unannotated.length + ')'))
+      var box = add(el('div', 'unannotated'), el('p', null, c.glossed
+        ? 'These changes are in the commit but no group explains them.'
+        : 'This commit has no gloss, so nothing explains these changes.'))
+      c.unannotated.forEach(function (hk) { box.appendChild(hunkView(c, hk)) })
+      un.id = unId
+      add(main, add(un, box))
+      var ua = add(el('a'), el('span', null, c.glossed ? 'unannotated' : 'unglossed diff'))
+      ua.href = '#' + unId
+      tocList.appendChild(add(el('li'), ua))
+    }
+    if (c.risks.length) {
+      var rl = el('ul', 'list')
+      c.risks.forEach(function (r) { rl.appendChild(el('li', null, r)) })
+      add(main, add(el('section', 'section'), el(h, null, 'Risks'), rl))
+    }
+    if (c.alternatives.length) {
+      var al = el('ul', 'list')
+      c.alternatives.forEach(function (x) {
+        al.appendChild(add(el('li'), el('strong', null, x.option), el('span', 'why', ' — ' + x.rejected_because)))
+      })
+      add(main, add(el('section', 'section'), el(h, null, 'Alternatives considered'), al))
+    }
+    return tocList
+  }
+
   function render() {
     var layout = el('div', 'layout')
     var toc = el('nav', 'toc')
     var main = el('main')
     add(layout, toc, main)
+    var allGroups = []
+    data.commits.forEach(function (c) { allGroups = allGroups.concat(c.groups) })
 
-    // Header
-    var commit = add(el('div', 'commit'), el('span', 'sha', data.sha.slice(0, 10)),
-      el('span', null, data.author), el('span', null, new Date(data.date).toLocaleString()))
-    add(main, commit, el('h1', null, data.subject))
-    function statement(label, text) {
-      if (text) add(main, add(el('p', 'statement'), el('span', 'label', label), document.createTextNode(text)))
+    // Header: the commit itself, or the range and its commits.
+    if (multi) {
+      var glossed = data.commits.filter(function (c) { return c.glossed }).length
+      add(main, add(el('div', 'commit'), el('span', 'sha', data.range),
+        el('span', null, plural(data.commits.length, 'commit') + ', ' + glossed + ' glossed')))
+      add(main, el('h1', null, 'Branch ' + data.range))
+      var list = el('ol', 'commit-list')
+      data.commits.forEach(function (c) {
+        var a = add(el('a'), el('span', 'sha', c.sha.slice(0, 7)), document.createTextNode(' ' + c.subject))
+        a.href = '#c-' + c.sha.slice(0, 7)
+        var li = add(el('li'), a)
+        if (!c.glossed) add(li, el('span', 'stale', 'no gloss'))
+        else if (c.warnings.length) add(li, el('span', 'stale', 'stale gloss'))
+        list.appendChild(li)
+      })
+      add(main, list)
+    } else {
+      var only = data.commits[0]
+      add(main, commitMeta(only), el('h1', null, only.subject))
+      statement(main, 'Task', only.task)
+      statement(main, 'Summary', only.summary)
+      only.warnings.forEach(function (w) { add(main, el('div', 'warning', '⚠ ' + w)) })
     }
-    statement('Task', data.task)
-    statement('Summary', data.summary)
-    data.warnings.forEach(function (w) { add(main, el('div', 'warning', '⚠ ' + w)) })
 
-    // Necessity overview: bar weighted by lines changed, chips filter groups.
-    var present = data.necessity.filter(function (n) { return data.groups.some(function (g) { return g.necessity === n.name }) })
-    var total = data.groups.reduce(function (s, g) { return s + g.weight }, 0) || 1
+    // Necessity overview across every commit: bar weighted by changed lines,
+    // chips filter groups.
+    var present = data.necessity.filter(function (n) { return allGroups.some(function (g) { return g.necessity === n.name }) })
+    var total = allGroups.reduce(function (s, g) { return s + g.weight }, 0) || 1
     var bar = el('div', 'bar')
     var chips = el('div', 'chips')
     present.forEach(function (n) {
-      var groups = data.groups.filter(function (g) { return g.necessity === n.name })
+      var groups = allGroups.filter(function (g) { return g.necessity === n.name })
       var weight = groups.reduce(function (s, g) { return s + g.weight }, 0)
       var seg = color(el('span'), n.name)
       seg.style.width = (100 * weight / total) + '%'
@@ -165,7 +240,8 @@
       chips.appendChild(chip)
     })
     add(main, add(el('section', 'overview'), bar, chips,
-      el('div', 'note', 'Bar shows each category’s share of changed lines. Click a category to hide or show its groups.')))
+      el('div', 'note', 'Bar shows each category’s share of changed lines' + (multi ? ' across the range' : '') +
+        '. Click a category to hide or show its groups.')))
 
     // Toolbar
     var shown = el('span', 'shown')
@@ -176,45 +252,24 @@
     collapse.addEventListener('click', function () { setAll(false) })
     add(main, add(el('div', 'toolbar'), shown, add(el('span'), expand, document.createTextNode(' '), collapse)))
 
-    // Groups + sidebar
-    var tocList = el('ol')
-    add(toc, el('h2', null, 'Groups'), tocList)
-    var groupsEl = el('section', 'groups')
-    data.groups.forEach(function (g) {
-      groupsEl.appendChild(groupCard(g))
-      var li = el('li')
-      li.dataset.necessity = g.necessity
-      li.dataset.id = g.id
-      var a = add(el('a'), color(el('span', 'dot'), g.necessity), el('span', null, g.id))
-      a.href = '#g-' + g.id
-      a.title = g.intent
-      a.addEventListener('click', function (ev) { ev.preventDefault(); focusGroup(g.id, false) })
-      tocList.appendChild(add(li, a))
+    // Commits, each with its groups; the sidebar groups them by commit.
+    data.commits.forEach(function (c) {
+      var target = main
+      if (multi) {
+        target = el('section', 'commit-section')
+        target.id = 'c-' + c.sha.slice(0, 7)
+        add(target, commitMeta(c), el('h2', null, c.subject))
+        statement(target, 'Task', c.task)
+        statement(target, 'Summary', c.summary)
+        c.warnings.forEach(function (w) { add(target, el('div', 'warning', '⚠ ' + w)) })
+        add(main, target)
+      }
+      var tocList = commitBody(c, target, toc)
+      var heading = multi ? c.sha.slice(0, 7) + ' ' + c.subject : 'Groups'
+      var tocHead = el('h2', multi ? 'commit-head' : null, heading)
+      if (multi) tocHead.title = c.subject
+      add(toc, tocHead, tocList)
     })
-    add(main, groupsEl)
-
-    if (data.unannotated.length) {
-      var un = add(el('section', 'section'), el('h2', null, 'Unannotated changes (' + data.unannotated.length + ')'))
-      var box = add(el('div', 'unannotated'), el('p', null, 'These changes are in the commit but no group explains them.'))
-      data.unannotated.forEach(function (h) { box.appendChild(hunkView(h)) })
-      un.id = 'unannotated'
-      add(main, add(un, box))
-      var ua = el('a', null, 'unannotated')
-      ua.href = '#unannotated'
-      add(toc, el('h2', null, 'Other'), add(el('ol'), add(el('li'), ua)))
-    }
-    if (data.risks.length) {
-      var rl = el('ul', 'list')
-      data.risks.forEach(function (r) { rl.appendChild(el('li', null, r)) })
-      add(main, add(el('section', 'section'), el('h2', null, 'Risks'), rl))
-    }
-    if (data.alternatives.length) {
-      var al = el('ul', 'list')
-      data.alternatives.forEach(function (x) {
-        al.appendChild(add(el('li'), el('strong', null, x.option), el('span', 'why', ' — ' + x.rejected_because)))
-      })
-      add(main, add(el('section', 'section'), el('h2', null, 'Alternatives considered'), al))
-    }
 
     var foot = el('footer')
     add(foot, document.createTextNode('Keys: '), el('kbd', null, 'j'), document.createTextNode(' / '), el('kbd', null, 'k'),
@@ -222,7 +277,8 @@
       el('kbd', null, 'e'), document.createTextNode(' expand all · '), el('kbd', null, 'c'),
       document.createTextNode(' collapse all.'))
     add(foot, el('p', null, 'A snapshot generated by git-gloss ' + new Date(data.generated).toLocaleString() +
-      '. It does not update if the gloss or commit changes; regenerate with git gloss html ' + data.sha.slice(0, 10) + '.'))
+      '. It does not update if the gloss or commit changes; regenerate with git gloss html ' +
+      (data.range || data.commits[0].sha.slice(0, 10)) + '.'))
     add(main, foot)
 
     app.textContent = ''
@@ -235,7 +291,7 @@
         c.classList.toggle('hidden', off)
         if (!off) visible++
       })
-      tocList.querySelectorAll('li').forEach(function (li) { li.classList.toggle('hidden', hidden.has(li.dataset.necessity)) })
+      toc.querySelectorAll('li[data-necessity]').forEach(function (li) { li.classList.toggle('hidden', hidden.has(li.dataset.necessity)) })
       shown.textContent = visible === cards.length
         ? plural(cards.length, 'group')
         : 'Showing ' + visible + ' of ' + plural(cards.length, 'group')
@@ -254,8 +310,8 @@
   }
 
   var current = -1
-  function focusGroup(id, openCode, instant) {
-    var i = cards.findIndex(function (c) { return c.id === 'g-' + id })
+  function focusGroup(k, openCode, instant) {
+    var i = cards.findIndex(function (c) { return c.id === 'g-' + k })
     if (i < 0) return
     var card = cards[i]
     // Following a link to a filtered-out group turns its category back on.
@@ -265,8 +321,8 @@
     current = i
     if (openCode && card.setOpen) card.setOpen(true)
     card.scrollIntoView({ block: 'start', behavior: instant ? 'auto' : 'smooth' })
-    document.querySelectorAll('.toc li').forEach(function (li) { li.classList.toggle('active', li.dataset.id === id) })
-    history.replaceState(null, '', '#g-' + id)
+    document.querySelectorAll('.toc li').forEach(function (li) { li.classList.toggle('active', li.dataset.key === k) })
+    history.replaceState(null, '', '#g-' + k)
   }
   function step(dir) {
     var visible = cards.filter(function (c) { return !c.classList.contains('hidden') })

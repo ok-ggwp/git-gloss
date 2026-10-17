@@ -15,7 +15,7 @@ A gloss records, for each part of a commit, what it does, how necessary it is, a
 4. Write the annotation JSON (shape below; `git gloss schema` prints the full JSON Schema) to a file in your scratchpad, then run:
    `git gloss add <commit> -f <file>`
    Fix any validation errors it reports and rerun. Use `--force` only to replace your own earlier gloss.
-5. Run `git gloss show <commit>` (the summary) and `git gloss show <commit> --full` (every group's details) and check that they read well to someone who was not in the session.
+5. Run `git gloss show <commit>` (the summary) and `git gloss show <commit> --full` (every group's details) and check that they read well to someone who was not in the session. Then spot-check the code under a few groups with `git gloss show <commit> -g <group>`. Validation checks that every line is covered, not that each line is under the right intent.
 
 If you amend or rebase a glossed commit, `show` will report the gloss as stale. Re-gloss it with `--force`.
 

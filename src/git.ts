@@ -39,6 +39,16 @@ export function resolveCommit(rev: string): string {
   return sha.trim()
 }
 
+// A commit, or the non-merge commits in a range such as "main..feature",
+// oldest first. Merges are skipped: their diff against the first parent would
+// repeat the merged branch's commits.
+export function resolveCommits(arg: string): { shas: string[]; range: string | null } {
+  if (!arg.includes('..')) return { shas: [resolveCommit(arg)], range: null }
+  const shas = git(['rev-list', '--reverse', '--no-merges', arg, '--']).split('\n').filter(Boolean)
+  if (!shas.length) throw new GitError(`no commits in ${arg}`)
+  return { shas, range: arg }
+}
+
 export function commitSubject(sha: string): string {
   return git(['log', '-1', '--format=%s', sha]).trim()
 }

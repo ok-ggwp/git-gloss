@@ -1,4 +1,6 @@
-import { git } from '../git.ts'
+import { commitDiff, commitSubject, git } from '../git.ts'
+import { parseDiff } from '../diff.ts'
+import { loadGloss } from '../loader.ts'
 import type { Hunk } from '../diff.ts'
 import type { GroupHunk, LoadedGloss } from '../loader.ts'
 import { bodyLines, changedCount, gapText, isGap, refLabel, slice, sliceStats } from '../selection.ts'
@@ -42,19 +44,28 @@ export type PageGroup = {
   hunks: PageHunk[]
 }
 
-export type PageData = {
+// One commit's part of the page. A commit in a range may have no gloss; then
+// its whole diff is listed as unannotated.
+export type CommitData = {
   sha: string
   subject: string
   author: string
   date: string
+  glossed: boolean
   task: string
   summary?: string
   warnings: string[]
-  necessity: { name: Necessity; help: string }[]
   groups: PageGroup[]
   unannotated: PageHunk[]
   alternatives: { option: string; rejected_because: string }[]
   risks: string[]
+}
+
+export type PageData = {
+  // The range as given (e.g. "main..feature"), or null for a single commit.
+  range: string | null
+  necessity: { name: Necessity; help: string }[]
+  commits: CommitData[]
   generated: string
 }
 
@@ -105,7 +116,7 @@ function pageHunk(h: Hunk, lines: Set<number> | null, status: PageHunk['status']
 
 const allLines = (h: Hunk) => Array.from({ length: changedCount(h) }, (_, i) => i + 1)
 
-export function buildPageData(gloss: LoadedGloss): PageData {
+export function commitData(gloss: LoadedGloss): CommitData {
   const [author, date] = git(['log', '-1', '--format=%an%x00%aI', gloss.sha]).trim().split('\0')
   const a = gloss.note.annotation
 
@@ -153,14 +164,42 @@ export function buildPageData(gloss: LoadedGloss): PageData {
     subject: gloss.subject,
     author,
     date,
+    glossed: true,
     task: a.task,
     summary: a.summary,
     warnings: gloss.warnings,
-    necessity: NECESSITY.map((name) => ({ name, help: NECESSITY_HELP[name] })),
     groups,
     unannotated: gloss.unannotated.map((u) => pageHunk(u.hunk, u.lines, 'unannotated', [])),
     alternatives: a.alternatives ?? [],
     risks: a.risks ?? [],
+  }
+}
+
+function unglossedData(sha: string): CommitData {
+  const [author, date] = git(['log', '-1', '--format=%an%x00%aI', sha]).trim().split('\0')
+  return {
+    sha,
+    subject: commitSubject(sha),
+    author,
+    date,
+    glossed: false,
+    task: '',
+    warnings: [],
+    groups: [],
+    unannotated: parseDiff(commitDiff(sha)).map((h) => pageHunk(h, null, 'unannotated', [])),
+    alternatives: [],
+    risks: [],
+  }
+}
+
+export function buildPageData(shas: string[], range: string | null = null): PageData {
+  return {
+    range,
+    necessity: NECESSITY.map((name) => ({ name, help: NECESSITY_HELP[name] })),
+    commits: shas.map((sha) => {
+      const gloss = loadGloss(sha)
+      return gloss ? commitData(gloss) : unglossedData(sha)
+    }),
     generated: new Date().toISOString(),
   }
 }

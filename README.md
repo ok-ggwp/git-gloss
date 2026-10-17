@@ -15,9 +15,9 @@ git gloss show [<commit>]             summary: one line per group, risks
       --full                          ...every group's details
       --diff                          ...every group's details and code
       --only speculative,incidental   ...just the parts you might cut
-git gloss html [<commit>] [--open]    self-contained HTML view (-o to choose the file)
+git gloss html [<commit>|<range>]     self-contained HTML view, of one commit or a branch (--open, -o <file>)
 git gloss why <file>:<line> [--json]  explain why a line exists (via blame)
-git gloss review [<commit>]           print a review prompt: git gloss review | claude -p
+git gloss review [<commit>|<range>]   print a review prompt: git gloss review main..feature | claude -p
 git gloss schema                      print the annotation JSON Schema
 ```
 
@@ -46,6 +46,8 @@ Its shell commands run in Claude Code's OS sandbox (bubblewrap on Linux; the run
 ## HTML view
 
 `git gloss html --open` writes a single HTML file (no network access, works offline) and opens it. It shows the task and summary, a bar of how the changed lines split across necessity categories, and a card per group with its rationale; code is collapsed until you ask for it. Click categories to filter, use the sidebar to jump between groups, or press `j`/`k` to move, `o` to show code, and `e`/`c` to expand or collapse everything. `#g-<group>` in the URL opens that group.
+
+Give a range (`git gloss html main..feature --open`) for a branch or PR view: every non-merge commit in order, a necessity bar across the whole branch, and the sidebar grouped by commit. Commits without a gloss appear with their whole diff marked as unexplained. On range pages a group's link is `#g-<commit>-<group>`. `git gloss review main..feature` likewise covers every commit and adds branch-level questions, such as later commits that undo earlier ones.
 
 All gloss and diff text is rendered as text, and a Content-Security-Policy with a per-page nonce blocks any script the page didn't generate.
 
