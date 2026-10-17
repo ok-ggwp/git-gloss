@@ -27,11 +27,6 @@ export function necessityWord(n: Necessity, pad = 0): string {
 
 export const termWidth = () => Math.min(process.stdout.columns || 100, 120)
 
-export function truncate(text: string, width: number): string {
-  const flat = text.replace(/\s+/g, ' ')
-  return flat.length > width ? flat.slice(0, Math.max(0, width - 1)) + '…' : flat
-}
-
 // Word-wrap plain text to `width` columns.
 export function wrap(text: string, width: number): string[] {
   const lines: string[] = []
@@ -85,6 +80,11 @@ export function groupHeader(g: Group): string[] {
   return out
 }
 
+export function risksBlock(note: GlossNote): string[] {
+  const risks = note.annotation.risks ?? []
+  return risks.length ? ['', style('bold', 'Risks'), ...risks.flatMap((r) => field('•', r))] : []
+}
+
 export function noteFooter(note: GlossNote): string[] {
   const out: string[] = []
   const a = note.annotation
@@ -92,30 +92,41 @@ export function noteFooter(note: GlossNote): string[] {
     out.push('', style('bold', 'Alternatives considered'))
     for (const alt of a.alternatives) out.push(...field('•', `${alt.option}: ${alt.rejected_because}`))
   }
-  if (a.risks?.length) {
-    out.push('', style('bold', 'Risks'))
-    for (const r of a.risks) out.push(...field('•', r))
-  }
-  return out
+  return [...out, ...risksBlock(note)]
 }
 
-// Print through git's pager (core.pager, GIT_PAGER, PAGER, else less) when the
-// output won't fit on screen, as git itself does.
-export function page(text: string): void {
-  const rows = process.stdout.rows
-  if (!process.stdout.isTTY || !rows || text.split('\n').length < rows) {
-    console.log(text)
-    return
+// The pager git would use for `git gloss`: pager.gloss if set (false turns it
+// off), else GIT_PAGER, core.pager, PAGER, less. `git --no-pager` reaches us
+// as GIT_PAGER=cat.
+export function pagerCommand(): string | null {
+  if (process.env.GIT_PAGER_IN_USE) return null
+  const own = gitTry(['config', 'pager.gloss'])?.trim()
+  if (own !== undefined && own !== '') {
+    const off = gitTry(['config', '--type=bool', 'pager.gloss'])?.trim()
+    if (off === 'false') return null
+    if (off !== 'true') return own
   }
   const pager = gitTry(['var', 'GIT_PAGER'])?.trim()
-  if (!pager || pager === 'cat') {
-    console.log(text)
-    return
-  }
+  return !pager || pager === 'cat' ? null : pager
+}
+
+// Run the pager; print directly only if it could not run at all. Quitting the
+// pager early makes our write fail with EPIPE, which is not a reason to dump
+// the rest of the output on the terminal.
+export function runPager(pager: string, text: string): void {
   const r = spawnSync('sh', ['-c', pager], {
     input: text + '\n',
     stdio: ['pipe', 'inherit', 'inherit'],
-    env: { LESS: 'FRX', LV: '-c', ...process.env },
+    env: { LESS: 'FRX', LV: '-c', ...process.env, GIT_PAGER_IN_USE: 'true' },
   })
-  if (r.error) console.log(text)
+  const code = (r.error as NodeJS.ErrnoException | undefined)?.code
+  if ((r.error && code !== 'EPIPE') || r.status === 127) console.log(text)
+}
+
+// Page output that won't fit on screen, as git does.
+export function page(text: string): void {
+  const rows = process.stdout.rows
+  const pager = process.stdout.isTTY && rows && text.split('\n').length >= rows ? pagerCommand() : null
+  if (pager) runPager(pager, text)
+  else console.log(text)
 }

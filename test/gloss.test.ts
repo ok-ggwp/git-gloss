@@ -308,6 +308,59 @@ test('show summarises one line per group, required first, and expands groups wit
   assert.match(r.err, /no group nope in this gloss; groups are tidy, config, retry-core/)
 })
 
+test('show summary flags unannotated and stale groups, notes --only, and errors on empty selections', () => {
+  const dir = repo()
+  gloss(dir, ['init'])
+  gloss(dir, ['add', '--partial'], annotation([retryCore]))
+  let r = gloss(dir, ['show'])
+  assert.match(r.out, /unannotated +1 hunk\(s\) not in any group: h2/)
+
+  gloss(dir, ['add', '--force'], annotation([retryCore, config]))
+  r = gloss(dir, ['show', '--only', 'speculative'])
+  assert.match(r.out, /2 groups: .*\(showing 1: --only speculative\)/)
+  r = gloss(dir, ['show', '-g', 'retry-core', '--only', 'speculative'])
+  assert.equal(r.code, 1)
+  assert.match(r.err, /no groups match -g retry-core and --only speculative/)
+
+  r = gloss(dir, ['show', '--diff'])
+  assert.match(r.out, /retry\(\(\) => send\(f\), MAX_RETRIES\)[\s\S]*MAX_RETRIES = 3/)
+
+  writeFileSync(join(dir, 'config.js'), 'export const MAX_RETRIES = 5\n')
+  execFileSync('git', ['commit', '-qa', '--amend', '--no-edit'], { cwd: dir })
+  r = gloss(dir, ['show'])
+  assert.match(r.out, /config +Make retry count configurable[^\n]*\n *⚠ 1 of 1 hunk\(s\) changed or gone/)
+})
+
+test('add notes long intents without rejecting them', () => {
+  const dir = repo()
+  const r = gloss(dir, ['add'], annotation([{ ...retryCore, intent: 'x'.repeat(120) }, config]))
+  assert.equal(r.code, 0, r.err)
+  assert.match(r.err, /120-character intent/)
+})
+
+const RENDER = join(import.meta.dirname, '..', 'src', 'render.ts')
+const runNode = (code: string, opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}) =>
+  spawnSync(process.execPath, ['--input-type=module', '-e', code], { encoding: 'utf8', ...opts })
+
+test('quitting the pager early does not dump the rest of the output', () => {
+  const big = 'Array.from({ length: 50000 }, (_, i) => `line ${i}`).join("\\n")'
+  let r = runNode(`import { runPager } from ${JSON.stringify(RENDER)}; runPager('head -1', ${big})`)
+  assert.equal(r.stdout.trim().split('\n').length, 1)
+  r = runNode(`import { runPager } from ${JSON.stringify(RENDER)}; runPager('no-such-pager-cmd', 'kept')`)
+  assert.match(r.stdout, /kept/, 'falls back to printing when the pager cannot run')
+})
+
+test('pager.gloss overrides or disables the pager', () => {
+  const dir = repo()
+  const pager = () => runNode(`import { pagerCommand } from ${JSON.stringify(RENDER)}; console.log(JSON.stringify(pagerCommand()))`,
+    { cwd: dir, env: { ...process.env, GIT_PAGER: 'less' } }).stdout.trim()
+  assert.equal(pager(), '"less"')
+  execFileSync('git', ['config', 'pager.gloss', 'false'], { cwd: dir })
+  assert.equal(pager(), 'null')
+  execFileSync('git', ['config', 'pager.gloss', 'more'], { cwd: dir })
+  assert.equal(pager(), '"more"')
+})
+
 test('review prints a prompt containing the annotated diff', () => {
   const dir = repo()
   gloss(dir, ['add'], annotation([retryCore, config]))

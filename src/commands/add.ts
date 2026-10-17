@@ -50,6 +50,11 @@ export function run(argv: string[]): number {
     return 1
   }
 
+  // Not an error: long intents still work, but they make the summary rows tall.
+  for (const g of parsed.data.groups.filter((g) => g.intent.length > 100)) {
+    console.error(`note: group "${g.id}" has a ${g.intent.length}-character intent; keep it under ~80 and move detail to "notes"`)
+  }
+
   if (values['dry-run']) {
     console.log(`ok: annotation is valid for ${sha.slice(0, 10)} (${parsed.data.groups.length} groups, ${hunks.length} hunks)`)
     return 0

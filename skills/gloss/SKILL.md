@@ -19,6 +19,10 @@ A gloss records, for each part of a commit, what it does, how necessary it is, a
 
 If you amend or rebase a glossed commit, `show` will report the gloss as stale. Re-gloss it with `--force`.
 
+## Writing intents
+
+`show` lists one row per group, so keep each `intent` to one short sentence (under ~80 characters) saying what the group does. Put mechanism, caveats and history in `notes`. `add` prints a note for intents over 100 characters.
+
 ## Grading necessity honestly
 
 Self-grading tends to call everything "required". Resist that. Use these categories:

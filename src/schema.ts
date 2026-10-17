@@ -1,12 +1,14 @@
 import { z } from 'zod'
 
+// In the order `show` lists groups: what the task needs, then what a reviewer
+// might cut, then edits with no design content.
 export const NECESSITY = [
   'required',
   'supporting',
-  'mechanical',
-  'incidental',
   'defensive',
+  'incidental',
   'speculative',
+  'mechanical',
 ] as const
 
 export type Necessity = (typeof NECESSITY)[number]
@@ -25,7 +27,7 @@ export const Group = z.object({
     .string()
     .regex(/^[a-z0-9][a-z0-9-]*$/, 'use lowercase kebab-case')
     .describe('Short unique id for this group, e.g. "retry-core"'),
-  intent: z.string().min(1).describe('What this group of changes does, in one sentence'),
+  intent: z.string().min(1).describe('What this group of changes does, in one short sentence (under ~80 characters)'),
   necessity: z.enum(NECESSITY).describe('How necessary the change is to the task'),
   serves: z
     .string()

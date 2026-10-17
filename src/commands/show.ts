@@ -4,15 +4,11 @@ import type { Hunk } from '../diff.ts'
 import { loadGloss, type LoadedGroup } from '../loader.ts'
 import { NECESSITY, type Necessity } from '../schema.ts'
 import {
-  colorDiff, field, groupHeader, hunkLabel, necessityWord, noteFooter, page, style, termWidth, truncate, wrap,
+  colorDiff, field, groupHeader, hunkLabel, necessityWord, noteFooter, page, risksBlock, style, termWidth, wrap,
 } from '../render.ts'
 
 export const usage =
   'show [<commit>] [-g <group>]... [--full] [--diff] [--only <necessity,...>]   summarise a gloss; expand groups with -g'
-
-// Summary order: what the task needs first, then what a reviewer might cut,
-// then edits with no design content.
-const ORDER: Necessity[] = ['required', 'supporting', 'defensive', 'incidental', 'speculative', 'mechanical']
 
 function stats(hunks: Hunk[]): { count: number; added: number; removed: number } {
   return {
@@ -66,6 +62,13 @@ export function run(argv: string[]): number {
     .filter((g) => !only || only.includes(g.group.necessity))
     .filter((g) => !values.group || values.group.includes(g.group.id))
 
+  if (!groups.length) {
+    console.error(`no groups match ${[values.group && `-g ${values.group.join(',')}`, only && `--only ${only.join(',')}`].filter(Boolean).join(' and ')}`)
+    return 1
+  }
+
+  // -g: chosen groups with their code. --full: every group's details, plus
+  // alternatives and risks. --diff: --full plus code.
   if (values.group || values.full || values.diff) {
     const withCode = values.diff || !!values.group
     for (const g of groups) {
@@ -90,42 +93,48 @@ export function run(argv: string[]): number {
   }
 
   // Summary: one line per group.
-  const sorted = [...groups].sort((x, y) => ORDER.indexOf(x.group.necessity) - ORDER.indexOf(y.group.necessity))
-  const tally = ORDER.map((n) => [n, gloss.groups.filter((g) => g.group.necessity === n).length] as const)
+  const sorted = [...groups].sort((x, y) => NECESSITY.indexOf(x.group.necessity) - NECESSITY.indexOf(y.group.necessity))
+  const tally = NECESSITY.map((n) => [n, gloss.groups.filter((g) => g.group.necessity === n).length] as const)
     .filter(([, c]) => c > 0)
     .map(([n, c]) => `${c} ${necessityWord(n)}`)
-  out.push('', `${style('bold', `${gloss.groups.length} groups:`)} ${tally.join(style('dim', ' · '))}`, '')
+  const showing = groups.length < gloss.groups.length ? style('dim', `  (showing ${groups.length}: --only ${only?.join(',')})`) : ''
+  out.push('', `${style('bold', `${gloss.groups.length} groups:`)} ${tally.join(style('dim', ' · '))}${showing}`, '')
 
   const rows = sorted.map((g) => {
     const s = stats(currentHunks(g))
-    return { g, stat: `${s.count} hunk${s.count === 1 ? '' : 's'}`, added: `+${s.added}`, removed: `-${s.removed}` }
+    const stale = g.hunks.filter((h) => h.status !== 'ok').length
+    return {
+      g, stale,
+      stat: `${s.count} hunk${s.count === 1 ? '' : 's'}`, added: `+${s.added}`, removed: `-${s.removed}`,
+    }
   })
   const un = stats(gloss.unannotated)
-  const idW = Math.min(22, Math.max(...rows.map((r) => r.g.group.id.length)))
+  const idW = Math.max(...rows.map((r) => r.g.group.id.length))
   const statW = Math.max(...rows.map((r) => r.stat.length), un.count ? 8 : 0)
   const addW = Math.max(...rows.map((r) => r.added.length))
   const remW = Math.max(...rows.map((r) => r.removed.length))
-  const intentW = Math.max(20, termWidth() - (2 + 11 + 2 + idW + 2 + 2 + statW + 1 + addW + 1 + remW))
   const intentCol = 2 + 11 + 2 + idW + 2
+  const statsW = 2 + statW + 1 + addW + 1 + remW
+  const intentW = Math.max(20, termWidth() - intentCol - statsW)
   for (const r of rows) {
     // Intents wrap within their column rather than being cut off; the stats
     // stay on the first line so the numbers still line up.
     const [first, ...rest] = wrap(r.g.group.intent, intentW)
     out.push(
-      `  ${necessityWord(r.g.group.necessity, 11)}  ${style('bold', truncate(r.g.group.id, idW).padEnd(idW))}  ` +
+      `  ${necessityWord(r.g.group.necessity, 11)}  ${style('bold', r.g.group.id.padEnd(idW))}  ` +
       `${first.padEnd(intentW)}  ` +
       style('dim', r.stat.padStart(statW)) + ' ' + style('green', r.added.padStart(addW)) + ' ' + style('red', r.removed.padStart(remW)),
       ...rest.map((l) => ' '.repeat(intentCol) + l),
     )
+    if (r.stale) {
+      out.push(' '.repeat(intentCol) + style('red', `⚠ ${r.stale} of ${r.g.hunks.length} hunk(s) changed or gone since glossing`))
+    }
   }
   if (un.count && !only) {
     out.push(`  ${style(['bold', 'red'], 'unannotated'.padEnd(11))}  ${style('red', `${un.count} hunk(s) not in any group: ${gloss.unannotated.map((h) => h.id).join(', ')}`)}`)
   }
 
-  if (a.risks?.length) {
-    out.push('', style('bold', 'Risks'))
-    for (const risk of a.risks) out.push(...field('•', risk))
-  }
+  out.push(...risksBlock(gloss.note))
   const alts = a.alternatives?.length ?? 0
   out.push(
     '',
