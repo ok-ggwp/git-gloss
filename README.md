@@ -37,7 +37,9 @@ In each repo you use it in, run `git gloss init`. Share glosses with `git push o
 
 ## Agent review in a sandbox
 
-`git gloss review | claude -p` gives the reviewer only what it reads. `scripts/agent-review.sh [<commit>]` instead runs Claude Code in a disposable clone of the repo (no remote, deleted afterwards), allowed to write scratch tests and repos there and run them, and asks it to mark each finding as verified or read-only. Its file tools are limited to the sandbox and it cannot push, but code it runs with `node` or `npm test` runs as you and is not confined, so only use it where you'd let an agent run code.
+`git gloss review | claude -p` gives the reviewer only what it reads. `scripts/agent-review.sh [<commit>]` instead runs Claude Code in a disposable clone of the repo, where it may write scratch tests and repos and run them, and asks it to mark each finding as verified or read-only.
+
+Its shell commands run in Claude Code's OS sandbox (bubblewrap on Linux; the run fails rather than run unsandboxed): writes only inside the sandbox directory, no access to your home directory, no network. The file tools are limited to the sandbox too. Only your user-level Claude Code settings load, and the reviewed commit's `CLAUDE.md`, `.claude/` and `.mcp.json` are removed from the checkout so the commit can't instruct or configure its own reviewer. Paths outside your home directory (such as `/etc`) stay readable.
 
 ## HTML view
 
