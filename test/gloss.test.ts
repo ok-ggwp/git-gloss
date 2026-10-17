@@ -219,7 +219,7 @@ test('notes joined by a squash, or from a newer version, get specific errors', (
     execFileSync('git', ['notes', '--ref', 'refs/notes/gloss', 'add', '-f', '-m', body], { cwd: dir })
   note('{"gloss": 1}\n\n{"gloss": 1}')
   assert.match(gloss(dir, ['show']).err, /several glosses joined together/)
-  note('{"gloss": 2, "future": true}')
+  note('{"gloss": 3, "future": true}')
   let r = gloss(dir, ['show'])
   assert.match(r.err, /newer git-gloss/)
   r = gloss(dir, ['add'], annotation([retryCore, config]))
@@ -532,4 +532,42 @@ test('html splits a hunk between groups by line', () => {
   assert.equal(byId.fix.hunks[0].ref, 'h1:1-2')
   assert.deepEqual(byId.fix.hunks[0].alsoIn, ['tail'])
   assert.ok(byId.fix.hunks[0].lines.some((l: { kind: string }) => l.kind === 'gap'))
+})
+
+test('splitting a large new file stays fast', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
+  g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
+  writeFileSync(join(dir, 'big.txt'), Array.from({ length: 20000 }, (_, i) => `line ${i}`).join('\n') + '\n')
+  g('add', '.'); g('commit', '-qm', 'big')
+  const start = Date.now()
+  const r = gloss(dir, ['add'], annotation([{ ...retryCore, hunks: ['h1:1-10000'] }, { ...config, hunks: ['h1:10001-20000'] }]))
+  assert.equal(r.code, 0, r.err)
+  assert.equal(gloss(dir, ['show']).code, 0)
+  assert.ok(Date.now() - start < 10000, `took ${Date.now() - start}ms (was ~66s before caching)`)
+})
+
+test('oversized ranges are rejected by add and clamped when read from a note', () => {
+  const dir = splitRepo()
+  let r = gloss(dir, ['add', '--dry-run'], annotation([fix, { ...tail, hunks: ['h1:3-99999999999'] }]))
+  assert.equal(r.code, 1)
+  assert.match(r.err, /out of range/)
+  assert.doesNotMatch(r.err, /RangeError/)
+
+  // A hand-edited or fetched note with a huge range must not crash the views.
+  gloss(dir, ['add'], annotation([fix, tail]))
+  const note = JSON.parse(execFileSync('git', ['notes', '--ref', 'refs/notes/gloss', 'show'], { cwd: dir, encoding: 'utf8' }))
+  assert.equal(note.gloss, 2, 'notes that use ranges are marked format 2')
+  note.annotation.groups[1].hunks = ['h1:3-200000000']
+  execFileSync('git', ['notes', '--ref', 'refs/notes/gloss', 'add', '-f', '-m', JSON.stringify(note)], { cwd: dir })
+  r = gloss(dir, ['show', '-g', 'tail'])
+  assert.equal(r.code, 0, r.err)
+  assert.match(r.out, /h1:3-5/)
+})
+
+test('notes without ranges stay format 1', () => {
+  const dir = repo()
+  gloss(dir, ['add'], annotation([retryCore, config]))
+  const note = JSON.parse(execFileSync('git', ['notes', '--ref', 'refs/notes/gloss', 'show'], { cwd: dir, encoding: 'utf8' }))
+  assert.equal(note.gloss, 1)
 })

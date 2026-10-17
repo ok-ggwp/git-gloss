@@ -1,7 +1,7 @@
 import { commitDiff, commitSubject, readNote } from './git.ts'
 import { parseDiff, type Hunk } from './diff.ts'
 import type { GlossNote, Group, HunkLocation } from './schema.ts'
-import { selections, uncovered, type Claim, type Uncovered } from './selection.ts'
+import { changedCount, selections, uncovered, type Claim, type Uncovered } from './selection.ts'
 
 // ok: the commit's diff still has this hunk, unchanged.
 // changed: same location, different content (e.g. the note was carried onto an amended commit).
@@ -75,7 +75,7 @@ export function loadGloss(sha: string): LoadedGloss | null {
 
   const groups = note.annotation.groups.map((group) => ({
     group,
-    hunks: [...selections(group.hunks)].map(([id, lines]): GroupHunk => ({
+    hunks: [...selections(group.hunks, (id) => { const c = resolved.get(id)?.current; return c ? changedCount(c) : undefined })].map(([id, lines]): GroupHunk => ({
       ...(resolved.get(id) ?? { id, stored: null, current: null, status: 'missing' }),
       lines,
     })),

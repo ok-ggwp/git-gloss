@@ -86,8 +86,11 @@ export type HunkLocation = {
 
 // What is actually stored in the git note: the annotation plus where each hunk
 // was, so `why` can map a blamed line back to a group without re-diffing.
+// Format 2 marks notes that use line ranges ("h3:2-5"), so versions that only
+// understand whole-hunk references report "written by a newer git-gloss"
+// instead of silently treating ranged groups as missing.
 export type GlossNote = {
-  gloss: 1
+  gloss: 1 | 2
   commit: string
   created_at: string
   annotation: Annotation

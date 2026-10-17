@@ -44,9 +44,20 @@ export type BodyLine = {
 
 const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/
 
+// Parsed bodies are cached per hunk: callers ask for the same hunk's lines
+// many times (counts, slices, coverage), and re-parsing made splitting a large
+// hunk quadratic.
+const parsed = new WeakMap<Hunk, BodyLine[]>()
+
 // The hunk's lines after its @@ header, with changed-line numbers and file
 // line numbers. A header-only change (binary, rename) is all 'meta'.
 export function bodyLines(h: Hunk): BodyLine[] {
+  let lines = parsed.get(h)
+  if (!lines) parsed.set(h, (lines = parseBody(h)))
+  return lines
+}
+
+function parseBody(h: Hunk): BodyLine[] {
   const [header, ...body] = h.text.split('\n')
   const m = HUNK_HEADER.exec(header)
   if (!m) return h.text.split('\n').map((raw) => ({ raw, kind: 'meta', idx: null, oldNo: null, newNo: null }))
@@ -101,8 +112,11 @@ export function sliceStats(h: Hunk, selected: Set<number> | null): { added: numb
 }
 
 // One selection per hunk for a group's refs, in order of first mention. A
-// whole-hunk ref wins over ranges for the same hunk.
-export function selections(refs: string[]): Map<string, Set<number> | null> {
+// whole-hunk ref wins over ranges for the same hunk. Ranges are clamped to the
+// hunk's changed-line count, so an oversized range (from a typo, a stale or a
+// hand-edited note) can't build an enormous set; refs to unknown hunks keep
+// an empty selection.
+export function selections(refs: string[], changedOf: (hunk: string) => number | undefined): Map<string, Set<number> | null> {
   const out = new Map<string, Set<number> | null>()
   for (const ref of refs) {
     const r = parseRef(ref)
@@ -111,7 +125,8 @@ export function selections(refs: string[]): Map<string, Set<number> | null> {
     if (prev === null) continue
     if (!r.ranges) { out.set(r.hunk, null); continue }
     const set = prev ?? new Set<number>()
-    for (const [a, b] of r.ranges) for (let i = a; i <= b; i++) set.add(i)
+    const n = changedOf(r.hunk) ?? 0
+    for (const [a, b] of r.ranges) for (let i = Math.max(1, a); i <= Math.min(b, n); i++) set.add(i)
     out.set(r.hunk, set)
   }
   return out
@@ -130,7 +145,8 @@ export function uncovered(hunks: Hunk[], claims: Claim[]): Uncovered[] {
     if (mine.some((c) => c.lines === null)) continue
     const covered = new Set(mine.flatMap((c) => [...c.lines!]))
     const missing = new Set<number>()
-    for (let i = 1; i <= changedCount(h); i++) if (!covered.has(i)) missing.add(i)
+    const n = changedCount(h)
+    for (let i = 1; i <= n; i++) if (!covered.has(i)) missing.add(i)
     if (missing.size) out.push({ hunk: h, lines: missing })
   }
   return out

@@ -65,7 +65,7 @@ export function run(argv: string[]): number {
   }
 
   writeNote(sha, {
-    gloss: 1,
+    gloss: parsed.data.groups.some((g) => g.hunks.some((ref) => ref.includes(':'))) ? 2 : 1,
     commit: sha,
     created_at: new Date().toISOString(),
     annotation: parsed.data,

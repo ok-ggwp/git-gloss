@@ -21,12 +21,12 @@ export function validate(annotation: Annotation, hunks: Hunk[]): ValidationResul
       const h = byHunkId.get(r.hunk)
       if (!h) { errors.push(`group "${g.id}" references unknown hunk "${r.hunk}"`); continue }
       const n = changedCount(h)
-      for (const [a, b] of r.ranges ?? []) {
-        if (n === 0) errors.push(`group "${g.id}": ${r.hunk} has no changed lines to select; reference it whole`)
-        else if (a < 1 || b < a || b > n) errors.push(`group "${g.id}": "${ref}" is out of range; ${r.hunk} has changed lines 1-${n}`)
+      if (r.ranges && n === 0) errors.push(`group "${g.id}": ${r.hunk} has no changed lines to select; reference it whole`)
+      else if (r.ranges?.some(([a, b]) => a < 1 || b < a || b > n)) {
+        errors.push(`group "${g.id}": "${ref}" is out of range; ${r.hunk} has changed lines 1-${n}`)
       }
     }
-    for (const [id, lines] of selections(g.hunks)) {
+    for (const [id, lines] of selections(g.hunks, (id) => { const h = byHunkId.get(id); return h && changedCount(h) })) {
       const h = byHunkId.get(id)
       if (h) claims.push({ hunk: h, lines })
     }

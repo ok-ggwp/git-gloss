@@ -78,11 +78,11 @@ export function readNote(sha: string): GlossNote | null {
     }
     throw new GlossError(`${at} is not valid JSON; replace it with \`git gloss add --force\``)
   }
-  if (typeof data?.gloss === 'number' && data.gloss > 1) {
+  if (typeof data?.gloss === 'number' && data.gloss > 2) {
     throw new GlossError(`${at} was written by a newer git-gloss (format ${data.gloss}); upgrade to read it`)
   }
   const annotation = Annotation.safeParse(data?.annotation)
-  if (data?.gloss !== 1 || !Array.isArray(data.hunks) || !annotation.success) {
+  if ((data?.gloss !== 1 && data?.gloss !== 2) || !Array.isArray(data.hunks) || !annotation.success) {
     throw new GlossError(`${at} is malformed; replace it with \`git gloss add --force\``)
   }
   return { ...(data as GlossNote), annotation: annotation.data }
