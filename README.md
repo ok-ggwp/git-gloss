@@ -46,4 +46,5 @@ All gloss and diff text is rendered as text, and a Content-Security-Policy with 
 - Squash merges drop notes. Re-gloss the squashed commit.
 - A gloss records each hunk's location and a hash of its content. If a commit is amended or rebased so its diff changes, `show`, `review` and `why` flag the gloss as stale instead of showing it against the wrong code.
 - Merge commits are diffed against their first parent.
-- `npm link` works because Node only strips types outside `node_modules`. Publishing to npm will need a build step.
+- `npm link` works because Node only strips types outside `node_modules`. Publishing to npm will need a build step, which must also copy `src/html/client.js` and `src/html/style.css`.
+- `git gloss html` writes to `~/.cache/git-gloss/<commit>.html` by default (or `$XDG_CACHE_HOME`). The page is a snapshot; regenerate it after re-glossing.

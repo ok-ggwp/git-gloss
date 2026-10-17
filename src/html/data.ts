@@ -27,6 +27,7 @@ export type PageGroup = {
   evidence?: string
   notes?: string
   stale: number
+  total: number
   added: number
   removed: number
   // Lines changed, with hunks shared between groups split evenly among them,
@@ -69,6 +70,23 @@ export function diffLines(text: string): PageLine[] {
   return lines
 }
 
+// A glossed hunk that is no longer in the commit: shown as a placeholder so
+// the reader can see what the gloss refers to, rather than it vanishing.
+function missingHunk(h: ResolvedHunk): PageHunk {
+  const s = h.stored
+  return {
+    id: h.id,
+    file: s?.file ?? '?',
+    oldFile: s?.oldFile && s.oldFile !== s.file ? s.oldFile : null,
+    range: s && (s.newLines || s.oldLines) ? `-${s.oldStart},${s.oldLines} +${s.newStart},${s.newLines}` : '',
+    status: 'missing',
+    added: 0,
+    removed: 0,
+    alsoIn: [],
+    lines: [],
+  }
+}
+
 function pageHunk(h: Hunk, status: PageHunk['status'], alsoIn: string[]): PageHunk {
   return {
     id: h.id,
@@ -104,11 +122,13 @@ export function buildPageData(gloss: LoadedGloss): PageData {
         evidence: g.evidence,
         notes: g.notes,
         stale: hunks.filter((h) => h.status !== 'ok').length,
+        total: hunks.length,
         added: live.reduce((n, h) => n + h.current.added, 0),
         removed: live.reduce((n, h) => n + h.current.removed, 0),
         weight: live.reduce((n, h) => n + (h.current.added + h.current.removed) / (owners.get(h.current)?.length ?? 1), 0),
-        hunks: live.map((h) =>
-          pageHunk(h.current, h.status as PageHunk['status'], (owners.get(h.current) ?? []).filter((id) => id !== g.id))),
+        hunks: hunks.map((h) => h.current
+          ? pageHunk(h.current, h.status, (owners.get(h.current) ?? []).filter((id) => id !== g.id))
+          : missingHunk(h)),
       }
     })
     .sort((x, y) => NECESSITY.indexOf(x.necessity) - NECESSITY.indexOf(y.necessity))

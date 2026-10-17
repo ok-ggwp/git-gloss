@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { resolveCommit } from '../git.ts'
@@ -32,12 +32,12 @@ export function run(argv: string[]): number {
     return 1
   }
 
-  // Default to a fresh private directory: a fixed path under /tmp could be
-  // pre-created as a symlink by another user on a shared machine.
-  const file = values.output
-    ? resolve(values.output)
-    : join(mkdtempSync(join(tmpdir(), 'git-gloss-')), `${sha.slice(0, 10)}.html`)
-  mkdirSync(dirname(file), { recursive: true })
+  // Default to the user's cache directory: one file per commit, overwritten on
+  // regeneration, and private to the user (a fixed /tmp path could be
+  // pre-created as a symlink by someone else; mkdtemp leaked a dir per run).
+  const cache = process.env.XDG_CACHE_HOME || join(homedir(), '.cache')
+  const file = values.output ? resolve(values.output) : join(cache, 'git-gloss', `${sha.slice(0, 10)}.html`)
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 })
   writeFileSync(file, renderPage(buildPageData(gloss)))
   console.log(file)
   if (values.open) openInBrowser(file)

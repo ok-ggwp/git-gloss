@@ -17,7 +17,7 @@ export function renderPage(data: PageData): string {
   // The page only runs our own inline script. If escaping ever failed, an
   // injected script would lack the nonce and the CSP would block it.
   const nonce = randomBytes(16).toString('base64')
-  const csp = `default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; img-src data:`
+  const csp = `default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'`
   return `<!doctype html>
 <html lang="en">
 <head>

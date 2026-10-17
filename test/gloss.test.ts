@@ -389,17 +389,58 @@ test('html writes a self-contained page with the gloss data', () => {
   assert.equal(cfg.weight, 0.5, 'a hunk shared by two groups counts half to each')
 })
 
-test('html cannot be broken out of by gloss or diff content', () => {
-  const dir = repo()
-  const evil = '</script><script>alert(1)</script><img src=x onerror=alert(2)>'
-  gloss(dir, ['add'], annotation([{ ...retryCore, intent: evil, notes: evil }, config]))
+const EVIL = '</script><script>document.title="pwned"</script><img src=x onerror=document.title="pwned">'
+
+// A commit whose subject, file content and gloss text are all hostile.
+function hostileRepo(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
+  g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
+  writeFileSync(join(dir, 'page.html'), EVIL + '\n')
+  g('add', '.'); g('commit', '-qm', EVIL)
+  gloss(dir, ['add'], JSON.stringify({ task: EVIL, groups: [{ ...retryCore, intent: EVIL, notes: EVIL, hunks: ['h1'] }] }))
+  return dir
+}
+
+test('html cannot be broken out of by gloss text, diff content or the commit subject', () => {
+  const dir = hostileRepo()
   const { html, data } = htmlPage(dir)
-  assert.ok(!html.includes(evil), 'raw payload never appears in the page')
-  assert.equal(data.groups[0].intent, evil, 'it round-trips as data')
+  assert.equal((html.match(/<script/g) ?? []).length, 2, 'only the data block and our own script')
+  assert.doesNotMatch(html, /<img/)
+  assert.match(html, /<title>gloss [0-9a-f]{7}: &lt;\/script&gt;/, 'subject is escaped in the title')
+  assert.equal(data.groups[0].intent, EVIL, 'payloads round-trip as data')
+  assert.equal(data.groups[0].hunks[0].lines[1].text, EVIL)
   const nonce = /script-src 'nonce-([^']+)'/.exec(html)?.[1]
   assert.ok(nonce, 'CSP restricts scripts to a nonce')
   const scripts = [...html.matchAll(/<script(?![^>]*application\/json)([^>]*)>/g)]
   assert.ok(scripts.length > 0 && scripts.every((m) => m[1].includes(`nonce="${nonce}"`)), 'every executable script carries the nonce')
+})
+
+const chromium = ['chromium', 'google-chrome-stable', 'google-chrome']
+  .find((b) => spawnSync('which', [b]).status === 0)
+
+test('a hostile gloss renders as inert text in a real browser', { skip: !chromium && 'no Chromium found' }, () => {
+  const dir = hostileRepo()
+  const out = join(dir, 'view.html')
+  gloss(dir, ['html', '-o', out])
+  const dom = execFileSync(chromium!, ['--headless=new', '--disable-gpu', '--no-sandbox', '--dump-dom', `file://${out}`], {
+    encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 60000,
+  })
+  assert.doesNotMatch(dom, /<title>pwned/)
+  assert.doesNotMatch(dom, /<img/)
+  assert.match(dom, /class="intent">&lt;\/script&gt;/, 'the page rendered and shows the payload as text')
+})
+
+test('html shows missing hunks as placeholders and counts stale hunks against the gloss', () => {
+  const dir = repo()
+  gloss(dir, ['init'])
+  gloss(dir, ['add'], annotation([{ ...retryCore, hunks: ['h1', 'h2'] }]))
+  execFileSync('git', ['rm', '-q', 'config.js'], { cwd: dir })
+  execFileSync('git', ['commit', '-q', '--amend', '--no-edit'], { cwd: dir })
+  const g = htmlPage(dir).data.groups[0]
+  assert.equal(g.stale, 1)
+  assert.equal(g.total, 2)
+  assert.deepEqual(g.hunks.map((h: { id: string; status: string }) => [h.id, h.status]), [['h1', 'ok'], ['h2', 'missing']])
 })
 
 test('the html client script is valid JavaScript', () => {
