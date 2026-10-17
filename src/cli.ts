@@ -1,5 +1,6 @@
 import { GlossError } from './git.ts'
 import * as add from './commands/add.ts'
+import * as html from './commands/html.ts'
 import * as hunks from './commands/hunks.ts'
 import * as init from './commands/init.ts'
 import * as review from './commands/review.ts'
@@ -8,7 +9,7 @@ import * as show from './commands/show.ts'
 import * as why from './commands/why.ts'
 
 const COMMANDS: Record<string, { usage: string; run: (argv: string[]) => number }> = {
-  init, hunks, add, show, why, review, schema,
+  init, hunks, add, show, html, why, review, schema,
 }
 
 function help(): string {

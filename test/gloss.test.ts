@@ -1,11 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseDiff } from '../src/diff.ts'
 import { matchHunks } from '../src/loader.ts'
+import { diffLines } from '../src/html/data.ts'
 
 const BIN = join(import.meta.dirname, '..', 'bin', 'git-gloss.js')
 
@@ -359,6 +360,51 @@ test('pager.gloss overrides or disables the pager', () => {
   assert.equal(pager(), 'null')
   execFileSync('git', ['config', 'pager.gloss', 'more'], { cwd: dir })
   assert.equal(pager(), '"more"')
+})
+
+test('diffLines numbers old and new lines', () => {
+  const lines = diffLines(['@@ -10,3 +10,3 @@ fn', ' a', '-b', '+c', '\\ No newline at end of file', ' d'].join('\n'))
+  assert.deepEqual(lines.map((l) => [l.kind, l.old, l.new]), [
+    ['meta', null, null], ['ctx', 10, 10], ['del', 11, null], ['add', null, 11], ['meta', null, null], ['ctx', 12, 12],
+  ])
+})
+
+function htmlPage(dir: string): { code: number | null; html: string; data: any } {
+  const out = join(dir, 'view.html')
+  const r = gloss(dir, ['html', '-o', out])
+  assert.equal(r.code, 0, r.err)
+  const html = readFileSync(out, 'utf8')
+  const json = /<script type="application\/json" id="gloss-data">(.*?)<\/script>/s.exec(html)![1]
+  return { code: r.code, html, data: JSON.parse(json) }
+}
+
+test('html writes a self-contained page with the gloss data', () => {
+  const dir = repo()
+  gloss(dir, ['add'], annotation([retryCore, config, { ...config, id: 'shared', necessity: 'incidental', serves: 'task' }]))
+  const { html, data } = htmlPage(dir)
+  assert.doesNotMatch(html, /<script[^>]+src=|<link[^>]+href=/, 'no external resources')
+  assert.deepEqual(data.groups.map((g: { id: string }) => g.id), ['retry-core', 'shared', 'config'], 'sorted by necessity')
+  const cfg = data.groups.find((g: { id: string }) => g.id === 'config')
+  assert.deepEqual(cfg.hunks[0].alsoIn, ['shared'])
+  assert.equal(cfg.weight, 0.5, 'a hunk shared by two groups counts half to each')
+})
+
+test('html cannot be broken out of by gloss or diff content', () => {
+  const dir = repo()
+  const evil = '</script><script>alert(1)</script><img src=x onerror=alert(2)>'
+  gloss(dir, ['add'], annotation([{ ...retryCore, intent: evil, notes: evil }, config]))
+  const { html, data } = htmlPage(dir)
+  assert.ok(!html.includes(evil), 'raw payload never appears in the page')
+  assert.equal(data.groups[0].intent, evil, 'it round-trips as data')
+  const nonce = /script-src 'nonce-([^']+)'/.exec(html)?.[1]
+  assert.ok(nonce, 'CSP restricts scripts to a nonce')
+  const scripts = [...html.matchAll(/<script(?![^>]*application\/json)([^>]*)>/g)]
+  assert.ok(scripts.length > 0 && scripts.every((m) => m[1].includes(`nonce="${nonce}"`)), 'every executable script carries the nonce')
+})
+
+test('the html client script is valid JavaScript', () => {
+  const r = spawnSync(process.execPath, ['--check', join(import.meta.dirname, '..', 'src', 'html', 'client.js')], { encoding: 'utf8' })
+  assert.equal(r.status, 0, r.stderr)
 })
 
 test('review prints a prompt containing the annotated diff', () => {
