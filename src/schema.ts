@@ -1,0 +1,88 @@
+import { z } from 'zod'
+
+export const NECESSITY = [
+  'required',
+  'supporting',
+  'mechanical',
+  'incidental',
+  'defensive',
+  'speculative',
+] as const
+
+export type Necessity = (typeof NECESSITY)[number]
+
+export const NECESSITY_HELP: Record<Necessity, string> = {
+  required: 'The task cannot be done without this change',
+  supporting: 'Needed only because another group needs it (name that group in `serves`)',
+  mechanical: 'Follow-on edits with no design content: renames, imports, formatting, lockfiles',
+  incidental: 'Drive-by cleanup or refactor the task did not ask for',
+  defensive: 'Guards edge cases or failures nobody asked about',
+  speculative: 'Added because it might be useful later',
+}
+
+export const Group = z.object({
+  id: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]*$/, 'use lowercase kebab-case')
+    .describe('Short unique id for this group, e.g. "retry-core"'),
+  intent: z.string().min(1).describe('What this group of changes does, in one sentence'),
+  necessity: z.enum(NECESSITY).describe('How necessary the change is to the task'),
+  serves: z
+    .string()
+    .describe('"task" if it serves the task directly, otherwise the id of the group it supports'),
+  removal_impact: z
+    .string()
+    .min(1)
+    .describe('What concretely breaks or is lost if this group is removed'),
+  evidence: z
+    .string()
+    .optional()
+    .describe('A test, requirement or task line that demonstrates the need'),
+  hunks: z
+    .array(z.string())
+    .min(1)
+    .describe('Hunk ids from `git gloss hunks` that belong to this group'),
+  notes: z.string().optional(),
+})
+
+export const Annotation = z.object({
+  version: z.literal(1).default(1),
+  task: z.string().min(1).describe('The task or request these changes were made for'),
+  summary: z.string().optional().describe('One or two sentences on the overall change'),
+  groups: z.array(Group).min(1),
+  alternatives: z
+    .array(z.object({ option: z.string(), rejected_because: z.string() }))
+    .optional()
+    .describe('Approaches considered and why they were not taken'),
+  risks: z.array(z.string()).optional().describe('Known risks or open questions'),
+  author: z
+    .object({
+      agent: z.string().optional(),
+      model: z.string().optional(),
+      session: z.string().optional(),
+    })
+    .optional(),
+})
+
+export type Group = z.infer<typeof Group>
+export type Annotation = z.infer<typeof Annotation>
+
+export type HunkLocation = {
+  id: string
+  file: string
+  oldFile: string | null
+  oldStart: number
+  oldLines: number
+  newStart: number
+  newLines: number
+}
+
+// What is actually stored in the git note: the annotation plus where each hunk
+// was, so `why` can map a blamed line back to a group without re-diffing.
+export type GlossNote = {
+  gloss: 1
+  commit: string
+  created_at: string
+  annotation: Annotation
+  hunks: HunkLocation[]
+}

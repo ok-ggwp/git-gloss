@@ -1,0 +1,23 @@
+{
+  "name": "git-gloss",
+  "version": "0.1.0",
+  "description": "Annotate agent-written diffs with intent and necessity, stored in git notes",
+  "type": "module",
+  "bin": {
+    "git-gloss": "bin/git-gloss.js"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "scripts": {
+    "test": "node --test 'test/**/*.test.ts'",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}
