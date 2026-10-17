@@ -1,5 +1,6 @@
 import { parseArgs } from 'node:util'
-import { blameLine, commitSubject, readNote } from '../git.ts'
+import { blameLine, commitSubject } from '../git.ts'
+import { loadGloss } from '../loader.ts'
 import type { Group } from '../schema.ts'
 import { groupHeader, style } from '../render.ts'
 
@@ -24,17 +25,20 @@ export function run(argv: string[]): number {
     return 0
   }
 
-  const note = readNote(blame.commit)
-  const subject = commitSubject(blame.commit)
-  const hunk = note?.hunks.find(
-    (h) => h.file === blame.origFile && blame.origLine >= h.newStart && blame.origLine < h.newStart + h.newLines,
-  )
-  const groups = note && hunk ? note.annotation.groups.filter((g) => g.hunks.includes(hunk.id)) : []
+  const gloss = loadGloss(blame.commit)
+  const subject = gloss?.subject ?? commitSubject(blame.commit)
+  // Blame reports the line's position in the commit that introduced it, which
+  // is the new side of that commit's diff.
+  const groups = (gloss?.groups ?? [])
+    .filter((g) => g.hunks.some(({ current: h }) =>
+      h && h.file === blame.origFile && blame.origLine >= h.newStart && blame.origLine < h.newStart + h.newLines))
+    .map((g) => g.group)
 
   // Follow `serves` links up to the task so the reader sees the whole chain.
-  const byId = new Map(note?.annotation.groups.map((g) => [g.id, g]) ?? [])
+  // `add` rejects cycles; the seen set guards glosses written before it did.
+  const byId = new Map(gloss?.note.annotation.groups.map((g) => [g.id, g]) ?? [])
   const chain = (g: Group): Group[] => {
-    const seen = new Set<string>()
+    const seen = new Set([g.id])
     const out: Group[] = []
     let cur = byId.get(g.serves)
     while (cur && !seen.has(cur.id)) { seen.add(cur.id); out.push(cur); cur = byId.get(cur.serves) }
@@ -46,18 +50,21 @@ export function run(argv: string[]): number {
       file, line: Number(lineStr),
       commit: blame.commit, subject,
       origFile: blame.origFile, origLine: blame.origLine,
-      task: note?.annotation.task ?? null,
+      task: gloss?.note.annotation.task ?? null,
+      stale: gloss?.stale ?? false,
       groups: groups.map((g) => ({ ...g, serves_chain: chain(g).map((c) => c.id) })),
-      risks: note?.annotation.risks ?? [],
+      risks: gloss?.note.annotation.risks ?? [],
     }, null, 2))
     return 0
   }
 
   const out = [`${style('yellow', blame.commit.slice(0, 10))} ${subject}`]
-  if (!note) {
+  if (!gloss) {
     out.push(style('dim', 'no gloss for this commit'))
   } else {
-    out.push(`${style('dim', 'task:')} ${note.annotation.task}`, '')
+    out.push(`${style('dim', 'task:')} ${gloss.note.annotation.task}`)
+    for (const w of gloss.warnings) out.push(style(['bold', 'red'], `⚠ ${w}`))
+    out.push('')
     if (!groups.length) out.push(style('dim', `line ${blame.origLine} of ${blame.origFile} is not in an annotated hunk`))
     for (const g of groups) {
       out.push(...groupHeader(g))

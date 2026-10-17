@@ -1,10 +1,13 @@
 import { execFileSync } from 'node:child_process'
-import type { GlossNote } from './schema.ts'
+import { Annotation, type GlossNote } from './schema.ts'
 
 export const NOTES_REF = 'refs/notes/gloss'
+export const REMOTE_NOTES_REF = 'refs/notes/remotes/origin/gloss'
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 
-export class GitError extends Error {}
+// Errors whose message is fit to show the user without a stack trace.
+export class GlossError extends Error {}
+export class GitError extends GlossError {}
 
 export function git(args: string[], input?: string): string {
   try {
@@ -39,20 +42,38 @@ export function commitSubject(sha: string): string {
 }
 
 // Diff of a commit against its first parent (or the empty tree for a root
-// commit), with prefixes and colour pinned so user config can't break parsing.
+// commit). Every option that changes which hunks git produces, or their order,
+// is pinned so hunk ids are the same regardless of the user's diff config.
 export function commitDiff(sha: string): string {
   const parent = gitTry(['rev-parse', '--verify', '--quiet', `${sha}^1`])?.trim() || EMPTY_TREE
   return git([
     '-c', 'core.quotePath=false',
     'diff', '--no-color', '--no-ext-diff', '--no-textconv', '--find-renames',
     '--src-prefix=a/', '--dst-prefix=b/', '-U3',
+    '-O/dev/null', '--diff-algorithm=myers', '--indent-heuristic',
+    '--inter-hunk-context=0', '--no-relative',
     parent, sha,
   ])
 }
 
 export function readNote(sha: string): GlossNote | null {
-  const raw = gitTry(['notes', '--ref', NOTES_REF, 'show', sha])
-  return raw ? (JSON.parse(raw) as GlossNote) : null
+  let raw: string
+  try {
+    raw = git(['notes', '--ref', NOTES_REF, 'show', sha])
+  } catch (err) {
+    if (/no note found/i.test((err as Error).message)) return null
+    throw err
+  }
+  const broken = `the gloss on ${sha.slice(0, 10)} is malformed; replace it with \`git gloss add --force\``
+  let data: Partial<GlossNote>
+  try {
+    data = JSON.parse(raw)
+  } catch {
+    throw new GlossError(broken)
+  }
+  const annotation = Annotation.safeParse(data?.annotation)
+  if (data?.gloss !== 1 || !Array.isArray(data.hunks) || !annotation.success) throw new GlossError(broken)
+  return { ...(data as GlossNote), annotation: annotation.data }
 }
 
 export function writeNote(sha: string, note: GlossNote): void {

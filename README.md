@@ -2,12 +2,12 @@
 
 Agents write a lot of code, and reviewers can't easily tell what each part is for or whether it was needed. `git-gloss` lets the author of a commit (usually the agent that wrote it) attach a **gloss**: the diff grouped by intent, with each group graded for necessity and saying what breaks without it.
 
-Glosses are stored in git notes (`refs/notes/gloss`), so they don't touch history and they travel with the repository.
+Glosses are stored in git notes (`refs/notes/gloss`), so they don't touch history. Git doesn't push or fetch notes by default; `git gloss init` and `git push origin refs/notes/gloss` set that up.
 
 ## Commands
 
 ```
-git gloss init                        follow amends/rebases; fetch glosses from origin
+git gloss init                        follow amends/rebases; fetch origin's glosses
 git gloss hunks [<commit>]            list hunks with the ids annotations refer to
 git gloss add [<commit>] -f a.json    attach an annotation (validated against the diff)
 git gloss show [<commit>]             show the diff grouped by intent
@@ -30,10 +30,11 @@ npm link                      # puts git-gloss on PATH, so `git gloss` works
 ln -s "$PWD/skills/gloss" ~/.claude/skills/gloss   # teach Claude Code to write glosses
 ```
 
-In each repo you use it in, run `git gloss init`, and share glosses with `git push origin refs/notes/gloss`.
+In each repo you use it in, run `git gloss init`. Share glosses with `git push origin refs/notes/gloss`. `git fetch` then stores origin's glosses in `refs/notes/remotes/origin/gloss`; merge them into yours with `git notes --ref refs/notes/gloss merge refs/notes/remotes/origin/gloss`.
 
 ## Caveats
 
 - Squash merges drop notes. Re-gloss the squashed commit.
+- A gloss records each hunk's location and a hash of its content. If a commit is amended or rebased so its diff changes, `show`, `review` and `why` flag the gloss as stale instead of showing it against the wrong code.
 - Merge commits are diffed against their first parent.
 - `npm link` works because Node only strips types outside `node_modules`. Publishing to npm will need a build step.

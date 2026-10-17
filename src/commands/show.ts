@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util'
-import { commitDiff, commitSubject, readNote, resolveCommit } from '../git.ts'
-import { parseDiff } from '../diff.ts'
+import { resolveCommit } from '../git.ts'
+import { loadGloss } from '../loader.ts'
 import { NECESSITY, type Necessity } from '../schema.ts'
 import { colorDiff, groupHeader, hunkLabel, necessityTag, noteFooter, style } from '../render.ts'
 
@@ -13,8 +13,8 @@ export function run(argv: string[]): number {
     options: { only: { type: 'string' }, 'no-diff': { type: 'boolean' } },
   })
   const sha = resolveCommit(positionals[0] ?? 'HEAD')
-  const note = readNote(sha)
-  if (!note) {
+  const gloss = loadGloss(sha)
+  if (!gloss) {
     console.error(`${sha.slice(0, 10)} has no gloss (annotate it with \`git gloss add\`)`)
     return 1
   }
@@ -26,40 +26,38 @@ export function run(argv: string[]): number {
     return 2
   }
 
-  const hunks = new Map(parseDiff(commitDiff(sha)).map((h) => [h.id, h]))
-  const a = note.annotation
+  const a = gloss.note.annotation
   const out: string[] = [
-    `${style('yellow', sha.slice(0, 10))} ${commitSubject(sha)}`,
+    `${style('yellow', sha.slice(0, 10))} ${gloss.subject}`,
     `${style('dim', 'task:')} ${a.task}`,
   ]
   if (a.summary) out.push(`${style('dim', 'summary:')} ${a.summary}`)
+  for (const w of gloss.warnings) out.push(style(['bold', 'red'], `⚠ ${w}`))
 
   const tally = NECESSITY.map((n) => [n, a.groups.filter((g) => g.necessity === n).length] as const)
     .filter(([, c]) => c > 0)
     .map(([n, c]) => `${necessityTag(n)} ${c}`)
   out.push(`${style('dim', 'groups:')} ${tally.join('  ')}`, '')
 
-  for (const g of a.groups) {
-    if (only && !only.includes(g.necessity)) continue
-    out.push(...groupHeader(g))
+  for (const { group, hunks } of gloss.groups) {
+    if (only && !only.includes(group.necessity)) continue
+    out.push(...groupHeader(group))
     if (!values['no-diff']) {
-      for (const id of g.hunks) {
-        const h = hunks.get(id)
-        if (!h) { out.push(style('red', `  (hunk ${id} not found in current diff)`)); continue }
-        out.push('', '  ' + hunkLabel(h), colorDiff(h.text, '    '))
+      for (const h of hunks) {
+        if (!h.current) { out.push('', style('red', `  ${h.id}: no longer in this commit's diff`)); continue }
+        if (h.status === 'changed') out.push('', style('red', `  ${h.id}: content changed since it was glossed`))
+        out.push('', '  ' + hunkLabel(h.current), colorDiff(h.current.text, '    '))
       }
     }
     out.push('')
   }
 
-  const covered = new Set(a.groups.flatMap((g) => g.hunks))
-  const uncovered = [...hunks.values()].filter((h) => !covered.has(h.id))
-  if (uncovered.length && !only) {
+  if (gloss.unannotated.length && !only) {
     out.push(style(['bold', 'red'], '■ Unannotated hunks'))
-    for (const h of uncovered) out.push('  ' + hunkLabel(h))
+    for (const h of gloss.unannotated) out.push('  ' + hunkLabel(h))
   }
 
-  out.push(...noteFooter(note))
+  out.push(...noteFooter(gloss.note))
   console.log(out.join('\n'))
   return 0
 }

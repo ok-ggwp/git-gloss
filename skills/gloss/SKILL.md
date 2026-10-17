@@ -17,6 +17,8 @@ A gloss records, for each part of a commit, what it does, how necessary it is, a
    Fix any validation errors it reports and rerun. Use `--force` only to replace your own earlier gloss.
 5. Run `git gloss show <commit> --no-diff` and check that it reads well to someone who was not in the session.
 
+If you amend or rebase a glossed commit, `show` will report the gloss as stale. Re-gloss it with `--force`.
+
 ## Grading necessity honestly
 
 Self-grading tends to call everything "required". Resist that. Use these categories:
@@ -29,6 +31,8 @@ Self-grading tends to call everything "required". Resist that. Use these categor
 - `speculative`: added because it might be useful later.
 
 Test each group with "what concretely breaks if this is removed?" and write the answer in `removal_impact`. If the honest answer is "nothing the task needs", the group is `incidental`, `defensive` or `speculative`. Saying so is the useful outcome; it tells the reviewer what can be dropped.
+
+Tests are `supporting`, with `serves` set to the main group they verify. Groups they cover can cite them in `evidence`.
 
 Where you can, set `evidence` to a test that exercises the change or the line of the task that requires it.
 

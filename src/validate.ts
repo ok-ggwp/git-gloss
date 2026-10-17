@@ -28,6 +28,14 @@ export function validate(annotation: Annotation, hunks: Hunk[]): ValidationResul
     }
   }
 
+  const byId = new Map(annotation.groups.map((g) => [g.id, g]))
+  for (const g of annotation.groups) {
+    const seen = new Set([g.id])
+    let cur = byId.get(g.serves)
+    while (cur && !seen.has(cur.id)) { seen.add(cur.id); cur = byId.get(cur.serves) }
+    if (cur?.id === g.id) errors.push(`group "${g.id}" is in a serves cycle; every chain must end at "task"`)
+  }
+
   const uncovered = hunks.map((h) => h.id).filter((id) => !covered.has(id))
   return { errors, uncovered }
 }

@@ -1,6 +1,8 @@
+import { createHash } from 'node:crypto'
 import type { HunkLocation } from './schema.ts'
 
 export type Hunk = HunkLocation & {
+  hash: string
   // Diff text for display: the @@ header and body, or the file header lines for
   // changes with no textual hunks (binary, pure rename, mode change).
   text: string
@@ -40,6 +42,7 @@ export function parseDiff(diff: string): Hunk[] {
         oldFile: file.oldFile,
         oldStart: 0, oldLines: 0, newStart: 0, newLines: 0,
         text: file.meta.join('\n'),
+        hash: '',
         added: 0, removed: 0,
       })
     }
@@ -90,16 +93,25 @@ export function parseDiff(diff: string): Hunk[] {
       oldFile: file.oldFile,
       oldStart, oldLines, newStart, newLines,
       text: body.join('\n'),
+      hash: '',
       added, removed,
     })
   }
   flush()
 
-  hunks.forEach((h, n) => { h.id = `h${n + 1}` })
+  hunks.forEach((h, n) => {
+    h.id = `h${n + 1}`
+    // Hash only what the hunk changes, so a rebase that shifts line numbers or
+    // context lines doesn't make an otherwise identical hunk look different.
+    const body = h.text.startsWith('@@')
+      ? h.text.split('\n').slice(1).filter((l) => l[0] === '+' || l[0] === '-').join('\n')
+      : h.text
+    h.hash = createHash('sha256').update(h.file + '\0' + body).digest('hex').slice(0, 16)
+  })
   return hunks
 }
 
 export function location(h: Hunk): HunkLocation {
-  const { id, file, oldFile, oldStart, oldLines, newStart, newLines } = h
-  return { id, file, oldFile, oldStart, oldLines, newStart, newLines }
+  const { id, file, oldFile, oldStart, oldLines, newStart, newLines, hash } = h
+  return { id, file, oldFile, oldStart, oldLines, newStart, newLines, hash }
 }

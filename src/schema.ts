@@ -75,6 +75,10 @@ export type HunkLocation = {
   oldLines: number
   newStart: number
   newLines: number
+  // Hash of the hunk's added/removed lines, to find it again after a rebase
+  // and to detect a gloss carried onto a changed commit.
+  // Optional because glosses written before it existed don't have it.
+  hash?: string
 }
 
 // What is actually stored in the git note: the annotation plus where each hunk

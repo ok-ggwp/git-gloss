@@ -50,13 +50,13 @@ export function run(argv: string[]): number {
     return 1
   }
 
-  if (readNote(sha) && !values.force) {
-    console.error(`error: ${sha.slice(0, 10)} already has a gloss; pass --force to replace it`)
-    return 1
-  }
   if (values['dry-run']) {
     console.log(`ok: annotation is valid for ${sha.slice(0, 10)} (${parsed.data.groups.length} groups, ${hunks.length} hunks)`)
     return 0
+  }
+  if (!values.force && readNote(sha)) {
+    console.error(`error: ${sha.slice(0, 10)} already has a gloss; pass --force to replace it`)
+    return 1
   }
 
   writeNote(sha, {

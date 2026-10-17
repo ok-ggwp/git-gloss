@@ -1,4 +1,4 @@
-import { GitError } from './git.ts'
+import { GlossError } from './git.ts'
 import * as add from './commands/add.ts'
 import * as hunks from './commands/hunks.ts'
 import * as init from './commands/init.ts'
@@ -35,7 +35,7 @@ export async function main(argv: string[]): Promise<number> {
   try {
     return command.run(rest)
   } catch (err) {
-    if (err instanceof GitError || (err as { code?: string }).code?.startsWith('ERR_PARSE_ARGS')) {
+    if (err instanceof GlossError || (err as { code?: string }).code?.startsWith('ERR_PARSE_ARGS')) {
       console.error(`error: ${(err as Error).message}`)
       return 1
     }
