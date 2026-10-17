@@ -27,6 +27,7 @@ export type PageGroup = {
   id: string
   intent: string
   necessity: Necessity
+  // Always a list (normalised with servesOf), which the client relies on.
   serves: string[]
   removal_impact: string
   evidence?: string

@@ -77,7 +77,7 @@ export const servesOf = (g: Pick<Group, 'serves'>): string[] => (Array.isArray(g
 // so older readers only refuse notes that use something they can't read.
 export const NOTE_FORMAT = 3
 export function noteFormat(a: Annotation): 1 | 2 | 3 {
-  if (a.groups.some((g) => Array.isArray(g.serves))) return 3
+  if (a.groups.some((g) => servesOf(g).length > 1)) return 3
   if (a.groups.some((g) => g.hunks.some((ref) => ref.includes(':')))) return 2
   return 1
 }

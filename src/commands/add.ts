@@ -64,6 +64,10 @@ export function run(argv: string[]): number {
     return 1
   }
 
+  // Store a one-item serves list as a plain string: same meaning, and it keeps
+  // the note readable by versions without list support (format below 3).
+  for (const g of parsed.data.groups) if (Array.isArray(g.serves) && g.serves.length === 1) g.serves = g.serves[0]
+
   writeNote(sha, {
     gloss: noteFormat(parsed.data),
     commit: sha,

@@ -76,7 +76,8 @@ export function groupHeader(g: Group): string[] {
   const out = wrap(g.intent, termWidth() - prefix.length).map((l, i) =>
     (i === 0 ? `${style('bold', '■')} ${necessityTag(g.necessity)} ` : ' '.repeat(prefix.length)) + style('bold', l))
   out[out.length - 1] += ' ' + style('dim', `(${g.id})`)
-  if (servesOf(g)[0] !== 'task') out.push(...field('serves:', servesOf(g).join(', ')))
+  const serves = servesOf(g)
+  if (serves[0] !== 'task') out.push(...field('serves:', serves.join(', ')))
   out.push(...field('if removed:', g.removal_impact))
   if (g.evidence) out.push(...field('evidence:', g.evidence))
   if (g.notes) out.push(...field('notes:', g.notes))

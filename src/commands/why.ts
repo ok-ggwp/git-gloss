@@ -66,7 +66,8 @@ export function run(argv: string[]): number {
       origFile: blame.origFile, origLine: blame.origLine,
       task: gloss?.note.annotation.task ?? null,
       stale: gloss?.stale ?? false,
-      groups: groups.map((g) => ({ ...g, serves_chain: chain(g).map((c) => c.id) })),
+      // serves is always a list here, whichever form the gloss used.
+      groups: groups.map((g) => ({ ...g, serves: servesOf(g), serves_chain: chain(g).map((c) => c.id) })),
       risks: gloss?.note.annotation.risks ?? [],
     }, null, 2))
     return 0

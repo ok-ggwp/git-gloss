@@ -595,3 +595,13 @@ test('serves can list several groups; cycles through lists are rejected', () => 
   assert.match(gloss(dir, ['review']).out, /- serves: "fix", "tail"/)
   assert.deepEqual(htmlPage(dir).data.groups.find((g: { id: string }) => g.id === 'tests').serves, ['fix', 'tail'])
 })
+
+test('one-item serves lists keep the lowest note format; why --json always gives a list', () => {
+  const dir = splitRepo()
+  gloss(dir, ['add'], annotation([{ ...fix, hunks: ['h1'], serves: ['task'] }]))
+  const note = JSON.parse(execFileSync('git', ['notes', '--ref', 'refs/notes/gloss', 'show'], { cwd: dir, encoding: 'utf8' }))
+  assert.equal(note.gloss, 1)
+  assert.equal(note.annotation.groups[0].serves, 'task', 'stored as a plain string')
+  const why = JSON.parse(gloss(dir, ['why', 'f.js:1', '--json']).out)
+  assert.deepEqual(why.groups[0].serves, ['task'])
+})
