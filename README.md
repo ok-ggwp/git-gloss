@@ -35,6 +35,10 @@ ln -s "$PWD/skills/gloss" ~/.claude/skills/gloss   # teach Claude Code to write 
 
 In each repo you use it in, run `git gloss init`. Share glosses with `git push origin refs/notes/gloss`. `git fetch` then stores origin's glosses in `refs/notes/remotes/origin/gloss`; merge them into yours with `git notes --ref refs/notes/gloss merge -s ours refs/notes/remotes/origin/gloss` (`-s theirs` to prefer origin's where both glossed a commit). Other merge strategies would join two JSON glosses into one unreadable note.
 
+## Agent review in a sandbox
+
+`git gloss review | claude -p` gives the reviewer only what it reads. `scripts/agent-review.sh [<commit>]` instead runs Claude Code in a disposable clone of the repo (no remote, deleted afterwards), allowed to write scratch tests and repos there and run them, and asks it to mark each finding as verified or read-only. Its file tools are limited to the sandbox and it cannot push, but code it runs with `node` or `npm test` runs as you and is not confined, so only use it where you'd let an agent run code.
+
 ## HTML view
 
 `git gloss html --open` writes a single HTML file (no network access, works offline) and opens it. It shows the task and summary, a bar of how the changed lines split across necessity categories, and a card per group with its rationale; code is collapsed until you ask for it. Click categories to filter, use the sidebar to jump between groups, or press `j`/`k` to move, `o` to show code, and `e`/`c` to expand or collapse everything. `#g-<group>` in the URL opens that group.
