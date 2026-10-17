@@ -8,7 +8,7 @@ Glosses are stored in git notes (`refs/notes/gloss`), so they don't touch histor
 
 ```
 git gloss init                        follow amends/rebases; fetch origin's glosses
-git gloss hunks [<commit>]            list hunks with the ids annotations refer to
+git gloss hunks [<commit>]            list hunks, numbering changed lines for h3:2-5 references
 git gloss add [<commit>] -f a.json    attach an annotation (validated against the diff)
 git gloss show [<commit>]             summary: one line per group, risks
       -g <group>                      ...expand groups, with their code
@@ -20,6 +20,8 @@ git gloss why <file>:<line> [--json]  explain why a line exists (via blame)
 git gloss review [<commit>]           print a review prompt: git gloss review | claude -p
 git gloss schema                      print the annotation JSON Schema
 ```
+
+A group refers to whole hunks (`h3`) or to some of a hunk's changed lines (`h3:2-5`, `h3:1,4-6`), numbering only `+`/`-` lines. Ranges let one hunk, such as a whole new file, be split between intents. Views show a group only its own lines, with `⋯` marking lines that belong to other groups, and `why` names only the group that owns the blamed line.
 
 Necessity categories: `required`, `supporting`, `mechanical`, `incidental`, `defensive`, `speculative`. See [skills/gloss/SKILL.md](skills/gloss/SKILL.md) for what each means and for the annotation format.
 

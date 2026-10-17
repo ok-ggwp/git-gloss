@@ -1,6 +1,7 @@
 import { parseArgs } from 'node:util'
 import { resolveCommit } from '../git.ts'
 import type { Hunk } from '../diff.ts'
+import { refLabel, sliceText } from '../selection.ts'
 import { loadGloss } from '../loader.ts'
 import { NECESSITY_HELP } from '../schema.ts'
 
@@ -40,13 +41,15 @@ export function run(argv: string[]): number {
     ...(g.evidence ? [`- evidence: ${q(g.evidence)}`] : []),
     ...(g.notes ? [`- notes: ${q(g.notes)}`] : []),
     '',
+    `- hunks: ${hunks.map((h) => refLabel(h.id, h.lines)).join(', ')}`,
+    '',
     fenced('diff', hunks.map((h) =>
       !h.current ? `(hunk ${h.id} is no longer in this commit's diff)`
-      : (h.status === 'changed' ? `(hunk ${h.id} changed since it was glossed)\n` : '') + h.current.text,
+      : (h.status === 'changed' ? `(hunk ${h.id} changed since it was glossed)\n` : '') + sliceText(h.current, h.lines),
     ).join('\n')),
   ].join('\n'))
 
-  const allHunks = [...new Set([...gloss.groups.flatMap((g) => g.hunks.map((h) => h.current)), ...gloss.unannotated])]
+  const allHunks = [...new Set([...gloss.groups.flatMap((g) => g.hunks.map((h) => h.current)), ...gloss.unannotated.map((u) => u.hunk)])]
     .filter((h): h is Hunk => h !== null)
     .sort((x, y) => Number(x.id.slice(1)) - Number(y.id.slice(1)))
 
@@ -71,14 +74,14 @@ For each finding, cite the group id and explain briefly. If the annotation is ac
     ...gloss.warnings.map((w) => `> **Warning from git-gloss:** ${w}`),
     `**Task (author's statement):** ${q(a.task)}`,
     ...(a.summary ? [`**Summary (author's statement):** ${q(a.summary)}`] : []),
-    `## Hunk layout\n\nAll hunks in the commit, as \`git gloss hunks --stat\` lists them:\n\n${allHunks.map(hunkLine).join('\n')}`,
+    `## Hunk layout\n\nAll hunks in the commit, as \`git gloss hunks --stat\` lists them. A group may claim a whole hunk (\`h6\`) or some of its changed lines (\`h6:5-12\`, counting only + and - lines from 1). In a group's diff, a line starting with ⋯ stands for changed lines that belong to other groups.\n\n${allHunks.map(hunkLine).join('\n')}`,
     '## Groups',
     ...groups,
   ]
   if (gloss.unannotated.length) {
     sections.push(
-      '## Unannotated hunks\n\nThese hunks are in the commit but the author did not assign them to any group. Review them too.',
-      fenced('diff', gloss.unannotated.map((h) => h.text).join('\n')),
+      `## Unannotated changes\n\nThese changes (${gloss.unannotated.map((u) => refLabel(u.hunk.id, u.lines)).join(', ')}) are in the commit but the author did not assign them to any group. Review them too.`,
+      fenced('diff', gloss.unannotated.map((u) => sliceText(u.hunk, u.lines)).join('\n')),
     )
   }
   if (a.alternatives?.length) {

@@ -1,6 +1,7 @@
 import { commitDiff, commitSubject, readNote } from './git.ts'
 import { parseDiff, type Hunk } from './diff.ts'
 import type { GlossNote, Group, HunkLocation } from './schema.ts'
+import { selections, uncovered, type Claim, type Uncovered } from './selection.ts'
 
 // ok: the commit's diff still has this hunk, unchanged.
 // changed: same location, different content (e.g. the note was carried onto an amended commit).
@@ -14,15 +15,18 @@ export type ResolvedHunk = {
   status: HunkStatus
 }
 
-export type LoadedGroup = { group: Group; hunks: ResolvedHunk[] }
+// lines: the group's changed lines in this hunk, or null for the whole hunk.
+export type GroupHunk = ResolvedHunk & { lines: Set<number> | null }
+
+export type LoadedGroup = { group: Group; hunks: GroupHunk[] }
 
 export type LoadedGloss = {
   sha: string
   subject: string
   note: GlossNote
   groups: LoadedGroup[]
-  // Hunks in the commit's diff that no group covers.
-  unannotated: Hunk[]
+  // Changed lines in the commit's diff that no group covers.
+  unannotated: Uncovered[]
   stale: boolean
   warnings: string[]
 }
@@ -71,13 +75,14 @@ export function loadGloss(sha: string): LoadedGloss | null {
 
   const groups = note.annotation.groups.map((group) => ({
     group,
-    hunks: group.hunks.map(
-      (id): ResolvedHunk => resolved.get(id) ?? { id, stored: null, current: null, status: 'missing' },
-    ),
+    hunks: [...selections(group.hunks)].map(([id, lines]): GroupHunk => ({
+      ...(resolved.get(id) ?? { id, stored: null, current: null, status: 'missing' }),
+      lines,
+    })),
   }))
 
-  const covered = new Set(groups.flatMap((g) => g.hunks.map((h) => h.current)))
-  const unannotated = current.filter((h) => !covered.has(h))
+  const claims = groups.flatMap((g) => g.hunks.flatMap((h): Claim[] => (h.current ? [{ hunk: h.current, lines: h.lines }] : [])))
+  const unannotated = uncovered(current, claims)
 
   const bad = [...resolved.values()].filter((h) => h.status !== 'ok').length
   const matched = new Set([...resolved.values()].map((h) => h.current))

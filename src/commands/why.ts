@@ -3,6 +3,7 @@ import { blameLine, commitSubject } from '../git.ts'
 import { loadGloss } from '../loader.ts'
 import type { Group } from '../schema.ts'
 import { groupHeader, style } from '../render.ts'
+import { bodyLines } from '../selection.ts'
 
 export const usage = 'why <file>:<line> [--rev <commit>] [--json]   explain why a line exists'
 
@@ -29,9 +30,15 @@ export function run(argv: string[]): number {
   const subject = gloss?.subject ?? commitSubject(blame.commit)
   // Blame reports the line's position in the commit that introduced it, which
   // is the new side of that commit's diff.
+  // Within that hunk, the line is one of its added lines; a group owns it if it
+  // claims the whole hunk or that line's changed-line number.
   const groups = (gloss?.groups ?? [])
-    .filter((g) => g.hunks.some(({ current: h }) =>
-      h && h.file === blame.origFile && blame.origLine >= h.newStart && blame.origLine < h.newStart + h.newLines))
+    .filter((g) => g.hunks.some(({ current: h, lines }) => {
+      if (!h || h.file !== blame.origFile || blame.origLine < h.newStart || blame.origLine >= h.newStart + h.newLines) return false
+      if (!lines) return true
+      const idx = bodyLines(h).find((l) => l.kind === 'add' && l.newNo === blame.origLine)?.idx
+      return idx !== undefined && idx !== null && lines.has(idx)
+    }))
     .map((g) => g.group)
 
   // Follow `serves` links up to the task so the reader sees the whole chain.

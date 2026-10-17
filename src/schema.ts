@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { REF_PATTERN } from './selection.ts'
 
 // In the order `show` lists groups: what the task needs, then what a reviewer
 // might cut, then edits with no design content.
@@ -41,9 +42,9 @@ export const Group = z.object({
     .optional()
     .describe('A test, requirement or task line that demonstrates the need'),
   hunks: z
-    .array(z.string())
+    .array(z.string().regex(REF_PATTERN, 'use a hunk id like "h3", or changed lines of one like "h3:2-5" or "h3:1,4-6"'))
     .min(1)
-    .describe('Hunk ids from `git gloss hunks` that belong to this group'),
+    .describe('Hunks from `git gloss hunks` that belong to this group: "h3" for a whole hunk, "h3:2-5" for its changed lines 2 to 5'),
   notes: z.string().optional(),
 })
 

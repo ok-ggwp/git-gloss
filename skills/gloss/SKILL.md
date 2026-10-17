@@ -10,8 +10,8 @@ A gloss records, for each part of a commit, what it does, how necessary it is, a
 ## Steps
 
 1. Commit the change first. A gloss attaches to one commit; for several commits, gloss each one.
-2. Run `git gloss hunks <commit>` (default `HEAD`) to see the diff split into hunks with ids `h1`, `h2`, …
-3. Group hunks **by intent**, not by file. One intent often spans several files; one hunk can belong to two groups. Every hunk must be in at least one group.
+2. Run `git gloss hunks <commit>` (default `HEAD`) to see the diff split into hunks with ids `h1`, `h2`, …, with each hunk's changed (`+`/`-`) lines numbered from 1.
+3. Group changes **by intent**, not by file. One intent often spans several files. When one hunk mixes intents (common in new files, which are a single hunk), give each group only its lines: `"h6:1-40"`, `"h6:41-55,60"`. The numbers count changed lines only, as `hunks` prints them. Every changed line must belong to at least one group; `add` lists any that don't.
 4. Write the annotation JSON (shape below; `git gloss schema` prints the full JSON Schema) to a file in your scratchpad, then run:
    `git gloss add <commit> -f <file>`
    Fix any validation errors it reports and rerun. Use `--force` only to replace your own earlier gloss.
@@ -54,7 +54,7 @@ Where you can, set `evidence` to a test that exercises the change or the line of
       "serves": "task",
       "removal_impact": "Uploads fail on the first 503",
       "evidence": "test/upload.test.ts 'retries on 503'",
-      "hunks": ["h1", "h3"]
+      "hunks": ["h1", "h3:1-12"]
     },
     {
       "id": "retry-config",

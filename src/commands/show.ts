@@ -1,6 +1,7 @@
 import { parseArgs } from 'node:util'
 import { resolveCommit } from '../git.ts'
 import type { Hunk } from '../diff.ts'
+import { refLabel, sliceStats, sliceText } from '../selection.ts'
 import { loadGloss, type LoadedGroup } from '../loader.ts'
 import { NECESSITY, type Necessity } from '../schema.ts'
 import {
@@ -10,15 +11,18 @@ import {
 export const usage =
   'show [<commit>] [-g <group>]... [--full] [--diff] [--only <necessity,...>]   summarise a gloss; expand groups with -g'
 
-function stats(hunks: Hunk[]): { count: number; added: number; removed: number } {
+// Counts over the lines each part selects, not whole hunks, so groups that
+// split a hunk don't both count all of it.
+function stats(parts: { hunk: Hunk; lines: Set<number> | null }[]): { count: number; added: number; removed: number } {
+  const s = parts.map((p) => sliceStats(p.hunk, p.lines))
   return {
-    count: hunks.length,
-    added: hunks.reduce((n, h) => n + h.added, 0),
-    removed: hunks.reduce((n, h) => n + h.removed, 0),
+    count: parts.length,
+    added: s.reduce((n, x) => n + x.added, 0),
+    removed: s.reduce((n, x) => n + x.removed, 0),
   }
 }
 
-const currentHunks = (g: LoadedGroup) => g.hunks.flatMap((h) => (h.current ? [h.current] : []))
+const currentParts = (g: LoadedGroup) => g.hunks.flatMap((h) => (h.current ? [{ hunk: h.current, lines: h.lines }] : []))
 
 export function run(argv: string[]): number {
   const { values, positionals } = parseArgs({
@@ -77,14 +81,14 @@ export function run(argv: string[]): number {
       for (const h of g.hunks) {
         if (!h.current) { out.push('', style('red', `  ${h.id}: no longer in this commit's diff`)); continue }
         if (h.status === 'changed') out.push('', style('red', `  ${h.id}: content changed since it was glossed`))
-        out.push('', '  ' + hunkLabel(h.current), colorDiff(h.current.text, '    '))
+        out.push('', '  ' + hunkLabel(h.current, h.lines), colorDiff(sliceText(h.current, h.lines), '    '))
       }
     }
     if (gloss.unannotated.length && !only && !values.group) {
-      out.push('', style(['bold', 'red'], '■ Unannotated hunks'))
-      for (const h of gloss.unannotated) {
-        out.push('  ' + hunkLabel(h))
-        if (withCode) out.push(colorDiff(h.text, '    '), '')
+      out.push('', style(['bold', 'red'], '■ Unannotated changes'))
+      for (const u of gloss.unannotated) {
+        out.push('  ' + hunkLabel(u.hunk, u.lines))
+        if (withCode) out.push(colorDiff(sliceText(u.hunk, u.lines), '    '), '')
       }
     }
     if (!values.group) out.push(...noteFooter(gloss.note))
@@ -101,14 +105,14 @@ export function run(argv: string[]): number {
   out.push('', `${style('bold', `${gloss.groups.length} groups:`)} ${tally.join(style('dim', ' · '))}${showing}`, '')
 
   const rows = sorted.map((g) => {
-    const s = stats(currentHunks(g))
+    const s = stats(currentParts(g))
     const stale = g.hunks.filter((h) => h.status !== 'ok').length
     return {
       g, stale,
       stat: `${s.count} hunk${s.count === 1 ? '' : 's'}`, added: `+${s.added}`, removed: `-${s.removed}`,
     }
   })
-  const un = stats(gloss.unannotated)
+  const un = stats(gloss.unannotated.map((u) => ({ hunk: u.hunk, lines: u.lines })))
   const idW = Math.max(...rows.map((r) => r.g.group.id.length))
   const statW = Math.max(...rows.map((r) => r.stat.length), un.count ? 8 : 0)
   const addW = Math.max(...rows.map((r) => r.added.length))
@@ -131,7 +135,8 @@ export function run(argv: string[]): number {
     }
   }
   if (un.count && !only) {
-    out.push(`  ${style(['bold', 'red'], 'unannotated'.padEnd(11))}  ${style('red', `${un.count} hunk(s) not in any group: ${gloss.unannotated.map((h) => h.id).join(', ')}`)}`)
+    const where = gloss.unannotated.map((u) => refLabel(u.hunk.id, u.lines)).join(', ')
+    out.push(`  ${style(['bold', 'red'], 'unannotated'.padEnd(11))}  ${style('red', `+${un.added} -${un.removed} not in any group: ${where}`)}`)
   }
 
   out.push(...risksBlock(gloss.note))

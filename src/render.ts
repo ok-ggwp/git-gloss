@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { styleText } from 'node:util'
 import type { Hunk } from './diff.ts'
 import { gitTry } from './git.ts'
+import { refLabel, sliceStats } from './selection.ts'
 import type { Group, GlossNote, Necessity } from './schema.ts'
 
 type Style = Parameters<typeof styleText>[0]
@@ -46,12 +47,14 @@ export function field(label: string, text: string, indent = 2): string[] {
   return [' '.repeat(indent) + style('dim', label) + ' ' + first, ...rest.map((l) => ' '.repeat(hang) + l)]
 }
 
-export function hunkLabel(h: Hunk): string {
+// "h6:5-12  src/x.ts  -10,20 +10,25  +6 -2", with counts for the selected lines.
+export function hunkLabel(h: Hunk, lines: Set<number> | null = null): string {
   const range = h.newLines || h.oldLines
     ? `-${h.oldStart},${h.oldLines} +${h.newStart},${h.newLines}`
     : 'file header'
   const file = h.oldFile && h.oldFile !== h.file ? `${h.oldFile} → ${h.file}` : h.file
-  return `${style('bold', h.id)}  ${file}  ${style('dim', range)}  ${style('green', `+${h.added}`)} ${style('red', `-${h.removed}`)}`
+  const s = sliceStats(h, lines)
+  return `${style('bold', refLabel(h.id, lines))}  ${file}  ${style('dim', range)}  ${style('green', `+${s.added}`)} ${style('red', `-${s.removed}`)}`
 }
 
 export function colorDiff(text: string, indent = ''): string {
@@ -61,7 +64,7 @@ export function colorDiff(text: string, indent = ''): string {
       const s: Style | null = l.startsWith('@@') ? 'cyan'
         : l.startsWith('+') ? 'green'
         : l.startsWith('-') ? 'red'
-        : l.startsWith('diff ') || l.startsWith('index ') ? 'dim'
+        : l.startsWith('diff ') || l.startsWith('index ') || l.startsWith('⋯') ? 'dim'
         : null
       return indent + (s ? style(s, l) : l)
     })

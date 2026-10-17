@@ -197,6 +197,7 @@ tr.add td.mark { color: var(--add-mark); }
 tr.del { background: var(--del-bg); }
 tr.del td.mark { color: var(--del-mark); }
 tr.meta td { background: var(--meta-bg); color: var(--meta-text); }
+tr.gap td { background: var(--surface-2); color: var(--muted); font-style: italic; font-family: var(--sans); padding: 2px 8px; }
 
 /* Unannotated, alternatives, risks */
 .section { margin-top: 40px; }

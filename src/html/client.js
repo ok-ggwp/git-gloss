@@ -34,7 +34,7 @@
   // ---- diff rendering ----
   function hunkView(h) {
     var head = add(el('div', 'hunk-head'),
-      el('span', 'range', h.id),
+      el('span', 'range', h.ref),
       el('span', 'file', h.oldFile ? h.oldFile + ' → ' + h.file : h.file),
       el('span', 'range', h.range),
       stats(h.added, h.removed))
@@ -44,14 +44,14 @@
       return add(el('div', 'hunk'), head)
     }
     if (h.alsoIn.length) {
-      var also = add(el('span', 'also'), document.createTextNode('also in '))
+      var also = add(el('span', 'also'), document.createTextNode('shares lines with '))
       h.alsoIn.forEach(function (id, i) { if (i) also.appendChild(document.createTextNode(', ')); also.appendChild(groupLink(id)) })
       add(head, also)
     }
     var table = el('table', 'diff')
     h.lines.forEach(function (l) {
       var tr = el('tr', l.kind)
-      if (l.kind === 'meta') {
+      if (l.kind === 'meta' || l.kind === 'gap') {
         var td = el('td', 'text', l.text)
         td.colSpan = 4
         add(tr, td)
@@ -190,8 +190,8 @@
     add(main, groupsEl)
 
     if (data.unannotated.length) {
-      var un = add(el('section', 'section'), el('h2', null, 'Unannotated hunks (' + data.unannotated.length + ')'))
-      var box = add(el('div', 'unannotated'), el('p', null, 'These hunks are in the commit but no group explains them.'))
+      var un = add(el('section', 'section'), el('h2', null, 'Unannotated changes (' + data.unannotated.length + ')'))
+      var box = add(el('div', 'unannotated'), el('p', null, 'These changes are in the commit but no group explains them.'))
       data.unannotated.forEach(function (h) { box.appendChild(hunkView(h)) })
       un.id = 'unannotated'
       add(main, add(un, box))
