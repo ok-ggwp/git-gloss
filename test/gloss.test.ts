@@ -992,3 +992,98 @@ test('show -g names the commit it searched and points to an earlier gloss with t
   assert.match(r.err, /the gloss on [0-9a-f]{7} \(later\) has no group config/)
   assert.match(r.err, /found in [0-9a-f]{7} \(add retry\): git gloss show [0-9a-f]{7} -g config/)
 })
+
+// A repo with one commit and uncommitted work: a modified, an untracked and
+// an ignored file.
+function wipRepo(): { dir: string; g: (...args: string[]) => string } {
+  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe' })
+  g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
+  writeFileSync(join(dir, '.gitignore'), '*.log\n')
+  // f.js is committed, then edited to the same size straight away, so its
+  // stat data can still match the index; the snapshot must notice anyway.
+  writeFileSync(join(dir, 'f.js'), 'a\nb\n')
+  g('add', '.'); g('commit', '-qm', 'base')
+  writeFileSync(join(dir, 'f.js'), 'a\nB\n')
+  writeFileSync(join(dir, 'new.js'), 'n\n')
+  writeFileSync(join(dir, 'debug.log'), 'x\n')
+  return { dir, g }
+}
+const wipGroups = [
+  { id: 'cap', intent: 'Capitalise b', necessity: 'required', serves: 'task', removal_impact: 'x', hunks: ['h1'] },
+  { id: 'new', intent: 'Add new.js', necessity: 'speculative', serves: 'task', removal_impact: 'x', hunks: ['h2'] },
+]
+
+test('hunks wip snapshots uncommitted work without touching the branch, index or files', () => {
+  const { dir, g } = wipRepo()
+  // Nothing may refresh the index before the snapshot (git status would), or
+  // the racy case resolves itself and the test proves nothing.
+  const before = [g('rev-parse', 'HEAD'), readFileSync(join(dir, '.git', 'index')).toString('hex')]
+  // Snapshot over a second after the edit: without keeping the copied
+  // index's timestamps, this missed the edit every time when measured.
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1200)
+  const r = gloss(dir, ['hunks', 'wip', '--stat'])
+  assert.equal(r.code, 0, r.err)
+  assert.match(r.out, /h1 +f\.js/, 'a same-second edit is included')
+  assert.match(r.out, /h2 +new\.js/, 'untracked files are included')
+  assert.doesNotMatch(r.out, /debug\.log/, 'ignored files are not')
+  assert.deepEqual([g('rev-parse', 'HEAD'), readFileSync(join(dir, '.git', 'index')).toString('hex')], before)
+  assert.equal(g('status', '--porcelain'), ' M f.js\n?? new.js\n', 'nothing was staged')
+  assert.equal(gloss(dir, ['show', 'wip']).err.includes('changed since'), false, 'a fresh snapshot is not stale')
+})
+
+test('wip glosses live in their own notes ref, are reviewable, and are flagged when stale', () => {
+  const { dir, g } = wipRepo()
+  gloss(dir, ['hunks', 'wip'])
+  assert.equal(gloss(dir, ['add', 'wip'], annotation(wipGroups)).code, 0)
+  assert.equal(g('notes', '--ref', 'refs/notes/gloss-wip', 'list').trim().split('\n').length, 1)
+  assert.equal(g('for-each-ref', 'refs/notes/gloss').trim(), '', 'nothing in the synced notes ref')
+  assert.match(gloss(dir, ['review', 'wip']).out, /## Uncommitted work \(snapshot/)
+
+  writeFileSync(join(dir, 'f.js'), 'a\nBB\n')
+  assert.match(gloss(dir, ['show', 'wip']).err, /working tree has changed since this snapshot/)
+  assert.equal(gloss(dir, ['hunks', 'nope']).code, 1)
+})
+
+test('there is nothing to snapshot without uncommitted changes', () => {
+  const dir = repo()
+  const r = gloss(dir, ['hunks', 'wip'])
+  assert.equal(r.code, 1)
+  assert.match(r.err, /no uncommitted changes/)
+})
+
+test('the post-commit hook adopts the wip gloss, split across commits, and clears the snapshot', () => {
+  const { dir, g } = wipRepo()
+  const bin = mkdtempSync(join(tmpdir(), 'gloss-bin-'))
+  writeFileSync(join(bin, 'git-gloss'), `#!/bin/sh\nexec "${process.execPath}" "${BIN}" "$@"\n`, { mode: 0o755 })
+  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` }
+  gloss(dir, ['init', '--hooks'])
+  gloss(dir, ['hunks', 'wip'])
+  gloss(dir, ['add', 'wip'], annotation(wipGroups))
+
+  g('add', 'f.js')
+  execFileSync('git', ['commit', '-qm', 'one'], { cwd: dir, env, stdio: 'pipe' })
+  assert.deepEqual(JSON.parse(g('notes', '--ref', 'refs/notes/gloss', 'show', 'HEAD')).annotation.groups.map((x: { id: string }) => x.id), ['cap'])
+
+  g('add', '-A')
+  const r = spawnSync('git', ['commit', '-qm', 'two'], { cwd: dir, encoding: 'utf8', env })
+  assert.match(r.stderr, /all work is committed; cleared the wip snapshot/)
+  assert.deepEqual(JSON.parse(g('notes', '--ref', 'refs/notes/gloss', 'show', 'HEAD')).annotation.groups.map((x: { id: string }) => x.id), ['new'])
+  assert.equal(g('for-each-ref', 'refs/gloss').trim(), '')
+})
+
+test('adopt reports changes made after glossing and stays quiet for directly glossed commits', () => {
+  const { dir, g } = wipRepo()
+  gloss(dir, ['hunks', 'wip'])
+  gloss(dir, ['add', 'wip'], annotation(wipGroups))
+  writeFileSync(join(dir, 'f.js'), 'a\nB!\n') // edited after glossing
+  g('add', '-A'); g('commit', '-qm', 'both')
+  let r = gloss(dir, ['adopt'])
+  assert.equal(r.code, 0, r.err)
+  assert.match(r.out, /adopted 1 of 2 wip groups/)
+  assert.match(r.out, /not explained by the wip gloss .*: h1/)
+
+  r = gloss(dir, ['adopt', '--quiet-unless-adopted'])
+  assert.equal(r.code, 0)
+  assert.equal(r.out + r.err, '', 'already glossed: the hook stays silent')
+})

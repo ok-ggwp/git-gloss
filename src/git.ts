@@ -1,8 +1,17 @@
 import { execFileSync } from 'node:child_process'
+import { copyFileSync, existsSync, mkdtempSync, rmSync, statSync, utimesSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Annotation, NOTE_FORMAT, type GlossNote } from './schema.ts'
 import { parsePath, unquote } from './diff.ts'
 
 export const NOTES_REF = 'refs/notes/gloss'
+// Glosses of uncommitted work (wip snapshots) live in their own notes ref,
+// which sync never pushes, and the latest snapshot in a private ref that
+// keeps it from being garbage-collected.
+export const WIP_NOTES_REF = 'refs/notes/gloss-wip'
+export const WIP_REF = 'refs/gloss/wip'
+const WIP_MESSAGE = 'git-gloss wip snapshot'
 export const REMOTE_NOTES_REF = 'refs/notes/remotes/origin/gloss'
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 
@@ -10,13 +19,13 @@ const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 export class GlossError extends Error {}
 export class GitError extends GlossError {}
 
-export function git(args: string[], input?: string): string {
+export function git(args: string[], input?: string, env: Record<string, string> = {}): string {
   try {
     return execFileSync('git', args, {
       encoding: 'utf8',
       input,
       // Untranslated messages: readNote recognises "no note found" by its text.
-      env: { ...process.env, LC_ALL: 'C' },
+      env: { ...process.env, ...env, LC_ALL: 'C' },
       maxBuffer: 256 * 1024 * 1024,
       stdio: ['pipe', 'pipe', 'pipe'],
     })
@@ -34,7 +43,69 @@ export function gitTry(args: string[], input?: string): string | null {
   }
 }
 
+// The working tree as a tree object: tracked and untracked files, respecting
+// .gitignore, built in a temporary index so the real index is untouched.
+function workingTree(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'git-gloss-index-'))
+  try {
+    const index = join(dir, 'index')
+    const real = git(['rev-parse', '--path-format=absolute', '--git-path', 'index']).trim()
+    if (existsSync(real)) {
+      copyFileSync(real, index)
+      // Keep the index's timestamps: git compares them with file mtimes to
+      // spot files edited in the same second as the index was written
+      // ("racily clean"), and a fresh mtime would hide such edits.
+      const { atime, mtime } = statSync(real)
+      utimesSync(index, atime, mtime)
+    }
+    const env = { GIT_INDEX_FILE: index }
+    git(['add', '-A', '--', ':/'], undefined, env)
+    return git(['write-tree'], undefined, env).trim()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+const headSha = () => gitTry(['rev-parse', '--verify', '--quiet', 'HEAD'])?.trim() ?? null
+
+// Record uncommitted changes as a commit on top of HEAD without touching the
+// branch, index or files, and point WIP_REF at it. Reuses the current
+// snapshot if nothing has changed, so its gloss stays attached.
+export function snapshotWorkingTree(): string {
+  const tree = workingTree()
+  const head = headSha()
+  if (head && git(['rev-parse', `${head}^{tree}`]).trim() === tree) {
+    throw new GlossError('there are no uncommitted changes to snapshot')
+  }
+  const current = gitTry(['rev-parse', '--verify', '--quiet', WIP_REF])?.trim()
+  if (current) {
+    const [currentTree, ...parents] = git(['log', '-1', '--format=%T %P', current]).trim().split(' ').filter(Boolean)
+    if (currentTree === tree && (parents[0] ?? null) === head) return current
+  }
+  const sha = git(['commit-tree', tree, ...(head ? ['-p', head] : []), '-m', WIP_MESSAGE]).trim()
+  git(['update-ref', WIP_REF, sha])
+  return sha
+}
+
+export const isWipSnapshot = (sha: string) => gitTry(['log', '-1', '--format=%s', sha])?.trim() === WIP_MESSAGE
+
+// Why the latest snapshot no longer matches the working tree, or null.
+export function wipStaleness(sha: string): string | null {
+  const [tree, ...parents] = git(['log', '-1', '--format=%T %P', sha]).trim().split(' ').filter(Boolean)
+  if ((parents[0] ?? null) !== headSha()) return 'HEAD has moved since this snapshot was taken'
+  if (workingTree() !== tree) return 'the working tree has changed since this snapshot was taken'
+  return null
+}
+
 export function resolveCommit(rev: string): string {
+  // "wip": the latest snapshot of uncommitted work (made by `hunks wip`).
+  if (rev === 'wip') {
+    const sha = gitTry(['rev-parse', '--verify', '--quiet', WIP_REF])?.trim()
+    if (!sha) throw new GlossError('no snapshot of uncommitted work yet; run `git gloss hunks wip` first')
+    const stale = wipStaleness(sha)
+    if (stale) console.error(`warning: ${stale}; run \`git gloss hunks wip\` to snapshot again, then re-gloss`)
+    return sha
+  }
   const sha = gitTry(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`])
   if (!sha) throw new GitError(`not a commit: ${rev}`)
   return sha.trim()
@@ -77,14 +148,19 @@ export function commitDiff(sha: string): string {
   ])
 }
 
-export function readNote(sha: string): GlossNote | null {
-  let raw: string
+function rawNote(ref: string, sha: string): string | null {
   try {
-    raw = git(['notes', '--ref', NOTES_REF, 'show', sha])
+    return git(['notes', '--ref', ref, 'show', sha])
   } catch (err) {
     if (/no note found/i.test((err as Error).message)) return null
     throw err
   }
+}
+
+export function readNote(sha: string): GlossNote | null {
+  // A commit's gloss, or a wip snapshot's (they are never the same object).
+  const raw = rawNote(NOTES_REF, sha) ?? rawNote(WIP_NOTES_REF, sha)
+  if (raw === null) return null
   const at = `the gloss on ${sha.slice(0, 10)}`
   let data: Partial<GlossNote>
   try {
@@ -108,7 +184,8 @@ export function readNote(sha: string): GlossNote | null {
 }
 
 export function writeNote(sha: string, note: GlossNote): void {
-  git(['notes', '--ref', NOTES_REF, 'add', '-f', '-F', '-', sha], JSON.stringify(note, null, 2) + '\n')
+  const ref = isWipSnapshot(sha) ? WIP_NOTES_REF : NOTES_REF
+  git(['notes', '--ref', ref, 'add', '-f', '-F', '-', sha], JSON.stringify(note, null, 2) + '\n')
 }
 
 export type LineStep = { commit: string; file: string; lines: number[] }

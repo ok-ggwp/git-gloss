@@ -7,9 +7,12 @@ Glosses are stored in git notes (`refs/notes/gloss`), so they don't touch histor
 ## Commands
 
 ```
-git gloss init [--hooks]              follow amends/rebases; fetch origin's glosses; --hooks: sync on push
+git gloss init [--hooks]              follow amends/rebases; fetch origin's glosses; --hooks: sync on push,
+                                      adopt wip glosses on commit
 git gloss sync [<remote>]             fetch, merge and push glosses (default: origin)
-git gloss hunks [<commit>]            list hunks, numbering changed lines for h3:2-5 references
+git gloss hunks [<commit>|wip]        list hunks, numbering changed lines for h3:2-5 references;
+                                      wip snapshots your uncommitted work instead
+git gloss adopt [<commit>]            move the gloss of uncommitted work onto the commit made from it
 git gloss add [<commit>] -f a.json    attach an annotation (validated against the diff)
 git gloss show [<commit>]             summary: one line per group, risks
       -g <group>                      ...expand groups, with their code
@@ -41,6 +44,20 @@ ln -s "$PWD/skills/gloss" ~/.claude/skills/gloss   # teach Claude Code to write 
 In each repo you use it in, run `git gloss init --hooks`. After that, every `git push` to a named remote also syncs glosses with it. Without the hook, run `git gloss sync` yourself.
 
 `sync` fetches the remote's glosses into `refs/notes/remotes/<remote>/gloss`, merges them into yours and pushes the result, retrying if someone else pushed in between. Glosses on different commits simply combine, and a gloss changed on only one side since you last synced is taken from that side. Only when both sides changed the same commit's gloss since then is it a conflict: the newer gloss (by its `created_at`) wins, because a re-gloss is normally a correction, and if either can't be read, yours is kept. It prints what it fetched, pushed and decided. The hook never blocks a push: if syncing fails it prints a warning and the push goes ahead. It syncs before the branch is pushed (so glosses arrive even if the branch push is then rejected), and it disables credential prompts so a remote that needs one fails fast instead of stalling the push. If you already have a `pre-push` hook, `init --hooks` leaves it alone and prints the one line to add to it.
+
+## Glossing before you commit
+
+You don't have to commit to gloss or review. `wip` stands for your uncommitted work:
+
+```sh
+git gloss hunks wip            # snapshot tracked and untracked changes (respects .gitignore)
+git gloss add wip -f a.json    # gloss the snapshot
+git gloss show wip             # read it; html wip, review wip and scripts/agent-review.sh wip work too
+git commit                     # with init --hooks, the gloss moves onto the commit
+git gloss adopt                # ...or move it by hand
+```
+
+The snapshot is a commit object built from a temporary index, kept by the private ref `refs/gloss/wip`; your branch, index and files are never touched. Its gloss lives in `refs/notes/gloss-wip`, which `sync` doesn't push. Commands warn when you've edited files or committed since the snapshot. `adopt` matches the snapshot's hunks to the commit's by content, so the work can be committed in several commits (each takes the groups whose changes it contains), and changes made after glossing are reported as unexplained rather than silently covered. Once everything is committed, the snapshot is cleared.
 
 ## Agent review in a sandbox
 

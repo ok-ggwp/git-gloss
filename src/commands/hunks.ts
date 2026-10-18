@@ -1,10 +1,10 @@
 import { parseArgs } from 'node:util'
-import { commitDiff, resolveCommit } from '../git.ts'
+import { commitDiff, resolveCommit, snapshotWorkingTree } from '../git.ts'
 import { parseDiff } from '../diff.ts'
 import { colorDiff, hunkLabel, page, style } from '../render.ts'
 import { bodyLines, changedCount } from '../selection.ts'
 
-export const usage = 'hunks [<commit>] [--stat] [--json]   list a commit\'s hunks, numbering changed lines for h3:2-5 references'
+export const usage = 'hunks [<commit> | wip] [--stat] [--json]   list a commit\'s hunks (or snapshot uncommitted work with wip), numbering changed lines'
 
 export function run(argv: string[]): number {
   const { values, positionals } = parseArgs({
@@ -12,7 +12,9 @@ export function run(argv: string[]): number {
     allowPositionals: true,
     options: { stat: { type: 'boolean' }, json: { type: 'boolean' } },
   })
-  const sha = resolveCommit(positionals[0] ?? 'HEAD')
+  // `hunks wip` takes a fresh snapshot of uncommitted work; other commands
+  // then use that snapshot, so a gloss is checked against the hunks shown here.
+  const sha = positionals[0] === 'wip' ? snapshotWorkingTree() : resolveCommit(positionals[0] ?? 'HEAD')
   const hunks = parseDiff(commitDiff(sha))
 
   if (values.json) {

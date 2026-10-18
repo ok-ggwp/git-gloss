@@ -1,5 +1,5 @@
 import { parseArgs } from 'node:util'
-import { commitDiff, commitSubject, resolveCommits } from '../git.ts'
+import { commitDiff, commitSubject, isWipSnapshot, resolveCommits } from '../git.ts'
 import { parseDiff, type Hunk } from '../diff.ts'
 import { refLabel, sliceText } from '../selection.ts'
 import { loadGloss, type LoadedGloss } from '../loader.ts'
@@ -56,7 +56,9 @@ function commitMaterial(sha: string, gloss: LoadedGloss | null): string[] {
     .sort((x, y) => Number(x.id.slice(1)) - Number(y.id.slice(1)))
 
   const sections = [
-    `## Commit ${sha.slice(0, 10)}: ${gloss.subject}`,
+    isWipSnapshot(sha)
+      ? `## Uncommitted work (snapshot ${sha.slice(0, 10)})\n\nThese changes are not committed yet; the author glossed them before committing.`
+      : `## Commit ${sha.slice(0, 10)}: ${gloss.subject}`,
     ...gloss.warnings.map((w) => `> **Warning from git-gloss:** ${w}`),
     `**Task (author's statement):** ${q(a.task)}`,
     ...(a.summary ? [`**Summary (author's statement):** ${q(a.summary)}`] : []),

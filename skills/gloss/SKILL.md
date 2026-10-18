@@ -1,24 +1,29 @@
 ---
 name: gloss
-description: Annotate a commit you just made with its intent and necessity using git-gloss, so reviewers and later agents can see why each change exists. Use after committing agent-written changes, when the user asks to "gloss" a commit, or before handing changes off for review. Also use `git gloss why <file>:<start>-<end>` when genuinely unsure why existing code is the way it is, such as before removing something that looks unnecessary.
+description: Annotate changes with their intent and necessity using git-gloss, so reviewers and later agents can see why each change exists. Glosses uncommitted work by default (before the user commits), or a commit. Use when agent-written changes are ready for review, when the user asks to "gloss" changes or a commit, or before handing changes off for review. Also use `git gloss why <file>:<start>-<end>` when genuinely unsure why existing code is the way it is, such as before removing something that looks unnecessary.
 ---
 
-# Glossing a commit
+# Glossing changes
 
-A gloss records, for each part of a commit, what it does, how necessary it is, and what breaks without it. You are writing it while you still have the context of why you made each change. That context is the point: do not just restate the diff.
+A gloss records, for each part of a change, what it does, how necessary it is, and what breaks without it. You are writing it while you still have the context of why you made each change. That context is the point: do not just restate the diff.
+
+## Uncommitted work (the default) or a commit
+
+Gloss changes **before they are committed**, unless the user asks you to commit first. `wip` stands for a snapshot of the uncommitted work (tracked and untracked files): `git gloss hunks wip` takes it without touching the branch, the index or any file, and the other commands then use that snapshot. The user reviews and iterates while nothing is committed. When they commit, the gloss moves onto the commit automatically if `git gloss init --hooks` was run, otherwise with `git gloss adopt`. Glosses of uncommitted work are never shared by `sync`.
+
+To gloss a commit instead, use its revision (default `HEAD`) wherever these steps say `wip`.
 
 ## Steps
 
-1. Commit the change first. A gloss attaches to one commit; for several commits, gloss each one.
-2. Run `git gloss hunks <commit>` (default `HEAD`) to see the diff split into hunks with ids `h1`, `h2`, …, with each hunk's changed (`+`/`-`) lines numbered from 1.
+1. Run `git gloss hunks wip` to snapshot the uncommitted work and see it split into hunks with ids `h1`, `h2`, …, with each hunk's changed (`+`/`-`) lines numbered from 1. If you change files afterwards, run it again: that takes a new snapshot, and a gloss must match the snapshot it was written for.
 3. Group changes **by intent**, not by file. One intent often spans several files. When one hunk mixes intents (common in new files, which are a single hunk), give each group only its lines: `"h6:1-40"`, `"h6:41-55,60"`. The numbers count changed lines only, as `hunks` prints them. Every changed line must belong to at least one group; `add` lists any that don't.
-   Take hunk ids and line numbers from the `git gloss hunks` output for this commit, never from memory of the diff or from an earlier commit. Ids depend on the order git lists hunks, and line numbers count only changed lines, so guesses are easily wrong. `add` rejects ranges past the end of a hunk, but a wrong range that stays in bounds is accepted and silently attaches an intent to the wrong code.
+   Take hunk ids and line numbers from the `git gloss hunks` output for this snapshot or commit, never from memory of the diff or from an earlier commit. Ids depend on the order git lists hunks, and line numbers count only changed lines, so guesses are easily wrong. `add` rejects ranges past the end of a hunk, but a wrong range that stays in bounds is accepted and silently attaches an intent to the wrong code.
 4. Write the annotation JSON (shape below; `git gloss schema` prints the full JSON Schema) to a file in your scratchpad, then run:
-   `git gloss add <commit> -f <file>`
+   `git gloss add wip -f <file>`
    Fix any validation errors it reports and rerun. Use `--force` only to replace your own earlier gloss.
-5. Run `git gloss show <commit>` (the summary) and `git gloss show <commit> --full` (every group's details) and check that they read well to someone who was not in the session. Then spot-check the code under a few groups with `git gloss show <commit> -g <group>`. Validation checks that every line is covered, not that each line is under the right intent.
+5. Run `git gloss show wip` (the summary) and `git gloss show wip --full` (every group's details) and check that they read well to someone who was not in the session. Then spot-check the code under a few groups with `git gloss show wip -g <group>`. Validation checks that every line is covered, not that each line is under the right intent.
 
-If you amend or rebase a glossed commit, `show` will report the gloss as stale. Re-gloss it with `--force`.
+If you edit files after glossing, `show wip` warns that the working tree has changed: run `git gloss hunks wip` again and re-gloss with `--force`. If you amend or rebase a glossed commit, `show` reports the gloss as stale; re-gloss it with `--force`. For a review of the uncommitted work, the user can run `git gloss review wip` or `scripts/agent-review.sh wip`.
 
 ## Writing intents
 

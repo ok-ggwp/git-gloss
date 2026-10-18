@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { git, gitTry, NOTES_REF, REMOTE_NOTES_REF } from '../git.ts'
 
-export const usage = 'init [--hooks]   set up glosses to follow amends/rebases and fetch from origin; --hooks also syncs them on every push'
+export const usage = 'init [--hooks]   set up glosses to follow amends/rebases and fetch from origin; --hooks: sync on push, adopt wip glosses on commit'
 
 const HOOK_MARKER = '# installed by git-gloss'
 
@@ -20,24 +20,31 @@ GIT_TERMINAL_PROMPT=0 git gloss sync "$remote" >&2 || echo "git-gloss: syncing g
 exit 0
 `
 
-function installHook(): void {
+// Runs after every commit: if uncommitted work was glossed (a wip snapshot),
+// move the parts this commit contains onto it. Never fails the commit.
+const POST_COMMIT = `#!/bin/sh
+${HOOK_MARKER}: move the gloss of uncommitted work onto new commits (git gloss init --hooks)
+git gloss adopt --quiet-unless-adopted >&2 || echo "git-gloss: adopting the wip gloss failed; run: git gloss adopt" >&2
+exit 0
+`
+
+function installHook(name: string, body: string, done: string, manual: string[]): void {
   // --git-path follows core.hooksPath when it is set.
   const dir = resolve(git(['rev-parse', '--git-path', 'hooks']).trim())
-  const path = join(dir, 'pre-push')
+  const path = join(dir, name)
   if (existsSync(path)) {
     const current = readFileSync(path, 'utf8')
     if (!current.includes(HOOK_MARKER)) {
       console.log(`✗ ${path} already exists and isn't git-gloss's; left it unchanged.`)
-      console.log('  to sync glosses on push, add these lines to it:')
-      console.log('    git remote | grep -qxF -- "$1" && { GIT_TERMINAL_PROMPT=0 git gloss sync "$1" >&2 ||')
-      console.log('      echo "git-gloss: syncing glosses failed; your push continues" >&2; }')
+      console.log('  to use it with git-gloss, add these lines to it:')
+      for (const line of manual) console.log(`    ${line}`)
       return
     }
   }
   mkdirSync(dir, { recursive: true })
-  writeFileSync(path, HOOK)
+  writeFileSync(path, body)
   chmodSync(path, 0o755)
-  console.log(`✓ \`git push\` now syncs glosses with the remote it pushes to (${path})`)
+  console.log(`✓ ${done} (${path})`)
 }
 
 export function run(argv: string[] = []): number {
@@ -65,7 +72,15 @@ export function run(argv: string[] = []): number {
   } else {
     console.log('  no origin remote; skipped fetch config')
   }
-  if (values.hooks) installHook()
+  if (values.hooks) {
+    installHook('pre-push', HOOK, '`git push` now syncs glosses with the remote it pushes to', [
+      'git remote | grep -qxF -- "$1" && { GIT_TERMINAL_PROMPT=0 git gloss sync "$1" >&2 ||',
+      '  echo "git-gloss: syncing glosses failed; your push continues" >&2; }',
+    ])
+    installHook('post-commit', POST_COMMIT, '`git commit` now moves the gloss of uncommitted work onto the new commit', [
+      'git gloss adopt --quiet-unless-adopted >&2 || true',
+    ])
+  }
   console.log('  note: squash merges drop notes; re-gloss the squashed commit if you squash')
   return 0
 }

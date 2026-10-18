@@ -3,7 +3,7 @@
 # reviewer may write scratch tests and repos and run them, so it can verify
 # findings instead of only reading code.
 #
-# usage: scripts/agent-review.sh [<commit>] > review.md
+# usage: scripts/agent-review.sh [<commit> | wip] > review.md   (wip: the glossed snapshot of uncommitted work)
 #        GLOSS_REVIEW_DRY=1 scripts/agent-review.sh   print the setup and prompt, run no agent
 #
 # Confinement (Linux needs bubblewrap and socat; the run fails rather than
@@ -21,9 +21,13 @@ set -euo pipefail
 
 rev=${1:-HEAD}
 repo=$(git rev-parse --show-toplevel)
-sha=$(git -C "$repo" rev-parse --verify "$rev^{commit}")
-if ! git -C "$repo" rev-parse -q --verify refs/notes/gloss >/dev/null; then
-  echo "error: no glosses in this repository (refs/notes/gloss doesn't exist)" >&2
+if [ "$rev" = wip ]; then
+  sha=$(git -C "$repo" rev-parse --verify -q refs/gloss/wip) || { echo "error: no snapshot of uncommitted work; run: git gloss hunks wip" >&2; exit 1; }
+else
+  sha=$(git -C "$repo" rev-parse --verify "$rev^{commit}")
+fi
+if ! git -C "$repo" rev-parse -q --verify refs/notes/gloss >/dev/null && ! git -C "$repo" rev-parse -q --verify refs/notes/gloss-wip >/dev/null; then
+  echo "error: no glosses in this repository" >&2
   exit 1
 fi
 work=$(mktemp -d "${TMPDIR:-/tmp}/gloss-review-XXXXXX")
@@ -32,7 +36,11 @@ trap 'rm -rf "$work"' EXIT
 clone="$work/repo"
 git clone -q --no-hardlinks "$repo" "$clone"
 git -C "$clone" remote remove origin
-git -C "$clone" fetch -q "$repo" refs/notes/gloss:refs/notes/gloss
+# Glosses of commits and of uncommitted work, and the wip snapshot itself
+# (a commit on no branch, so a plain clone doesn't have it).
+for ref in refs/notes/gloss refs/notes/gloss-wip refs/gloss/wip; do
+  if git -C "$repo" rev-parse -q --verify "$ref" >/dev/null; then git -C "$clone" fetch -q "$repo" "+$ref:$ref"; fi
+done
 git -C "$clone" checkout -q --detach "$sha"
 # The reflog names the real repository's path; nothing in the sandbox needs it.
 git -C "$clone" reflog expire --expire=now --all
