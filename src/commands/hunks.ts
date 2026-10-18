@@ -14,7 +14,17 @@ export function run(argv: string[]): number {
   })
   // `hunks wip` takes a fresh snapshot of uncommitted work; other commands
   // then use that snapshot, so a gloss is checked against the hunks shown here.
-  const sha = positionals[0] === 'wip' ? snapshotWorkingTree() : resolveCommit(positionals[0] ?? 'HEAD')
+  let sha: string
+  if (positionals[0] === 'wip') {
+    const snap = snapshotWorkingTree()
+    sha = snap.sha
+    if (snap.excluded.length) {
+      console.error(`note: left out untracked files that look like secrets: ${snap.excluded.join(', ')}` +
+        ' (stage them with git add to include them)')
+    }
+  } else {
+    sha = resolveCommit(positionals[0] ?? 'HEAD')
+  }
   const hunks = parseDiff(commitDiff(sha))
 
   if (values.json) {

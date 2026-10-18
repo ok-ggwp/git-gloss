@@ -9,7 +9,7 @@ A gloss records, for each part of a change, what it does, how necessary it is, a
 
 ## Uncommitted work (the default) or a commit
 
-Gloss changes **before they are committed**, unless the user asks you to commit first. `wip` stands for a snapshot of the uncommitted work (tracked and untracked files): `git gloss hunks wip` takes it without touching the branch, the index or any file, and the other commands then use that snapshot. The user reviews and iterates while nothing is committed. When they commit, the gloss moves onto the commit automatically if `git gloss init --hooks` was run, otherwise with `git gloss adopt`. Glosses of uncommitted work are never shared by `sync`.
+Gloss changes **before they are committed**, unless the user asks you to commit first. `wip` stands for a snapshot of the uncommitted work (tracked and untracked files): `git gloss hunks wip` takes it without touching the branch, the index or any file, and the other commands then use that snapshot. The user reviews and iterates while nothing is committed. When they commit, the gloss moves onto the commit automatically if `git gloss init --hooks` was run, otherwise with `git gloss adopt`. Glosses of uncommitted work are never shared by `sync`. Untracked files that look like secrets (`.env`, keys, credentials) are left out of the snapshot with a note; don't stage them just to gloss them.
 
 To gloss a commit instead, use its revision (default `HEAD`) wherever these steps say `wip`.
 

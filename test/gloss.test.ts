@@ -1087,3 +1087,63 @@ test('adopt reports changes made after glossing and stays quiet for directly glo
   assert.equal(r.code, 0)
   assert.equal(r.out + r.err, '', 'already glossed: the hook stays silent')
 })
+
+test('untracked files that look like secrets stay out of the snapshot unless staged', () => {
+  const { dir, g } = wipRepo()
+  writeFileSync(join(dir, '.env'), 'SECRET=hunter2\n')
+  writeFileSync(join(dir, 'server.key'), 'k\n')
+  let r = gloss(dir, ['hunks', 'wip'])
+  assert.match(r.err, /left out untracked files that look like secrets: \.env, server\.key/)
+  assert.doesNotMatch(r.out, /hunter2/)
+  assert.doesNotMatch(gloss(dir, ['review', 'wip']).out, /hunter2/)
+  g('add', '.env')
+  r = gloss(dir, ['hunks', 'wip'])
+  assert.match(r.out, /hunter2/, 'a staged file is included deliberately')
+})
+
+test('replaced and cleared snapshots leave no wip glosses behind', () => {
+  const { dir, g } = wipRepo()
+  gloss(dir, ['hunks', 'wip'])
+  gloss(dir, ['add', 'wip'], annotation(wipGroups))
+  writeFileSync(join(dir, 'f.js'), 'a\nBB\n')
+  gloss(dir, ['hunks', 'wip']) // a new snapshot replaces the glossed one
+  assert.equal(g('notes', '--ref', 'refs/notes/gloss-wip', 'list').trim(), '')
+
+  gloss(dir, ['add', 'wip'], annotation(wipGroups))
+  g('add', '-A'); g('commit', '-qm', 'all')
+  assert.match(gloss(dir, ['adopt']).out, /cleared the wip snapshot/)
+  assert.equal(g('notes', '--ref', 'refs/notes/gloss-wip', 'list').trim(), '')
+})
+
+test('a branch named wip still works when there is no snapshot', () => {
+  const dir = repo()
+  execFileSync('git', ['branch', 'wip'], { cwd: dir })
+  gloss(dir, ['add'], annotation([retryCore, config]))
+  let r = gloss(dir, ['show', 'wip'])
+  assert.equal(r.code, 0, r.err)
+  assert.match(r.out, /add retry/)
+  writeFileSync(join(dir, 'new.txt'), 'x\n')
+  gloss(dir, ['hunks', 'wip'])
+  r = gloss(dir, ['show', 'wip'])
+  assert.match(r.err, /for the branch or tag, use heads\/wip/)
+})
+
+test('adopt re-points serves at groups left in another commit, and honours --force and the base check', () => {
+  const { dir, g } = wipRepo()
+  gloss(dir, ['hunks', 'wip'])
+  gloss(dir, ['add', 'wip'], annotation([wipGroups[0], { ...wipGroups[1], necessity: 'supporting', serves: 'cap' }]))
+  g('add', 'new.js'); g('commit', '-qm', 'new only')
+  let r = gloss(dir, ['adopt'])
+  assert.equal(r.code, 0, r.err)
+  const adopted = JSON.parse(g('notes', '--ref', 'refs/notes/gloss', 'show', 'HEAD')).annotation.groups[0]
+  assert.equal(adopted.serves, 'task')
+  assert.match(adopted.notes, /also served cap, glossed with another commit/)
+
+  r = gloss(dir, ['adopt'])
+  assert.equal(r.code, 1, 'refuses to replace a gloss')
+  assert.equal(gloss(dir, ['adopt', '--force']).code, 0)
+
+  g('checkout', '-q', '--orphan', 'other'); g('rm', '-rqf', '.'); writeFileSync(join(dir, 'o.txt'), 'o\n'); g('add', 'o.txt'); g('commit', '-qm', 'unrelated')
+  r = gloss(dir, ['adopt'])
+  assert.match(r.out, /isn't built on the commit the wip snapshot was taken from/)
+})

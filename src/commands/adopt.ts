@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { parseArgs } from 'node:util'
-import { commitDiff, git, gitTry, GlossError, readNote, resolveCommit, WIP_REF, writeNote } from '../git.ts'
+import { commitDiff, dropWipNote, git, gitTry, GlossError, readNote, resolveCommit, WIP_REF, writeNote } from '../git.ts'
 import { location, parseDiff, type Hunk } from '../diff.ts'
 import { noteFormat, servesOf, type Annotation } from '../schema.ts'
 import { changedCount, parseRef, refLabel, selections, uncovered, type Claim } from '../selection.ts'
@@ -33,9 +33,9 @@ export function run(argv: string[]): number {
     if (quiet) return 0 // the commit was glossed directly
     throw new GlossError(`${sha.slice(0, 7)} already has a gloss; pass --force to replace it with the adopted one`)
   }
-  // Only commits built on the snapshot's base can contain its work: not a
-  // commit on another branch, and not commits replayed by a rebase (whose
-  // glosses follow them through notes.rewriteRef instead).
+  // Only commits descended from the snapshot's base can contain its work.
+  // During a rebase, the hook stays out: replayed commits' glosses follow them
+  // through notes.rewriteRef instead.
   const base = git(['log', '-1', '--format=%P', wip]).trim().split(' ')[0]
   if (base && gitTry(['merge-base', '--is-ancestor', base, sha]) === null) {
     return skip(`nothing to adopt for ${sha.slice(0, 7)}: it isn't built on the commit the wip snapshot was taken from`)
@@ -116,6 +116,7 @@ export function run(argv: string[]): number {
     say(`  gloss them with: git gloss add ${sha.slice(0, 7)} --force -f <annotation including them>`)
   }
   if (done) {
+    dropWipNote(wip)
     git(['update-ref', '-d', WIP_REF])
     say('  all work is committed; cleared the wip snapshot')
   }

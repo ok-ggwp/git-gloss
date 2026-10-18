@@ -57,7 +57,7 @@ git commit                     # with init --hooks, the gloss moves onto the com
 git gloss adopt                # ...or move it by hand
 ```
 
-The snapshot is a commit object built from a temporary index, kept by the private ref `refs/gloss/wip`; your branch, index and files are never touched. Its gloss lives in `refs/notes/gloss-wip`, which `sync` doesn't push. Commands warn when you've edited files or committed since the snapshot. `adopt` matches the snapshot's hunks to the commit's by content, so the work can be committed in several commits (each takes the groups whose changes it contains), and changes made after glossing are reported as unexplained rather than silently covered. Once everything is committed, the snapshot is cleared.
+The snapshot is a commit object built from a temporary index, kept by the private ref `refs/gloss/wip`; your branch, index and files are never touched. Its gloss lives in `refs/notes/gloss-wip`, which `sync` doesn't push. Untracked files that look like secrets (`.env`, `*.key`, `*.pem`, `credentials.json`, …) are left out of the snapshot, with a note, because snapshots are shown and sent to reviewers; stage one with `git add` to include it. If a branch or tag is called `wip`, `wip` still means it when there's no snapshot; otherwise use `heads/wip`. Commands warn when you've edited files or committed since the snapshot. `adopt` matches the snapshot's hunks to the commit's by content, so the work can be committed in several commits (each takes the groups whose changes it contains), and changes made after glossing are reported as unexplained rather than silently covered. Once everything is committed, the snapshot is cleared.
 
 ## Agent review in a sandbox
 

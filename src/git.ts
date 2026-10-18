@@ -43,9 +43,19 @@ export function gitTry(args: string[], input?: string): string | null {
   }
 }
 
-// The working tree as a tree object: tracked and untracked files, respecting
-// .gitignore, built in a temporary index so the real index is untouched.
-function workingTree(): string {
+// Untracked files that look like secrets. A snapshot is shown and sent to
+// reviewers, so these are left out unless the user stages them.
+const SENSITIVE = [
+  /^\.env(\..*)?$/, /\.(pem|key|p12|pfx|jks|keystore|kdbx)$/, /^id_(rsa|dsa|ecdsa|ed25519)$/,
+  /(^|[-_.])(secrets?|credentials?|tokens?|passwords?)([-_.]|$)/i, /^\.(netrc|npmrc|pypirc)$/,
+]
+const looksSensitive = (path: string) => SENSITIVE.some((re) => re.test(path.split('/').pop()!))
+
+// The working tree as a tree object: tracked files, staged files, and
+// untracked files except ignored ones and ones that look like secrets. Built
+// in a temporary index so the real index is untouched. `excluded` lists the
+// untracked files left out as possible secrets.
+function workingTree(): { tree: string; excluded: string[] } {
   const dir = mkdtempSync(join(tmpdir(), 'git-gloss-index-'))
   try {
     const index = join(dir, 'index')
@@ -59,54 +69,71 @@ function workingTree(): string {
       utimesSync(index, atime, mtime)
     }
     const env = { GIT_INDEX_FILE: index }
+    const untracked = git(['ls-files', '--others', '--exclude-standard', '-z', '--', ':/']).split('\0').filter(Boolean)
+    const excluded = untracked.filter(looksSensitive)
     git(['add', '-A', '--', ':/'], undefined, env)
-    return git(['write-tree'], undefined, env).trim()
+    if (excluded.length) git(['rm', '-q', '--cached', '--', ...excluded.map((p) => `:/${p}`)], undefined, env)
+    return { tree: git(['write-tree'], undefined, env).trim(), excluded }
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
 }
 
 const headSha = () => gitTry(['rev-parse', '--verify', '--quiet', 'HEAD'])?.trim() ?? null
+const treeAndParent = (sha: string) => {
+  const [tree, parent] = git(['log', '-1', '--format=%T %P', sha]).trim().split(' ')
+  return { tree, parent: parent || null }
+}
 
 // Record uncommitted changes as a commit on top of HEAD without touching the
 // branch, index or files, and point WIP_REF at it. Reuses the current
 // snapshot if nothing has changed, so its gloss stays attached.
-export function snapshotWorkingTree(): string {
-  const tree = workingTree()
+export function snapshotWorkingTree(): { sha: string; excluded: string[] } {
+  const { tree, excluded } = workingTree()
   const head = headSha()
   if (head && git(['rev-parse', `${head}^{tree}`]).trim() === tree) {
     throw new GlossError('there are no uncommitted changes to snapshot')
   }
   const current = gitTry(['rev-parse', '--verify', '--quiet', WIP_REF])?.trim()
   if (current) {
-    const [currentTree, ...parents] = git(['log', '-1', '--format=%T %P', current]).trim().split(' ').filter(Boolean)
-    if (currentTree === tree && (parents[0] ?? null) === head) return current
+    const c = treeAndParent(current)
+    if (c.tree === tree && c.parent === head) return { sha: current, excluded }
+    // Only the latest snapshot is glossed and adopted; drop the old one's gloss.
+    dropWipNote(current)
   }
   const sha = git(['commit-tree', tree, ...(head ? ['-p', head] : []), '-m', WIP_MESSAGE]).trim()
   git(['update-ref', WIP_REF, sha])
-  return sha
+  return { sha, excluded }
 }
+
+export const dropWipNote = (sha: string) => gitTry(['notes', '--ref', WIP_NOTES_REF, 'remove', '--ignore-missing', sha])
 
 export const isWipSnapshot = (sha: string) => gitTry(['log', '-1', '--format=%s', sha])?.trim() === WIP_MESSAGE
 
 // Why the latest snapshot no longer matches the working tree, or null.
 export function wipStaleness(sha: string): string | null {
-  const [tree, ...parents] = git(['log', '-1', '--format=%T %P', sha]).trim().split(' ').filter(Boolean)
-  if ((parents[0] ?? null) !== headSha()) return 'HEAD has moved since this snapshot was taken'
-  if (workingTree() !== tree) return 'the working tree has changed since this snapshot was taken'
+  const s = treeAndParent(sha)
+  if (s.parent !== headSha()) return 'HEAD has moved since this snapshot was taken'
+  if (workingTree().tree !== s.tree) return 'the working tree has changed since this snapshot was taken'
   return null
 }
 
 export function resolveCommit(rev: string): string {
-  // "wip": the latest snapshot of uncommitted work (made by `hunks wip`).
+  // "wip": the latest snapshot of uncommitted work (made by `hunks wip`). A
+  // branch or tag named wip still works when there is no snapshot, and can be
+  // reached as heads/wip or tags/wip when there is.
+  const named = gitTry(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`])?.trim()
   if (rev === 'wip') {
     const sha = gitTry(['rev-parse', '--verify', '--quiet', WIP_REF])?.trim()
-    if (!sha) throw new GlossError('no snapshot of uncommitted work yet; run `git gloss hunks wip` first')
-    const stale = wipStaleness(sha)
-    if (stale) console.error(`warning: ${stale}; run \`git gloss hunks wip\` to snapshot again, then re-gloss`)
-    return sha
+    if (sha) {
+      if (named) console.error('note: "wip" means the snapshot of uncommitted work; for the branch or tag, use heads/wip or tags/wip')
+      const stale = wipStaleness(sha)
+      if (stale) console.error(`warning: ${stale}; run \`git gloss hunks wip\` to snapshot again, then re-gloss`)
+      return sha
+    }
+    if (!named) throw new GlossError('no snapshot of uncommitted work yet; run `git gloss hunks wip` first')
   }
-  const sha = gitTry(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`])
+  const sha = named
   if (!sha) throw new GitError(`not a commit: ${rev}`)
   return sha.trim()
 }
@@ -183,8 +210,7 @@ export function readNote(sha: string): GlossNote | null {
   return { ...(data as GlossNote), annotation: annotation.data }
 }
 
-export function writeNote(sha: string, note: GlossNote): void {
-  const ref = isWipSnapshot(sha) ? WIP_NOTES_REF : NOTES_REF
+export function writeNote(sha: string, note: GlossNote, ref: string = NOTES_REF): void {
   git(['notes', '--ref', ref, 'add', '-f', '-F', '-', sha], JSON.stringify(note, null, 2) + '\n')
 }
 

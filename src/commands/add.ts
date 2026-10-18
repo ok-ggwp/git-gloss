@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { z } from 'zod'
-import { commitDiff, readNote, resolveCommit, writeNote } from '../git.ts'
+import { commitDiff, isWipSnapshot, NOTES_REF, readNote, resolveCommit, WIP_NOTES_REF, writeNote } from '../git.ts'
 import { location, parseDiff } from '../diff.ts'
 import { Annotation, noteFormat } from '../schema.ts'
 import { validate } from '../validate.ts'
@@ -74,7 +74,7 @@ export function run(argv: string[]): number {
     created_at: new Date().toISOString(),
     annotation: parsed.data,
     hunks: hunks.map(location),
-  })
+  }, isWipSnapshot(sha) ? WIP_NOTES_REF : NOTES_REF)
   console.log(`glossed ${sha.slice(0, 10)}: ${parsed.data.groups.length} groups over ${hunks.length} hunks`)
   return 0
 }
