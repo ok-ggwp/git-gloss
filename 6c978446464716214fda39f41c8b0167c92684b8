@@ -1,0 +1,199 @@
+{
+  "gloss": 3,
+  "commit": "6c978446464716214fda39f41c8b0167c92684b8",
+  "created_at": "2026-10-18T04:55:38.373Z",
+  "annotation": {
+    "version": 1,
+    "task": "Address the review of fa4ed2c: paths with spaces or quotes broke older history steps, the trail was dropped when blame and log -L disagreed, the --history hint lost --rev, and every why call did the full history's work",
+    "groups": [
+      {
+        "id": "path-parsing",
+        "intent": "Parse diff and blame paths with one helper that strips the tab and unquotes",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "For 'my file.js' or 'q\"x.js', older steps have no groups, so the look-through stops and hides the original intent",
+        "evidence": "test 'why history works for paths with spaces and quotes…'",
+        "hunks": [
+          "h4",
+          "h5",
+          "h6",
+          "h8",
+          "h9"
+        ],
+        "notes": "The quote case exposed a second spot the reviewer didn't mention: blame's porcelain output quotes file names too"
+      },
+      {
+        "id": "kept-trail",
+        "intent": "Keep log -L's older commits when blame disagrees, with a note",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "With blame.ignoreRevsFile and similar, the whole older history disappears silently",
+        "hunks": [
+          "h1:1-2",
+          "h1:5-13",
+          "h2",
+          "h3:6"
+        ],
+        "notes": "Not covered by a test: I didn't construct a case where blame and log -L disagree"
+      },
+      {
+        "id": "lazy-steps",
+        "intent": "Build only the steps the default view shows",
+        "necessity": "defensive",
+        "serves": "task",
+        "removal_impact": "The default why loads a gloss and diff for every commit in the line's history",
+        "hunks": [
+          "h1:3-4",
+          "h1:14-27",
+          "h3:1-2"
+        ],
+        "notes": "--json still builds every step, so the agent path (why --json) keeps the full cost"
+      },
+      {
+        "id": "rev-hint",
+        "intent": "Carry --rev into the --history hint",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The suggested command explains a different line at HEAD",
+        "evidence": "same test",
+        "hunks": [
+          "h3:3-5"
+        ]
+      },
+      {
+        "id": "no-signatures",
+        "intent": "Turn off log.showSignature for the history query",
+        "necessity": "defensive",
+        "serves": "task",
+        "removal_impact": "With that config, signature output between commits could break parsing",
+        "hunks": [
+          "h7"
+        ]
+      },
+      {
+        "id": "tests",
+        "intent": "Test space and quote paths and the --rev hint",
+        "necessity": "supporting",
+        "serves": [
+          "path-parsing",
+          "rev-hint"
+        ],
+        "removal_impact": "Unverified",
+        "hunks": [
+          "h10"
+        ]
+      }
+    ],
+    "risks": [
+      "why --json still pays for the full history on every call",
+      "The blame/log -L disagreement path has no test",
+      "This commit was not reviewed again"
+    ],
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-opus-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 83,
+      "oldLines": 13,
+      "newStart": 83,
+      "newLines": 30,
+      "hash": "99405ed9570dd8cd"
+    },
+    {
+      "id": "h2",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 115,
+      "oldLines": 6,
+      "newStart": 132,
+      "newLines": 7,
+      "hash": "b969e57e79affd52"
+    },
+    {
+      "id": "h3",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 141,
+      "oldLines": 10,
+      "newStart": 159,
+      "newLines": 12,
+      "hash": "de4ea0a7cc9dcb94"
+    },
+    {
+      "id": "h4",
+      "file": "src/diff.ts",
+      "oldFile": "src/diff.ts",
+      "oldStart": 12,
+      "oldLines": 10,
+      "newStart": 12,
+      "newLines": 31,
+      "hash": "22934385978b744b"
+    },
+    {
+      "id": "h5",
+      "file": "src/diff.ts",
+      "oldFile": "src/diff.ts",
+      "oldStart": 61,
+      "oldLines": 8,
+      "newStart": 82,
+      "newLines": 8,
+      "hash": "0c0a18abf5122ea1"
+    },
+    {
+      "id": "h6",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 1,
+      "oldLines": 5,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "9c218e883eb4a9c8"
+    },
+    {
+      "id": "h7",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 119,
+      "oldLines": 7,
+      "newStart": 120,
+      "newLines": 8,
+      "hash": "32692e52c3955721"
+    },
+    {
+      "id": "h8",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 131,
+      "oldLines": 7,
+      "newStart": 133,
+      "newLines": 7,
+      "hash": "4d762ca6f04cde12"
+    },
+    {
+      "id": "h9",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 150,
+      "oldLines": 6,
+      "newStart": 152,
+      "newLines": 8,
+      "hash": "d380355cd40122cd"
+    },
+    {
+      "id": "h10",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 897,
+      "oldLines": 3,
+      "newStart": 897,
+      "newLines": 25,
+      "hash": "ce2810c9004265b2"
+    }
+  ]
+}
