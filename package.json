@@ -2,6 +2,7 @@
   "name": "git-gloss",
   "version": "0.1.0",
   "description": "Annotate agent-written diffs with intent and necessity, stored in git notes",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "git-gloss": "bin/git-gloss.js"
