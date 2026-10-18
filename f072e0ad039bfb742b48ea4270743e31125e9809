@@ -1,0 +1,276 @@
+{
+  "gloss": 1,
+  "commit": "f072e0ad039bfb742b48ea4270743e31125e9809",
+  "created_at": "2026-10-17T09:04:32.653Z",
+  "annotation": {
+    "version": 1,
+    "task": "Address the review of b72019e: wrong stale counts and invisible missing hunks, the Enter key misfiring, dead links to filtered groups, leaked temp dirs, malformed hashes, an unused CSP directive, an overclaiming escaping test, and pages that look current when they are not",
+    "groups": [
+      {
+        "id": "missing-hunks",
+        "intent": "Count stale hunks against the gloss; show missing hunks as placeholders",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A group says '2 of 1 hunks changed or gone' and missing hunks vanish from the page",
+        "evidence": "test 'html shows missing hunks as placeholders and counts stale hunks against the gloss'",
+        "hunks": [
+          "h11",
+          "h12",
+          "h13",
+          "h4",
+          "h5"
+        ],
+        "notes": "h4 also adds the hunk id to every hunk header, which I did not need for the fix (incidental)"
+      },
+      {
+        "id": "drop-enter",
+        "intent": "Remove the undocumented Enter shortcut; ignore keys in any editable field",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Enter on a sidebar or serves link toggles the previous card's code before jumping",
+        "hunks": [
+          "h10"
+        ],
+        "notes": "Not tested: there is no browser-interaction test"
+      },
+      {
+        "id": "reveal-on-link",
+        "intent": "Turn a category back on when a link points at one of its hidden groups",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Clicking a link to a filtered-out group silently does nothing",
+        "hunks": [
+          "h6",
+          "h8",
+          "h9"
+        ],
+        "notes": "Not tested: there is no browser-interaction test"
+      },
+      {
+        "id": "cache-path",
+        "intent": "Write to ~/.cache/git-gloss/<commit>.html instead of a new temp dir per run",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Every run leaves a git-gloss-* directory in /tmp",
+        "hunks": [
+          "h2",
+          "h3"
+        ],
+        "notes": "Still avoids the shared-/tmp symlink risk that motivated mkdtemp, since the cache dir belongs to the user"
+      },
+      {
+        "id": "snapshot-note",
+        "intent": "Say in the page footer that it is a snapshot and how to regenerate it",
+        "necessity": "defensive",
+        "serves": "task",
+        "removal_impact": "A shared page can look current after the gloss or commit has changed",
+        "hunks": [
+          "h7"
+        ]
+      },
+      {
+        "id": "small-fixes",
+        "intent": "Tolerate malformed #g- hashes; drop the unused img-src CSP directive",
+        "necessity": "incidental",
+        "serves": "task",
+        "removal_impact": "A console error on a bad hash; a CSP slightly looser than needed",
+        "hunks": [
+          "h10",
+          "h14"
+        ]
+      },
+      {
+        "id": "docs",
+        "intent": "Document the cache path, the snapshot behaviour and the build caveat",
+        "necessity": "supporting",
+        "serves": "cache-path",
+        "removal_impact": "Users don't know where pages go; a future build step could miss the two asset files",
+        "hunks": [
+          "h1"
+        ]
+      },
+      {
+        "id": "tests",
+        "intent": "Hostile diff/subject tests, a real-browser test, a missing-hunk test",
+        "necessity": "supporting",
+        "serves": "missing-hunks",
+        "removal_impact": "The escaping claim would rest on a test that never put the payload in a diff",
+        "hunks": [
+          "h15"
+        ],
+        "notes": "The browser test runs when Chromium is installed and is skipped otherwise; switching one field to innerHTML makes it fail. Also serves the escaping work from b72019e"
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Split client.js into render/keys/nav files so each group owns a file",
+        "rejected_because": "That would bend the code's structure around a tool limitation; splitting hunks by line range is the real fix"
+      },
+      {
+        "option": "Keep mkdtemp and delete old git-gloss-* dirs on each run",
+        "rejected_because": "A stable per-user path is simpler and also lets a regenerated page replace the old one"
+      }
+    ],
+    "risks": [
+      "The interactive fixes (Enter, reveal-on-link) have no automated test",
+      "The browser test depends on Chromium being installed and is skipped otherwise",
+      "This commit was not reviewed again"
+    ],
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-opus-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 46,
+      "oldLines": 4,
+      "newStart": 46,
+      "newLines": 5,
+      "hash": "50b2bf1d7ec61f19"
+    },
+    {
+      "id": "h2",
+      "file": "src/commands/html.ts",
+      "oldFile": "src/commands/html.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "fc26414e229b7196"
+    },
+    {
+      "id": "h3",
+      "file": "src/commands/html.ts",
+      "oldFile": "src/commands/html.ts",
+      "oldStart": 32,
+      "oldLines": 12,
+      "newStart": 32,
+      "newLines": 12,
+      "hash": "f9ef5ae83bfd626e"
+    },
+    {
+      "id": "h4",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 34,
+      "oldLines": 10,
+      "newStart": 34,
+      "newLines": 15,
+      "hash": "fd4752c79f3078e5"
+    },
+    {
+      "id": "h5",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 74,
+      "oldLines": 7,
+      "newStart": 79,
+      "newLines": 7,
+      "hash": "d95535b9fd07620d"
+    },
+    {
+      "id": "h6",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 147,
+      "oldLines": 6,
+      "newStart": 152,
+      "newLines": 7,
+      "hash": "de15dacc47209272"
+    },
+    {
+      "id": "h7",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 210,
+      "oldLines": 7,
+      "newStart": 216,
+      "newLines": 9,
+      "hash": "a16cf08b0e96f042"
+    },
+    {
+      "id": "h8",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 229,
+      "oldLines": 7,
+      "newStart": 237,
+      "newLines": 13,
+      "hash": "1982d2ee9d21767d"
+    },
+    {
+      "id": "h9",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 240,
+      "oldLines": 7,
+      "newStart": 254,
+      "newLines": 8,
+      "hash": "6afc1440f9d64cc7"
+    },
+    {
+      "id": "h10",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 260,
+      "oldLines": 17,
+      "newStart": 275,
+      "newLines": 16,
+      "hash": "a2d711c46d4fe4a5"
+    },
+    {
+      "id": "h11",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 27,
+      "oldLines": 6,
+      "newStart": 27,
+      "newLines": 7,
+      "hash": "c7ac5a6b6cdc82d9"
+    },
+    {
+      "id": "h12",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 69,
+      "oldLines": 6,
+      "newStart": 70,
+      "newLines": 23,
+      "hash": "913c64a49d19ef32"
+    },
+    {
+      "id": "h13",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 104,
+      "oldLines": 11,
+      "newStart": 122,
+      "newLines": 13,
+      "hash": "90f232e7ed4637db"
+    },
+    {
+      "id": "h14",
+      "file": "src/html/page.ts",
+      "oldFile": "src/html/page.ts",
+      "oldStart": 17,
+      "oldLines": 7,
+      "newStart": 17,
+      "newLines": 7,
+      "hash": "96199fb2d735a6d6"
+    },
+    {
+      "id": "h15",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 389,
+      "oldLines": 19,
+      "newStart": 389,
+      "newLines": 60,
+      "hash": "9422334b56bcffaa"
+    }
+  ]
+}
