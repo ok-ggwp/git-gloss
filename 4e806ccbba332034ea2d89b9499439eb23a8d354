@@ -1,0 +1,96 @@
+{
+  "gloss": 3,
+  "commit": "4e806ccbba332034ea2d89b9499439eb23a8d354",
+  "created_at": "2026-10-18T18:50:36.712Z",
+  "annotation": {
+    "version": 1,
+    "task": "Ship the gloss skill as a Claude Code plugin, installed from the ok-ggwp/git-gloss repo",
+    "summary": "The repository itself becomes the plugin (its skills/gloss is where a plugin's skills live) and its own marketplace, so `/plugin install git-gloss --marketplace ok-ggwp/git-gloss` installs the skill. The README replaces the symlink instructions with that line.",
+    "groups": [
+      {
+        "id": "plugin-manifest",
+        "intent": "plugin.json: the repo is the git-gloss plugin",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Claude Code wouldn't treat the repository as a plugin, so the skill couldn't be installed with /plugin",
+        "evidence": "claude plugin validate passes; with the user's own gloss symlink moved aside, `claude -p --plugin-dir ~/dev/git-gloss` listed the gloss skill",
+        "hunks": [
+          "h2"
+        ],
+        "notes": "Skills are discovered from skills/ at the plugin root, where the skill already lives, so no files move. The version follows the npm package (0.1.0)."
+      },
+      {
+        "id": "marketplace",
+        "intent": "marketplace.json: the repo is the ok-ggwp marketplace listing the plugin",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "/plugin install --marketplace ok-ggwp/git-gloss would fail with 'Marketplace file not found'",
+        "hunks": [
+          "h1"
+        ],
+        "notes": "The marketplace is named ok-ggwp and its plugin's source is the repository root. git-gud could be listed here later."
+      },
+      {
+        "id": "docs",
+        "intent": "README: install the skill as a plugin; the symlink as a fallback",
+        "necessity": "supporting",
+        "serves": [
+          "plugin-manifest",
+          "marketplace"
+        ],
+        "removal_impact": "readers would still be told to symlink the skill into ~/.claude/skills",
+        "hunks": [
+          "h3",
+          "h4"
+        ]
+      }
+    ],
+    "risks": [
+      "The install needs the repository pushed with these files; until then /plugin install finds no marketplace",
+      "Installing the plugin while the old symlink is still in ~/.claude/skills gives two copies of the skill; remove the symlink after installing",
+      "Validation warns that the repo's CLAUDE.md isn't loaded by plugins; that file is for agents developing git-gloss, so it's expected"
+    ]
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": ".claude-plugin/marketplace.json",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 14,
+      "hash": "b46fe67006b10f8e"
+    },
+    {
+      "id": "h2",
+      "file": ".claude-plugin/plugin.json",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 10,
+      "hash": "96d62e1975a91e43"
+    },
+    {
+      "id": "h3",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 43,
+      "oldLines": 9,
+      "newStart": 43,
+      "newLines": 16,
+      "hash": "3f6e6f51319da55a"
+    },
+    {
+      "id": "h4",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 73,
+      "oldLines": 7,
+      "newStart": 80,
+      "newLines": 7,
+      "hash": "dc8021fa179c7f69"
+    }
+  ]
+}
