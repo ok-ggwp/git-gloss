@@ -668,3 +668,119 @@ test('ranges list skipped merges, reject "...", say "1 commit", and never read o
   assert.notEqual(r.code, 0)
   assert.ok(!existsSync(target), 'the range argument must not be read as a git option')
 })
+
+// A bare origin and two teammates' clones of it, sharing two commits.
+function team(): { origin: string; a: string; b: string; g: (dir: string, ...args: string[]) => string } {
+  const root = mkdtempSync(join(tmpdir(), 'gloss-team-'))
+  const g = (dir: string, ...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe' })
+  const origin = join(root, 'origin.git')
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin])
+  const seed = repo()
+  g(seed, 'push', '-q', origin, 'main')
+  const clone = (name: string) => {
+    const dir = join(root, name)
+    execFileSync('git', ['clone', '-q', origin, dir])
+    g(dir, 'config', 'user.email', `${name}@e`); g(dir, 'config', 'user.name', name)
+    gloss(dir, ['init'])
+    return dir
+  }
+  return { origin, a: clone('a'), b: clone('b'), g }
+}
+const noteOn = (g: (d: string, ...a: string[]) => string, dir: string, rev: string) => {
+  try { return g(dir, 'notes', '--ref', 'refs/notes/gloss', 'show', rev) } catch { return null }
+}
+const rawNote = (g: (d: string, ...a: string[]) => string, dir: string, rev: string, body: string) =>
+  g(dir, 'notes', '--ref', 'refs/notes/gloss', 'add', '-f', '-m', body, rev)
+
+test('sync shares glosses between teammates, including to a remote with none yet', () => {
+  const { a, b, g } = team()
+  gloss(a, ['add', 'HEAD'], annotation([retryCore, config]))
+  let r = gloss(a, ['sync'])
+  assert.equal(r.code, 0, r.err)
+  assert.match(r.out, /fetched 0, pushed 1/)
+
+  gloss(b, ['add', 'HEAD~1'], annotation([{ ...retryCore, hunks: ['h1'] }]))
+  r = gloss(b, ['sync'])
+  assert.match(r.out, /fetched 1, pushed 1/)
+  r = gloss(a, ['sync'])
+  assert.match(r.out, /fetched 1, pushed 0/)
+  assert.ok(noteOn(g, a, 'HEAD~1') && noteOn(g, b, 'HEAD'), 'both have both glosses')
+  assert.match(gloss(a, ['sync']).out, /already in sync/)
+})
+
+test('when both sides glossed a commit, sync keeps the newer gloss and reports it', () => {
+  const { a, b, g } = team()
+  const body = (who: string, at: string) => JSON.stringify({ gloss: 1, commit: 'x', created_at: at, who, annotation: {}, hunks: [] })
+  rawNote(g, a, 'HEAD', body('a', '2026-10-01T00:00:00.000Z'))
+  gloss(a, ['sync'])
+  rawNote(g, b, 'HEAD', body('b', '2026-10-02T00:00:00.000Z'))
+  let r = gloss(b, ['sync'])
+  assert.match(r.out, /kept yours \(newer\)/)
+  r = gloss(a, ['sync'])
+  assert.match(r.out, /kept theirs \(newer\)/)
+  assert.match(noteOn(g, a, 'HEAD')!, /"who":"b"/)
+  assert.match(noteOn(g, b, 'HEAD')!, /"who":"b"/)
+})
+
+test('sync passes through notes it cannot read and keeps yours on an unreadable conflict', () => {
+  const { a, b, g } = team()
+  rawNote(g, a, 'HEAD', 'from a newer version, not JSON')
+  rawNote(g, a, 'HEAD~1', '{"gloss": 9}')
+  gloss(a, ['sync'])
+  rawNote(g, b, 'HEAD', JSON.stringify({ created_at: '2030-01-01T00:00:00.000Z' }))
+  const r = gloss(b, ['sync'])
+  assert.equal(r.code, 0, r.err)
+  assert.match(r.out, /kept yours \(couldn't read both glosses' dates\)/)
+  assert.equal(noteOn(g, b, 'HEAD~1')?.trim(), '{"gloss": 9}', 'unknown formats arrive unchanged')
+})
+
+test('sync rejects unknown remotes', () => {
+  const { a } = team()
+  const r = gloss(a, ['sync', 'nope'])
+  assert.equal(r.code, 1)
+  assert.match(r.err, /no remote named "nope"; remotes are origin/)
+})
+
+test('init --hooks syncs glosses on git push without recursing or replacing other hooks', () => {
+  const { origin, a, b, g } = team()
+  let r = gloss(a, ['init', '--hooks'])
+  assert.match(r.out, /git push` now syncs glosses/)
+  gloss(a, ['add', 'HEAD'], annotation([retryCore, config]))
+  writeFileSync(join(a, 'new.txt'), 'n\n'); g(a, 'add', '.'); g(a, 'commit', '-qm', 'more')
+  // The hook calls `git gloss`; give it this checkout's CLI rather than relying
+  // on a global install.
+  const bin = mkdtempSync(join(tmpdir(), 'gloss-bin-'))
+  writeFileSync(join(bin, 'git-gloss'), `#!/bin/sh\nexec "${process.execPath}" "${BIN}" "$@"\n`, { mode: 0o755 })
+  execFileSync('git', ['push', '-q', 'origin', 'main'], { cwd: a, stdio: 'pipe', env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } })
+  assert.ok(g(origin, 'for-each-ref', 'refs/notes/gloss').trim(), 'the branch push also pushed glosses')
+  gloss(b, ['sync'])
+  assert.ok(noteOn(g, b, 'HEAD'))
+
+  const hook = join(b, '.git', 'hooks', 'pre-push')
+  writeFileSync(hook, '#!/bin/sh\necho mine\n')
+  r = gloss(b, ['init', '--hooks'])
+  assert.match(r.out, /already exists and isn't git-gloss's; left it unchanged/)
+  assert.equal(readFileSync(hook, 'utf8'), '#!/bin/sh\necho mine\n')
+})
+
+test('sync retries when someone else pushes glosses between its fetch and push', () => {
+  const { a, b, g } = team()
+  gloss(a, ['add', 'HEAD'], annotation([retryCore, config]))
+  gloss(b, ['add', 'HEAD~1'], annotation([{ ...retryCore, hunks: ['h1'] }]))
+  // A git wrapper that, on a's first notes push, lets b push first.
+  const bin = mkdtempSync(join(tmpdir(), 'gloss-bin-'))
+  const realGit = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim()
+  const marker = join(bin, 'raced')
+  writeFileSync(join(bin, 'git'), `#!/bin/sh
+case "$*" in *push*refs/notes/gloss*)
+  if [ ! -e "${marker}" ]; then touch "${marker}"; "${realGit}" -C "${b}" push -q --no-verify origin refs/notes/gloss:refs/notes/gloss; fi;;
+esac
+exec "${realGit}" "$@"
+`, { mode: 0o755 })
+  const r = spawnSync(process.execPath, [BIN, 'sync'], { cwd: a, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } })
+  assert.equal(r.status, 0, r.stderr)
+  assert.ok(existsSync(marker), 'the competing push happened')
+  assert.match(r.stdout, /fetched 1, pushed 1/)
+  gloss(b, ['sync'])
+  assert.ok(noteOn(g, b, 'HEAD') && noteOn(g, a, 'HEAD~1'), 'neither gloss was lost')
+})

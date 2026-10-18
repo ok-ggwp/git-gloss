@@ -6,10 +6,11 @@ import * as init from './commands/init.ts'
 import * as review from './commands/review.ts'
 import * as schema from './commands/schema.ts'
 import * as show from './commands/show.ts'
+import * as sync from './commands/sync.ts'
 import * as why from './commands/why.ts'
 
 const COMMANDS: Record<string, { usage: string; run: (argv: string[]) => number }> = {
-  init, hunks, add, show, html, why, review, schema,
+  init, hunks, add, show, html, why, review, sync, schema,
 }
 
 function help(): string {

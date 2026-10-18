@@ -2,12 +2,13 @@
 
 Agents write a lot of code, and reviewers can't easily tell what each part is for or whether it was needed. `git-gloss` lets the author of a commit (usually the agent that wrote it) attach a **gloss**: the diff grouped by intent, with each group graded for necessity and saying what breaks without it.
 
-Glosses are stored in git notes (`refs/notes/gloss`), so they don't touch history. Git doesn't push or fetch notes by default; `git gloss init` and `git push origin refs/notes/gloss` set that up.
+Glosses are stored in git notes (`refs/notes/gloss`), so they don't touch history. Git doesn't push or fetch notes by default; `git gloss sync` shares them, and `git gloss init --hooks` makes every `git push` do it.
 
 ## Commands
 
 ```
-git gloss init                        follow amends/rebases; fetch origin's glosses
+git gloss init [--hooks]              follow amends/rebases; fetch origin's glosses; --hooks: sync on push
+git gloss sync [<remote>]             fetch, merge and push glosses (default: origin)
 git gloss hunks [<commit>]            list hunks, numbering changed lines for h3:2-5 references
 git gloss add [<commit>] -f a.json    attach an annotation (validated against the diff)
 git gloss show [<commit>]             summary: one line per group, risks
@@ -35,7 +36,9 @@ npm link                      # puts git-gloss on PATH, so `git gloss` works
 ln -s "$PWD/skills/gloss" ~/.claude/skills/gloss   # teach Claude Code to write glosses
 ```
 
-In each repo you use it in, run `git gloss init`. Share glosses with `git push origin refs/notes/gloss`. `git fetch` then stores origin's glosses in `refs/notes/remotes/origin/gloss`; merge them into yours with `git notes --ref refs/notes/gloss merge -s ours refs/notes/remotes/origin/gloss` (`-s theirs` to prefer origin's where both glossed a commit). Other merge strategies would join two JSON glosses into one unreadable note.
+In each repo you use it in, run `git gloss init --hooks`. After that, every `git push` to a named remote also syncs glosses with it. Without the hook, run `git gloss sync` yourself.
+
+`sync` fetches the remote's glosses into `refs/notes/remotes/<remote>/gloss`, merges them into yours and pushes the result, retrying if someone else pushed in between. Glosses on different commits simply combine. When both sides glossed the same commit differently, the newer gloss (by its `created_at`) wins, because a re-gloss is normally a correction; if either can't be read, yours is kept. It prints what it fetched, pushed and decided. The hook never blocks a push: if syncing fails it prints a warning and the push goes ahead. If you already have a `pre-push` hook, `init --hooks` leaves it alone and prints the one line to add to it.
 
 ## Agent review in a sandbox
 
