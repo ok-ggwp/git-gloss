@@ -1,0 +1,275 @@
+{
+  "gloss": 1,
+  "commit": "13e8bc2257b60239f72a73791537886bb3a7eaef",
+  "created_at": "2026-10-17T08:53:07.353Z",
+  "annotation": {
+    "version": 1,
+    "task": "Make `git gloss show` digestible for a person in the terminal: the user found the full dump a wall of text. Agreed plan: a summary by default, detail on request, and a pager",
+    "summary": "show now prints a summary (one row per group, sorted required-first, with hunk and line counts) plus risks, and expands on request: -g for chosen groups with code, --full for all details, --diff for details and code.",
+    "groups": [
+      {
+        "id": "summary",
+        "intent": "Default show output: one row per group, sorted, with counts and risks",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "show stays the wall of text the user complained about",
+        "evidence": "test 'show summarises one line per group, required first, and expands groups with -g'",
+        "hunks": [
+          "h5",
+          "h6",
+          "h8"
+        ],
+        "notes": "Shares h5/h6 with detail-modes: in h6 the `if (values.group || values.full || values.diff)` branch is detail-modes and the rest is summary, so per-group counts double-count those hunks. Shares h8 with wrapping: necessityWord, termWidth and truncate are summary helpers; wrap and field are wrapping. Rows wrap instead of truncating; truncation cut intents to meaningless fragments at 100 columns. The tally counts all groups even under --only."
+      },
+      {
+        "id": "detail-modes",
+        "intent": "Add -g, --full and --diff to expand groups, replacing --no-diff",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The summary would be the only view; there would be no way to see the code or full rationale",
+        "evidence": "same test: -g shows only config's code, --full shows alternatives but no code, -g nope exits 2",
+        "hunks": [
+          "h5",
+          "h6"
+        ],
+        "notes": "Removes --no-diff, which is a breaking change for anyone who used it; the skill used it and is updated in this commit"
+      },
+      {
+        "id": "wrapping",
+        "intent": "Word-wrap long fields with hanging indents to the terminal width",
+        "necessity": "supporting",
+        "serves": "summary",
+        "removal_impact": "Long rationale lines run past the terminal edge or wrap with no indent, which is much of what made the old output hard to read",
+        "hunks": [
+          "h8",
+          "h9",
+          "h10"
+        ],
+        "notes": "Used by both views: the summary's intent column, task, summary and risks, and every detail field"
+      },
+      {
+        "id": "pager",
+        "intent": "Page output taller than the terminal through git's pager",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "--diff output on a large commit scrolls off screen",
+        "evidence": "checked manually under a pseudo-terminal with `script`: long output went through GIT_PAGER, short output printed directly; no automated test",
+        "hunks": [
+          "h7",
+          "h10"
+        ]
+      },
+      {
+        "id": "hunks-pager",
+        "intent": "Page `git gloss hunks` output too",
+        "necessity": "incidental",
+        "serves": "task",
+        "removal_impact": "hunks output on a big commit scrolls off screen; agents (non-TTY) are unaffected either way",
+        "hunks": [
+          "h3",
+          "h4"
+        ]
+      },
+      {
+        "id": "docs",
+        "intent": "Document the new show options in the README",
+        "necessity": "mechanical",
+        "serves": "detail-modes",
+        "removal_impact": "README lists a flag that no longer exists",
+        "hunks": [
+          "h1"
+        ]
+      },
+      {
+        "id": "skill-check",
+        "intent": "Point the skill's self-check at the summary and --full",
+        "necessity": "supporting",
+        "serves": "detail-modes",
+        "removal_impact": "The skill would tell agents to use the removed --no-diff",
+        "hunks": [
+          "h2"
+        ],
+        "notes": "Changes what agents do (two commands instead of one), so it is not mechanical"
+      },
+      {
+        "id": "test-flag-updates",
+        "intent": "Point two existing tests at --diff",
+        "necessity": "mechanical",
+        "serves": "detail-modes",
+        "removal_impact": "Those tests would fail",
+        "hunks": [
+          "h11",
+          "h12"
+        ]
+      },
+      {
+        "id": "tests",
+        "intent": "Test summary order, tally, risks, -g, --full and unknown groups",
+        "necessity": "supporting",
+        "serves": "summary",
+        "removal_impact": "The new views would be unverified",
+        "hunks": [
+          "h13"
+        ],
+        "notes": "Also covers detail-modes"
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Truncate intents so each group is exactly one line",
+        "rejected_because": "At 100 columns the cut-off intents were too short to understand"
+      },
+      {
+        "option": "Keep --no-diff as an alias for --full",
+        "rejected_because": "Prototype with one known user (the skill); a clean option set is worth the break"
+      },
+      {
+        "option": "An interactive TUI with collapsible groups",
+        "rejected_because": "That is what the HTML view (step 3) is for; the terminal view should stay plain text that also works for agents"
+      }
+    ],
+    "risks": [
+      "Found by review, fixed in the next commit: when the pager quits early on output over 64 KB, the EPIPE fallback prints everything to the terminal (reproduced: 20,009 lines)",
+      "Found by review, fixed in the next commit: a pager command that doesn't exist loses the output; pager.gloss is ignored",
+      "Found by review, fixed in the next commit: the summary does not mark stale groups, -g with --only can print nothing, and the sort order duplicates NECESSITY",
+      "When output is not a terminal the width defaults to 100 columns, so agents and pipes get wrapped text",
+      "Groups that share hunks double-count them in the summary; hunks cannot be split between groups"
+    ],
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-opus-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 10,
+      "oldLines": 9,
+      "newStart": 10,
+      "newLines": 11,
+      "hash": "ba2f3822419bcb13"
+    },
+    {
+      "id": "h2",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 15,
+      "oldLines": 7,
+      "newStart": 15,
+      "newLines": 7,
+      "hash": "6fc23f2efe3f7d96"
+    },
+    {
+      "id": "h3",
+      "file": "src/commands/hunks.ts",
+      "oldFile": "src/commands/hunks.ts",
+      "oldStart": 1,
+      "oldLines": 7,
+      "newStart": 1,
+      "newLines": 7,
+      "hash": "3fe2a22429e75c78"
+    },
+    {
+      "id": "h4",
+      "file": "src/commands/hunks.ts",
+      "oldFile": "src/commands/hunks.ts",
+      "oldStart": 18,
+      "oldLines": 9,
+      "newStart": 18,
+      "newLines": 6,
+      "hash": "feb31e410c933857"
+    },
+    {
+      "id": "h5",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 1,
+      "oldLines": 16,
+      "newStart": 1,
+      "newLines": 39,
+      "hash": "491ac0825918214c"
+    },
+    {
+      "id": "h6",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 25,
+      "oldLines": 39,
+      "newStart": 48,
+      "newLines": 90,
+      "hash": "b3d546c1a3e6cabf"
+    },
+    {
+      "id": "h7",
+      "file": "src/render.ts",
+      "oldFile": "src/render.ts",
+      "oldStart": 1,
+      "oldLines": 5,
+      "newStart": 1,
+      "newLines": 7,
+      "hash": "0fd0dc6c306769e7"
+    },
+    {
+      "id": "h8",
+      "file": "src/render.ts",
+      "oldFile": "src/render.ts",
+      "oldStart": 19,
+      "oldLines": 6,
+      "newStart": 21,
+      "newLines": 36,
+      "hash": "9ad0333621024bdf"
+    },
+    {
+      "id": "h9",
+      "file": "src/render.ts",
+      "oldFile": "src/render.ts",
+      "oldStart": 42,
+      "oldLines": 11,
+      "newStart": 74,
+      "newLines": 14,
+      "hash": "a7b19ddfc836de8f"
+    },
+    {
+      "id": "h10",
+      "file": "src/render.ts",
+      "oldFile": "src/render.ts",
+      "oldStart": 55,
+      "oldLines": 11,
+      "newStart": 90,
+      "newLines": 32,
+      "hash": "0e87be33ad6770ab"
+    },
+    {
+      "id": "h11",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 110,
+      "oldLines": 7,
+      "newStart": 110,
+      "newLines": 7,
+      "hash": "ff482b1529ae7f96"
+    },
+    {
+      "id": "h12",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 148,
+      "oldLines": 7,
+      "newStart": 148,
+      "newLines": 7,
+      "hash": "b66d68b1f0af4f7f"
+    },
+    {
+      "id": "h13",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 277,
+      "oldLines": 6,
+      "newStart": 277,
+      "newLines": 37,
+      "hash": "208d385a5c3ac512"
+    }
+  ]
+}
