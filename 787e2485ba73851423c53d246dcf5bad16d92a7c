@@ -1,0 +1,225 @@
+{
+  "gloss": 3,
+  "commit": "787e2485ba73851423c53d246dcf5bad16d92a7c",
+  "created_at": "2026-10-18T06:10:21.424Z",
+  "annotation": {
+    "version": 1,
+    "task": "Address the review of 442467d: untracked secrets reached reviewers through wip snapshots; wip notes were never pruned; a branch named wip was shadowed; plus small simplifications",
+    "groups": [
+      {
+        "id": "secrets",
+        "intent": "Leave untracked files that look like secrets out of snapshots, with a note",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "An untracked .env is printed by `review wip` and sent to the sandboxed reviewer",
+        "evidence": "test 'untracked files that look like secrets stay out of the snapshot unless staged'",
+        "hunks": [
+          "h9",
+          "h10:1-5",
+          "h8",
+          "h1",
+          "h2"
+        ],
+        "notes": "Pattern-based (.env*, keys, certificates, 'secret'/'credential'/'token'/'password' names, .netrc and friends), so it can miss oddly named secrets and catch harmless files; staging a file includes it deliberately"
+      },
+      {
+        "id": "prune-notes",
+        "intent": "Drop a snapshot's gloss when it is replaced or cleared",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "refs/notes/gloss-wip grows with every glossed snapshot",
+        "evidence": "test 'replaced and cleared snapshots leave no wip glosses behind'",
+        "hunks": [
+          "h10:18-19",
+          "h10:22-23",
+          "h5",
+          "h7"
+        ],
+        "notes": "Replacing a snapshot discards its gloss: after editing, the work has to be re-glossed anyway, but an unchanged group's text must be written again"
+      },
+      {
+        "id": "wip-branch",
+        "intent": "Fall back to a branch or tag named wip when there is no snapshot",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "`git gloss show wip` fails in repos with a wip branch",
+        "evidence": "test 'a branch named wip still works when there is no snapshot'",
+        "hunks": [
+          "h10:30-47"
+        ]
+      },
+      {
+        "id": "simplify",
+        "intent": "Share the tree/parent lookup; pass the notes ref to writeNote",
+        "necessity": "incidental",
+        "serves": "task",
+        "removal_impact": "None functionally",
+        "hunks": [
+          "h10:6-17",
+          "h10:20-21",
+          "h10:24-29",
+          "h11",
+          "h3",
+          "h4"
+        ],
+        "notes": "add still decides the ref with isWipSnapshot, because with the fallback `add wip` can resolve to a branch"
+      },
+      {
+        "id": "comment",
+        "intent": "Correct adopt's comment on which commits it skips",
+        "necessity": "incidental",
+        "serves": "task",
+        "removal_impact": "The comment keeps claiming it skips other branches",
+        "hunks": [
+          "h6"
+        ]
+      },
+      {
+        "id": "tests",
+        "intent": "Tests for secrets, note pruning, the wip branch, and adopt's untested paths",
+        "necessity": "supporting",
+        "serves": [
+          "secrets",
+          "prune-notes",
+          "wip-branch"
+        ],
+        "removal_impact": "Unverified",
+        "hunks": [
+          "h12"
+        ],
+        "notes": "Also covers serves re-pointing, adopt --force and the base check from 442467d"
+      }
+    ],
+    "risks": [
+      "Secret detection is by file name only",
+      "Glossed text is lost when a snapshot is replaced",
+      "This commit was not reviewed again"
+    ],
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-opus-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 57,
+      "oldLines": 7,
+      "newStart": 57,
+      "newLines": 7,
+      "hash": "bc7c6809b3559de0"
+    },
+    {
+      "id": "h2",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 9,
+      "oldLines": 7,
+      "newStart": 9,
+      "newLines": 7,
+      "hash": "4ef09d8dab1f55f0"
+    },
+    {
+      "id": "h3",
+      "file": "src/commands/add.ts",
+      "oldFile": "src/commands/add.ts",
+      "oldStart": 1,
+      "oldLines": 7,
+      "newStart": 1,
+      "newLines": 7,
+      "hash": "73edcde00f4720f0"
+    },
+    {
+      "id": "h4",
+      "file": "src/commands/add.ts",
+      "oldFile": "src/commands/add.ts",
+      "oldStart": 74,
+      "oldLines": 7,
+      "newStart": 74,
+      "newLines": 7,
+      "hash": "63627a72be1a2427"
+    },
+    {
+      "id": "h5",
+      "file": "src/commands/adopt.ts",
+      "oldFile": "src/commands/adopt.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "5215ab97c1b287bb"
+    },
+    {
+      "id": "h6",
+      "file": "src/commands/adopt.ts",
+      "oldFile": "src/commands/adopt.ts",
+      "oldStart": 33,
+      "oldLines": 9,
+      "newStart": 33,
+      "newLines": 9,
+      "hash": "ebf4c0bb106e4fa4"
+    },
+    {
+      "id": "h7",
+      "file": "src/commands/adopt.ts",
+      "oldFile": "src/commands/adopt.ts",
+      "oldStart": 116,
+      "oldLines": 6,
+      "newStart": 116,
+      "newLines": 7,
+      "hash": "5cadfbad9e2a9b04"
+    },
+    {
+      "id": "h8",
+      "file": "src/commands/hunks.ts",
+      "oldFile": "src/commands/hunks.ts",
+      "oldStart": 14,
+      "oldLines": 7,
+      "newStart": 14,
+      "newLines": 17,
+      "hash": "699295d6508b2304"
+    },
+    {
+      "id": "h9",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 43,
+      "oldLines": 9,
+      "newStart": 43,
+      "newLines": 19,
+      "hash": "2ddac87dad9fce8d"
+    },
+    {
+      "id": "h10",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 59,
+      "oldLines": 54,
+      "newStart": 69,
+      "newLines": 71,
+      "hash": "417c08f693207953"
+    },
+    {
+      "id": "h11",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 183,
+      "oldLines": 8,
+      "newStart": 210,
+      "newLines": 7,
+      "hash": "122a40189e08111e"
+    },
+    {
+      "id": "h12",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 1087,
+      "oldLines": 3,
+      "newStart": 1087,
+      "newLines": 63,
+      "hash": "7929f8fd62895789"
+    }
+  ]
+}
