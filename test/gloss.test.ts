@@ -307,7 +307,7 @@ test('show summarises one line per group, required first, and expands groups wit
 
   r = gloss(dir, ['show', '-g', 'nope'])
   assert.equal(r.code, 2)
-  assert.match(r.err, /no group nope in this gloss; groups are tidy, config, retry-core/)
+  assert.match(r.err, /the gloss on [0-9a-f]{7} \(add retry\) has no group nope; its groups are tidy, config, retry-core/)
 })
 
 test('show summary flags unannotated and stale groups, notes --only, and errors on empty selections', () => {
@@ -979,4 +979,16 @@ test('why works in SHA-256 repositories and rejects line 0; ranges past the end 
   assert.equal(r.code, 2)
   r = gloss(dir, ['why', 'f.js:1-9'])
   assert.match(r.out, /the file ends at line 2/)
+})
+
+test('show -g names the commit it searched and points to an earlier gloss with that group', () => {
+  const dir = repo()
+  gloss(dir, ['add'], annotation([retryCore, config]))
+  writeFileSync(join(dir, 'later.txt'), 'x\n')
+  execFileSync('git', ['add', '.'], { cwd: dir }); execFileSync('git', ['commit', '-qm', 'later'], { cwd: dir })
+  gloss(dir, ['add'], annotation([{ ...retryCore, id: 'later', hunks: ['h1'] }]))
+  const r = gloss(dir, ['show', '-g', 'config'])
+  assert.equal(r.code, 2)
+  assert.match(r.err, /the gloss on [0-9a-f]{7} \(later\) has no group config/)
+  assert.match(r.err, /found in [0-9a-f]{7} \(add retry\): git gloss show [0-9a-f]{7} -g config/)
 })

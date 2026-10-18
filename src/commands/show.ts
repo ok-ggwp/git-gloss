@@ -1,5 +1,5 @@
 import { parseArgs } from 'node:util'
-import { resolveCommit } from '../git.ts'
+import { commitSubject, gitTry, readNote, resolveCommit } from '../git.ts'
 import type { Hunk } from '../diff.ts'
 import { refLabel, sliceStats, sliceText } from '../selection.ts'
 import { loadGloss, type LoadedGroup } from '../loader.ts'
@@ -51,7 +51,19 @@ export function run(argv: string[]): number {
   const ids = gloss.groups.map((g) => g.group.id)
   const missing = values.group?.filter((id) => !ids.includes(id))
   if (missing?.length) {
-    console.error(`error: no group ${missing.join(', ')} in this gloss; groups are ${ids.join(', ')}`)
+    // Usually the group is in an earlier commit's gloss, e.g. one shown just
+    // before HEAD moved. Look a little way back for one that has them all.
+    const earlier = (gitTry(['rev-list', '--max-count=30', `${sha}~1`]) ?? '').split('\n').filter(Boolean).find((c) => {
+      try {
+        const groups = readNote(c)?.annotation.groups.map((g) => g.id) ?? []
+        return missing.every((id) => groups.includes(id))
+      } catch {
+        return false
+      }
+    })
+    const flags = missing.map((id) => `-g ${id}`).join(' ')
+    console.error(`error: the gloss on ${sha.slice(0, 7)} (${gloss.subject}) has no group ${missing.join(', ')}; its groups are ${ids.join(', ')}` +
+      (earlier ? `\n  found in ${earlier.slice(0, 7)} (${commitSubject(earlier)}): git gloss show ${earlier.slice(0, 7)} ${flags}` : ''))
     return 2
   }
 
