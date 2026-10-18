@@ -1,0 +1,170 @@
+{
+  "gloss": 3,
+  "commit": "67721470c924f17c36020c581f8a2abd4eee435d",
+  "created_at": "2026-10-18T15:44:35.328Z",
+  "annotation": {
+    "version": 1,
+    "task": "Move agent-running reviews out of git-gloss into the new git-gud tool, and give git-gud a way to reuse git-gloss's review material",
+    "summary": "git-gloss stops running agents: the sandboxed Claude review script is deleted and the docs point to git-gud, which runs honesty, blind bug and improvement reviews with several agents. git-gloss gains `review --material`, which prints just the gloss and code so git-gud's improvement stage can bring its own instructions without duplicating how glosses are rendered.",
+    "groups": [
+      {
+        "id": "material-flag",
+        "intent": "`review --material` prints only the gloss and code, no honesty instructions",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "git-gud's improve stage would have to render glosses itself or cut git-gloss's prompt apart at the 'Material under review' heading, which breaks silently if the prompt's wording changes",
+        "evidence": "The full prompt's text is unchanged: the new test checks it ends with exactly the --material output, and all 80 tests pass on the host. In git-gud's reviewer sandbox one unrelated test (headless Chromium rendering) aborts because the browser can't start there.",
+        "hunks": [
+          "h5",
+          "h6",
+          "h7",
+          "h8"
+        ],
+        "notes": "The material (branch list, each commit's gloss and code) is now built first, so the full prompt and --material share it, and --material returns before the instructions are built. Graded required because the task includes git-gud's improve stage reusing this material; the flag is only needed for that consumer. The material still carries short explanations for the reader (the hunk layout, 'Review them too' for unannotated changes) and is not framed as untrusted, so a caller must say the author's text is data; git-gud's improve prompt does, and the README says so."
+      },
+      {
+        "id": "material-test",
+        "intent": "Test --material: gloss and code, no instructions, same as the full prompt's",
+        "necessity": "supporting",
+        "serves": "material-flag",
+        "removal_impact": "--material could drift from the full prompt's material, or leak the honesty instructions into git-gud's improve prompt, with no failing test",
+        "hunks": [
+          "h9"
+        ]
+      },
+      {
+        "id": "drop-script",
+        "intent": "Delete scripts/agent-review.sh; git gud review replaces it",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "two copies of the sandboxed-review logic would drift, and git-gloss would keep running agents, which the split is meant to end",
+        "hunks": [
+          "h3"
+        ],
+        "notes": "git-gud keeps the clone setup (snapshot pushed by sha, glosses, node_modules copy, reflog expiry) and the Claude sandbox settings, and its --dry-run replaces GLOSS_REVIEW_DRY; git-gud's tests cover them, not this repo's. One behaviour is not carried over: the script built the prompt with the reviewed commit's own bin/git-gloss.js when present (useful when reviewing git-gloss itself); git-gud uses the git-gloss on PATH."
+      },
+      {
+        "id": "docs",
+        "intent": "Document --material; point the README and skill at git-gud, not the script",
+        "necessity": "supporting",
+        "serves": [
+          "material-flag",
+          "drop-script"
+        ],
+        "removal_impact": "the README and the skill would tell readers to run a script that no longer exists, and --material would be undocumented",
+        "hunks": [
+          "h1",
+          "h2",
+          "h4"
+        ]
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Have git-gud split git-gloss's full review prompt at its '# Material under review' heading",
+        "rejected_because": "it couples git-gud to the prompt's wording; a flag is an explicit interface"
+      },
+      {
+        "option": "Keep scripts/agent-review.sh as a thin wrapper around git gud review",
+        "rejected_because": "git-gloss should not ship agent-running code at all; a pointer in the README is enough"
+      }
+    ],
+    "risks": [
+      "Anyone who used scripts/agent-review.sh now needs git-gud installed",
+      "--material output is now an interface git-gud depends on; changing its headings may affect git-gud's improve prompt",
+      "The README links to github.com/ok-ggwp/git-gud, which doesn't exist until the repo is pushed"
+    ]
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 24,
+      "oldLines": 6,
+      "newStart": 24,
+      "newLines": 8,
+      "hash": "dfde126558340b40"
+    },
+    {
+      "id": "h2",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 68,
+      "oldLines": 18,
+      "newStart": 70,
+      "newLines": 18,
+      "hash": "5d32248c41ffd647"
+    },
+    {
+      "id": "h3",
+      "file": "scripts/agent-review.sh",
+      "oldFile": "scripts/agent-review.sh",
+      "oldStart": 1,
+      "oldLines": 110,
+      "newStart": 0,
+      "newLines": 0,
+      "hash": "c8a17cca9c1d7144"
+    },
+    {
+      "id": "h4",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 35,
+      "oldLines": 7,
+      "newStart": 35,
+      "newLines": 7,
+      "hash": "2d3720b3302e574a"
+    },
+    {
+      "id": "h5",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 5,
+      "oldLines": 7,
+      "newStart": 5,
+      "newLines": 7,
+      "hash": "df6a39a0d596fd6a"
+    },
+    {
+      "id": "h6",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 80,
+      "oldLines": 7,
+      "newStart": 80,
+      "newLines": 7,
+      "hash": "9de1834d4ffc5d8e"
+    },
+    {
+      "id": "h7",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 88,
+      "oldLines": 6,
+      "newStart": 88,
+      "newLines": 22,
+      "hash": "9e6f8100129bb488"
+    },
+    {
+      "id": "h8",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 110,
+      "oldLines": 15,
+      "newStart": 126,
+      "newLines": 8,
+      "hash": "7e144fa2766f1cc2"
+    },
+    {
+      "id": "h9",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 474,
+      "oldLines": 6,
+      "newStart": 474,
+      "newLines": 18,
+      "hash": "bc6ec9825c5e44c8"
+    }
+  ]
+}
