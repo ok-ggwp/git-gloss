@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseDiff } from '../src/diff.ts'
@@ -509,7 +509,7 @@ test('split hunks show only their lines, count only their lines, and answer why 
   assert.match(r.out, /h1:1-2 +f\.js .* \+1 -1/)
   assert.match(r.out, /\+A/)
   assert.doesNotMatch(r.out, /\+extra/)
-  assert.match(r.out, /⋯ 3 changed lines in other groups/)
+  assert.match(r.out, /⋯ 3 changed lines not in this group/)
 
   r = gloss(dir, ['show'])
   assert.match(r.out, /fix +Capitalise a +1 hunk +\+1 -1/)
@@ -521,7 +521,7 @@ test('split hunks show only their lines, count only their lines, and answer why 
 
   r = gloss(dir, ['review'])
   assert.match(r.out, /- hunks: h1:1-2/)
-  assert.match(r.out, /⋯ 3 changed lines in other groups/)
+  assert.match(r.out, /⋯ 3 changed lines not in this group/)
 })
 
 test('html splits a hunk between groups by line', () => {
@@ -1070,7 +1070,7 @@ test('the post-commit hook adopts the wip gloss, split across commits, and clear
   const r = spawnSync('git', ['commit', '-qm', 'two'], { cwd: dir, encoding: 'utf8', env })
   assert.match(r.stderr, /all work is committed; cleared the wip snapshot/)
   assert.deepEqual(JSON.parse(g('notes', '--ref', 'refs/notes/gloss', 'show', 'HEAD')).annotation.groups.map((x: { id: string }) => x.id), ['new'])
-  assert.equal(g('for-each-ref', 'refs/gloss').trim(), '')
+  assert.equal(g('for-each-ref', 'refs/worktree/gloss').trim(), '')
 })
 
 test('adopt reports changes made after glossing and stays quiet for directly glossed commits', () => {
@@ -1102,15 +1102,20 @@ test('untracked files that look like secrets stay out of the snapshot unless sta
   assert.match(r.out, /hunter2/, 'a staged file is included deliberately')
 })
 
-test('replaced and cleared snapshots leave no wip glosses behind', () => {
+test('a new snapshot keeps the gloss of unchanged groups; clearing leaves no wip glosses behind', () => {
   const { dir, g } = wipRepo()
   gloss(dir, ['hunks', 'wip'])
   gloss(dir, ['add', 'wip'], annotation(wipGroups))
   writeFileSync(join(dir, 'f.js'), 'a\nBB\n')
-  gloss(dir, ['hunks', 'wip']) // a new snapshot replaces the glossed one
-  assert.equal(g('notes', '--ref', 'refs/notes/gloss-wip', 'list').trim(), '')
+  const r = gloss(dir, ['hunks', 'wip']) // a new snapshot replaces the glossed one
+  assert.match(r.err, /kept the gloss of 1 of 2 groups whose changes are unchanged/)
+  const notes = g('notes', '--ref', 'refs/notes/gloss-wip', 'list').trim().split('\n')
+  assert.equal(notes.length, 1, "the old snapshot's gloss is gone")
+  const carried = JSON.parse(g('notes', '--ref', 'refs/notes/gloss-wip', 'show', 'refs/worktree/gloss/wip'))
+  assert.deepEqual(carried.annotation.groups.map((x: { id: string }) => x.id), ['new'], 'f.js changed, new.js did not')
 
-  gloss(dir, ['add', 'wip'], annotation(wipGroups))
+  // A fresh gloss replaces the carried one without --force.
+  assert.equal(gloss(dir, ['add', 'wip'], annotation(wipGroups)).code, 0)
   g('add', '-A'); g('commit', '-qm', 'all')
   assert.match(gloss(dir, ['adopt']).out, /cleared the wip snapshot/)
   assert.equal(g('notes', '--ref', 'refs/notes/gloss-wip', 'list').trim(), '')
@@ -1138,7 +1143,7 @@ test('adopt re-points serves at groups left in another commit, and honours --for
   assert.equal(r.code, 0, r.err)
   const adopted = JSON.parse(g('notes', '--ref', 'refs/notes/gloss', 'show', 'HEAD')).annotation.groups[0]
   assert.equal(adopted.serves, 'task')
-  assert.match(adopted.notes, /also served cap, glossed with another commit/)
+  assert.match(adopted.notes, /also served cap, glossed with other changes/)
 
   r = gloss(dir, ['adopt'])
   assert.equal(r.code, 1, 'refuses to replace a gloss')
@@ -1178,4 +1183,134 @@ test('a range header counts stale glosses', () => {
   execFileSync('git', ['commit', '-qa', '--amend', '--no-edit'], { cwd: dir })
   const r = gloss(dir, ['show', 'HEAD~1..HEAD'])
   assert.match(r.out, /1 commit, 1 glossed \(1 stale\)/)
+})
+
+// A git-gloss on PATH for hooks: this checkout's CLI.
+function hookEnv(): NodeJS.ProcessEnv {
+  const bin = mkdtempSync(join(tmpdir(), 'gloss-bin-'))
+  writeFileSync(join(bin, 'git-gloss'), `#!/bin/sh\nexec "${process.execPath}" "${BIN}" "$@"\n`, { mode: 0o755 })
+  return { ...process.env, PATH: `${bin}:${process.env.PATH}` }
+}
+
+test('pushing shares only glosses of commits the remote has or receives; dry runs share nothing', () => {
+  const { origin, a, g } = team()
+  gloss(a, ['init', '--hooks'])
+  const env = hookEnv()
+  const push = (...args: string[]) => spawnSync('git', ['push', '-q', ...args], { cwd: a, env, encoding: 'utf8' })
+  // A glossed commit on a private branch, never pushed.
+  g(a, 'checkout', '-qb', 'private'); writeFileSync(join(a, 'p.txt'), 'p\n'); g(a, 'add', '.'); g(a, 'commit', '-qm', 'private work')
+  gloss(a, ['add'], annotation([{ ...retryCore, hunks: ['h1'] }]))
+  const privateSha = g(a, 'rev-parse', 'HEAD').trim()
+  // A glossed commit on main, pushed.
+  g(a, 'checkout', '-q', 'main'); writeFileSync(join(a, 'm.txt'), 'm\n'); g(a, 'add', '.'); g(a, 'commit', '-qm', 'public work')
+  gloss(a, ['add'], annotation([{ ...retryCore, hunks: ['h1'] }]))
+  const publicSha = g(a, 'rev-parse', 'HEAD').trim()
+
+  push('--dry-run', 'origin', 'main')
+  push('-nq', 'origin', 'main')
+  assert.equal(g(origin, 'for-each-ref', 'refs/notes').trim(), '', 'a dry run writes nothing, however it is spelled')
+
+  const r = push('origin', 'main')
+  assert.match(r.stderr, /kept 1 gloss local: their commits aren't on origin yet/)
+  const shared = g(origin, 'notes', '--ref', 'refs/notes/gloss', 'list')
+  assert.match(shared, new RegExp(publicSha))
+  assert.doesNotMatch(shared, new RegExp(privateSha), "the private commit's gloss stays local")
+})
+
+test('init --hooks leaves a shared core.hooksPath alone', () => {
+  const dir = repo()
+  const shared = mkdtempSync(join(tmpdir(), 'gloss-hooks-'))
+  execFileSync('git', ['config', 'core.hooksPath', shared], { cwd: dir })
+  const r = gloss(dir, ['init', '--hooks'])
+  assert.match(r.out, /outside this repository, so other repositories may share it/)
+  assert.deepEqual(readdirSync(shared), [])
+
+  // A hooks directory inside the working tree belongs to this repository.
+  execFileSync('git', ['config', 'core.hooksPath', '.githooks'], { cwd: dir })
+  gloss(dir, ['init', '--hooks'])
+  assert.deepEqual(readdirSync(join(dir, '.githooks')).sort(), ['post-commit', 'pre-push'])
+})
+
+test('after a partial adopt, a new snapshot keeps the rest of the wip gloss for the next commit', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe' })
+  g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
+  for (const f of ['a', 'b', 'c']) writeFileSync(join(dir, f), `${f}\n`)
+  g('add', '.'); g('commit', '-qm', 'base')
+  writeFileSync(join(dir, 'a'), 'A\n'); writeFileSync(join(dir, 'b'), 'B\n')
+  gloss(dir, ['hunks', 'wip'])
+  gloss(dir, ['add', 'wip'], annotation([{ ...retryCore, id: 'ga', hunks: ['h1'] }, { ...retryCore, id: 'gb', hunks: ['h2'] }]))
+  g('add', 'a'); g('commit', '-qm', 'a'); gloss(dir, ['adopt'])
+  writeFileSync(join(dir, 'c'), 'C\n')
+  const snap = gloss(dir, ['hunks', 'wip']).err
+  assert.match(snap, /kept the gloss of 1 of 2 groups/)
+  assert.match(snap, /not kept \(their changes were edited or committed\): ga/)
+  g('add', 'b'); g('commit', '-qm', 'b')
+  assert.match(gloss(dir, ['adopt']).out, /adopted 1 of 1 wip groups/)
+  assert.equal(JSON.parse(g('notes', '--ref', 'refs/notes/gloss', 'show', 'HEAD')).annotation.groups[0].id, 'gb')
+})
+
+test('a hunk split across commits gets a warning, even from the hook', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe' })
+  g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
+  writeFileSync(join(dir, 'f'), '1\n2\n3\n4\n5\n6\n7\n8\n'); g('add', '.'); g('commit', '-qm', 'base')
+  writeFileSync(join(dir, 'f'), 'X\n2\n3\n4\n5\n6\n7\nY\n')
+  gloss(dir, ['hunks', 'wip'])
+  gloss(dir, ['add', 'wip'], annotation([{ ...retryCore, hunks: ['h1'] }]))
+  // Commit only the first change of the single glossed hunk.
+  writeFileSync(join(dir, 'f'), 'X\n2\n3\n4\n5\n6\n7\n8\n'); g('add', 'f'); writeFileSync(join(dir, 'f'), 'X\n2\n3\n4\n5\n6\n7\nY\n')
+  g('commit', '-qm', 'part')
+  const r = gloss(dir, ['adopt', '--quiet-unless-adopted'])
+  assert.match(r.out, /no hunk matches the wip gloss exactly .*split across commits/)
+})
+
+test('snapshots work without a git identity; adopt refuses wip as its target', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const env = { ...process.env, HOME: dir, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }
+  const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe', env })
+  g('init', '-q', '-b', 'main'); writeFileSync(join(dir, 'f'), 'a\n')
+  g('add', '.'); g('-c', 'user.name=T', '-c', 'user.email=t@e', 'commit', '-qm', 'base')
+  writeFileSync(join(dir, 'f'), 'b\n')
+  let r = spawnSync(process.execPath, [BIN, 'hunks', 'wip', '--stat'], { cwd: dir, encoding: 'utf8', env })
+  assert.equal(r.status, 0, r.stderr)
+  r = spawnSync(process.execPath, [BIN, 'adopt', 'wip'], { cwd: dir, encoding: 'utf8', env })
+  assert.equal(r.status, 1)
+  assert.match(r.stderr, /give that commit \(default HEAD\), not wip/)
+})
+
+test('each linked worktree has its own snapshot', () => {
+  const { dir, g } = wipRepo()
+  const other = join(mkdtempSync(join(tmpdir(), 'gloss-wt-')), 'wt')
+  g('worktree', 'add', '-q', other, '-b', 'other')
+  gloss(dir, ['hunks', 'wip'])
+  const mine = g('rev-parse', 'refs/worktree/gloss/wip').trim()
+  writeFileSync(join(other, 'g.txt'), 'g\n')
+  gloss(other, ['hunks', 'wip'])
+  assert.equal(g('rev-parse', 'refs/worktree/gloss/wip').trim(), mine, "another worktree's snapshot doesn't replace mine")
+})
+
+test('a backwards range gets its own error', () => {
+  const dir = splitRepo()
+  const r = gloss(dir, ['add', '--dry-run'], annotation([{ ...fix, hunks: ['h1:5-3'] }]))
+  assert.match(r.err, /"h1:5-3" runs backwards/)
+  assert.doesNotMatch(r.err, /out of range/)
+})
+
+test('changes shifted by an earlier commit are not mistaken for a split hunk', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe' })
+  g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
+  const lines = Array.from({ length: 30 }, (_, i) => `l${i}`)
+  writeFileSync(join(dir, 'f'), lines.join('\n') + '\n'); g('add', '.'); g('commit', '-qm', 'base')
+  // Glossed work: change line 20.
+  writeFileSync(join(dir, 'f'), lines.map((l, i) => (i === 20 ? 'glossed' : l)).join('\n') + '\n')
+  gloss(dir, ['hunks', 'wip'])
+  gloss(dir, ['add', 'wip'], annotation([{ ...retryCore, hunks: ['h1'] }]))
+  // An unrelated commit near where the glossed hunk sits, stashing the glossed edit.
+  g('stash', '-q')
+  writeFileSync(join(dir, 'f'), lines.map((l, i) => (i === 18 ? 'other' : l)).join('\n') + '\n')
+  g('commit', '-qam', 'unrelated')
+  const r = gloss(dir, ['adopt', '--quiet-unless-adopted'])
+  assert.doesNotMatch(r.out, /split across commits/)
 })

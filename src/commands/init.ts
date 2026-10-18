@@ -1,23 +1,30 @@
 import { spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { parseArgs } from 'node:util'
-import { git, gitTry, NOTES_REF, REMOTE_NOTES_REF } from '../git.ts'
+import { git, gitTry, NOTES_REF, REMOTE_NOTES_REF, WIP_REF } from '../git.ts'
 
 export const usage = 'init [--hooks]   set up glosses to follow amends/rebases and fetch from origin; --hooks: sync on push, adopt wip glosses on commit'
 
 const HOOK_MARKER = '# installed by git-gloss'
 
 // Runs before every `git push`. It syncs glosses with the remote being pushed
-// to, and never blocks the push: a failed sync only prints a warning. The
-// notes push inside sync uses --no-verify, so this hook doesn't run again.
+// to, passing on the refs being pushed (git gives them on stdin) so their
+// glosses go too, and never blocks the push: a failed sync only prints a
+// warning. The notes push inside sync uses --no-verify, so this hook doesn't
+// run again.
 const HOOK = `#!/bin/sh
 ${HOOK_MARKER}: sync glosses with the remote being pushed to (git gloss init --hooks)
 remote="$1"
 # Pushes to a URL rather than a named remote have nowhere to keep its glosses.
 git remote | grep -qxF -- "$remote" || exit 0
+# git runs this hook for --dry-run pushes too, without saying so; check the
+# push command itself, so a dry run doesn't write glosses to the remote.
+for arg in $(ps -o args= -p "$PPID" 2>/dev/null); do
+  case "$arg" in --dry-run) exit 0 ;; --*) ;; -*n*) exit 0 ;; esac
+done
 # No credential prompts: a sync that needs one fails fast instead of stalling the push.
-GIT_TERMINAL_PROMPT=0 git gloss sync "$remote" >&2 || echo "git-gloss: syncing glosses failed; your push continues. Retry with: git gloss sync $remote" >&2
+GIT_TERMINAL_PROMPT=0 git gloss sync "$remote" --pushing >&2 || echo "git-gloss: syncing glosses failed; your push continues. Retry with: git gloss sync $remote" >&2
 exit 0
 `
 
@@ -25,14 +32,28 @@ exit 0
 // move the parts this commit contains onto it. Never fails the commit.
 const POST_COMMIT = `#!/bin/sh
 ${HOOK_MARKER}: move the gloss of uncommitted work onto new commits (git gloss init --hooks)
+# Most commits have no snapshot to adopt from; don't start git-gloss for them.
+git rev-parse -q --verify ${WIP_REF} >/dev/null || exit 0
 git gloss adopt --quiet-unless-adopted >&2 || echo "git-gloss: adopting the wip gloss failed; run: git gloss adopt" >&2
 exit 0
 `
 
 function installHook(name: string, body: string, done: string, manual: string[]): void {
-  // --git-path follows core.hooksPath when it is set.
+  // --git-path follows core.hooksPath when it is set. A hooks directory
+  // outside this repository (neither in .git nor in the working tree, like
+  // .githooks) is shared with other repositories, where these hooks would run
+  // without git-gloss being set up, so leave it alone.
   const dir = resolve(git(['rev-parse', '--git-path', 'hooks']).trim())
   const path = join(dir, name)
+  const inside = [['--git-common-dir'], ['--show-toplevel']]
+    .map((flag) => gitTry(['rev-parse', '--path-format=absolute', ...flag])?.trim())
+    .some((root) => root && (dir + sep).startsWith(resolve(root) + sep))
+  if (!inside) {
+    console.log(`✗ core.hooksPath points to ${dir}, outside this repository, so other repositories may share it;`)
+    console.log(`  not installing ${name} there. To use it anyway, add these lines to ${path}:`)
+    for (const line of manual) console.log(`    ${line}`)
+    return
+  }
   if (existsSync(path)) {
     const current = readFileSync(path, 'utf8')
     if (!current.includes(HOOK_MARKER)) {
@@ -80,11 +101,11 @@ export function run(argv: string[] = []): number {
       console.log('! git-gloss is not on PATH here; the hooks need it wherever git runs (see README: npm link)')
     }
     installHook('pre-push', HOOK, '`git push` now syncs glosses with the remote it pushes to', [
-      'git remote | grep -qxF -- "$1" && { GIT_TERMINAL_PROMPT=0 git gloss sync "$1" >&2 ||',
+      'git remote | grep -qxF -- "$1" && { GIT_TERMINAL_PROMPT=0 git gloss sync "$1" --pushing >&2 ||',
       '  echo "git-gloss: syncing glosses failed; your push continues" >&2; }',
     ])
     installHook('post-commit', POST_COMMIT, '`git commit` now moves the gloss of uncommitted work onto the new commit', [
-      'git gloss adopt --quiet-unless-adopted >&2 || true',
+      `git rev-parse -q --verify ${WIP_REF} >/dev/null && { git gloss adopt --quiet-unless-adopted >&2 || true; }`,
     ])
   }
   console.log('  note: squash merges drop notes; re-gloss the squashed commit if you squash')

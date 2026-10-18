@@ -62,7 +62,7 @@ function commitMaterial(sha: string, gloss: LoadedGloss | null): string[] {
     ...gloss.warnings.map((w) => `> **Warning from git-gloss:** ${w}`),
     `**Task (author's statement):** ${q(a.task)}`,
     ...(a.summary ? [`**Summary (author's statement):** ${q(a.summary)}`] : []),
-    `### Hunk layout\n\nAll hunks in the commit, as \`git gloss hunks --stat\` lists them. A group may claim a whole hunk (\`h6\`) or some of its changed lines (\`h6:5-12\`, counting only + and - lines from 1). In a group's diff, a line starting with ⋯ stands for changed lines that belong to other groups.\n\n${allHunks.map(hunkLine).join('\n')}`,
+    `### Hunk layout\n\nAll hunks in the commit, as \`git gloss hunks --stat\` lists them. A group may claim a whole hunk (\`h6\`) or some of its changed lines (\`h6:5-12\`, counting only + and - lines from 1). In a group's diff, a line starting with ⋯ stands for changed lines not in that group (claimed by other groups, or by none).\n\n${allHunks.map(hunkLine).join('\n')}`,
     `### Groups`,
     ...groups,
   ]

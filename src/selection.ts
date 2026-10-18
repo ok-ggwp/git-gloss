@@ -95,7 +95,8 @@ export function slice(lines: BodyLine[], selected: Set<number> | null, context =
   return out
 }
 
-export const gapText = (n: Gap['gap']) => `⋯ ${n} changed line${n === 1 ? '' : 's'} in other groups`
+// Lines a group's view leaves out: claimed by other groups, or (under --partial) by none.
+export const gapText = (n: Gap['gap']) => `⋯ ${n} changed line${n === 1 ? '' : 's'} not in this group`
 
 // Text form of a slice for terminal and prompt output: the @@ header, kept
 // lines verbatim, gaps as marker lines that can't be read as diff lines.

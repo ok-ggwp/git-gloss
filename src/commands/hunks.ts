@@ -1,6 +1,8 @@
 import { parseArgs } from 'node:util'
-import { commitDiff, resolveCommit, snapshotWorkingTree } from '../git.ts'
-import { parseDiff } from '../diff.ts'
+import { commitDiff, dropWipNote, readNote, resolveCommit, snapshotWorkingTree, WIP_NOTES_REF, writeNote } from '../git.ts'
+import { carryGloss } from '../carry.ts'
+import { location, parseDiff } from '../diff.ts'
+import { noteFormat } from '../schema.ts'
 import { colorDiff, hunkLabel, page, style } from '../render.ts'
 import { bodyLines, changedCount } from '../selection.ts'
 
@@ -14,18 +16,34 @@ export function run(argv: string[]): number {
   })
   // `hunks wip` takes a fresh snapshot of uncommitted work; other commands
   // then use that snapshot, so a gloss is checked against the hunks shown here.
-  let sha: string
-  if (positionals[0] === 'wip') {
-    const snap = snapshotWorkingTree()
-    sha = snap.sha
+  const snap = positionals[0] === 'wip' ? snapshotWorkingTree() : null
+  const sha = snap ? snap.sha : resolveCommit(positionals[0] ?? 'HEAD')
+  const hunks = parseDiff(commitDiff(sha))
+  if (snap) {
     if (snap.excluded.length) {
       console.error(`note: left out untracked files that look like secrets: ${snap.excluded.join(', ')}` +
         ' (stage them with git add to include them)')
     }
-  } else {
-    sha = resolveCommit(positionals[0] ?? 'HEAD')
+    // A new snapshot replaces the old one. Keep the old gloss for the hunks
+    // whose changes are unchanged, so groups not yet committed or edited
+    // aren't lost; only the latest snapshot is glossed and adopted.
+    const old = snap.replaced ? readNote(snap.replaced) : null
+    if (snap.replaced && old) {
+      const carried = carryGloss(old, hunks)
+      if (carried.annotation) {
+        writeNote(sha, {
+          gloss: noteFormat(carried.annotation), commit: sha, created_at: new Date().toISOString(),
+          annotation: carried.annotation, hunks: hunks.map(location), carried_from: snap.replaced,
+        }, WIP_NOTES_REF)
+        console.error(`note: kept the gloss of ${carried.kept} of ${carried.total} groups whose changes are unchanged` +
+          (carried.gaps.length ? '; gloss the rest (see git gloss show wip) and run git gloss add wip again' : ''))
+      }
+      // Groups whose changes were edited or committed don't carry over; name
+      // them, since their text is discarded with the old snapshot's gloss.
+      if (carried.dropped.length) console.error(`note: not kept (their changes were edited or committed): ${carried.dropped.join(', ')}`)
+      dropWipNote(snap.replaced)
+    }
   }
-  const hunks = parseDiff(commitDiff(sha))
 
   if (values.json) {
     console.log(JSON.stringify(hunks.map((h) => ({ ...h, changed: changedCount(h) })), null, 2))

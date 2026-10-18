@@ -22,7 +22,9 @@ export function validate(annotation: Annotation, hunks: Hunk[]): ValidationResul
       if (!h) { errors.push(`group "${g.id}" references unknown hunk "${r.hunk}"`); continue }
       const n = changedCount(h)
       if (r.ranges && n === 0) errors.push(`group "${g.id}": ${r.hunk} has no changed lines to select; reference it whole`)
-      else if (r.ranges?.some(([a, b]) => a < 1 || b < a || b > n)) {
+      else if (r.ranges?.some(([a, b]) => b < a)) {
+        errors.push(`group "${g.id}": "${ref}" runs backwards; write ranges low to high, e.g. ${r.hunk}:3-5`)
+      } else if (r.ranges?.some(([a, b]) => a < 1 || b > n)) {
         errors.push(`group "${g.id}": "${ref}" is out of range; ${r.hunk} has changed lines 1-${n}`)
       }
     }

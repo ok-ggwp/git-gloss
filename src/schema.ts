@@ -107,4 +107,7 @@ export type GlossNote = {
   created_at: string
   annotation: Annotation
   hunks: HunkLocation[]
+  // Set when the gloss was carried over from an earlier wip snapshot (the
+  // parts whose changes were unchanged); a fresh gloss may replace it.
+  carried_from?: string
 }

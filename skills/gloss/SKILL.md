@@ -14,7 +14,7 @@ In a repo whose `CLAUDE.md` or `AGENTS.md` asks for it (set up with `git gloss i
 1. Leave the changes uncommitted; don't commit unless the user asks.
 2. Gloss them with the steps below (`git gloss hunks wip`, `add wip`, `show wip`).
 3. In your reply, say that the changes are wip-glossed and how to read them (`git gloss show wip`, or `git gloss html wip --open`), and mention anything you graded `speculative`, `incidental` or `defensive`: those are the parts the user may want to drop.
-4. When the user or a reviewer asks for changes, make them, then run `git gloss hunks wip` and `git gloss add wip` again: the new snapshot gets a new gloss. A gloss must describe the code as it is now.
+4. When the user or a reviewer asks for changes, make them, then run `git gloss hunks wip` and `git gloss add wip` again. The new snapshot keeps the gloss of unchanged groups (`hunks wip` says how many) as a placeholder; write the full gloss again, which replaces it. A gloss must describe the code as it is now.
 5. Committing is the user's call; see below for how the gloss moves onto the commit.
 
 Skip it for trivial edits (a typo, a one-line config tweak) unless asked.

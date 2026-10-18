@@ -8,9 +8,10 @@ import { parsePath, unquote } from './diff.ts'
 export const NOTES_REF = 'refs/notes/gloss'
 // Glosses of uncommitted work (wip snapshots) live in their own notes ref,
 // which sync never pushes, and the latest snapshot in a private ref that
-// keeps it from being garbage-collected.
+// keeps it from being garbage-collected. refs/worktree/ refs are per
+// worktree, so each linked worktree has its own snapshot.
 export const WIP_NOTES_REF = 'refs/notes/gloss-wip'
-export const WIP_REF = 'refs/gloss/wip'
+export const WIP_REF = 'refs/worktree/gloss/wip'
 const WIP_MESSAGE = 'git-gloss wip snapshot'
 export const REMOTE_NOTES_REF = 'refs/notes/remotes/origin/gloss'
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
@@ -88,7 +89,9 @@ const treeAndParent = (sha: string) => {
 // Record uncommitted changes as a commit on top of HEAD without touching the
 // branch, index or files, and point WIP_REF at it. Reuses the current
 // snapshot if nothing has changed, so its gloss stays attached.
-export function snapshotWorkingTree(): { sha: string; excluded: string[] } {
+// `replaced` is the previous snapshot when this one replaces it, so the
+// caller can carry its gloss over.
+export function snapshotWorkingTree(): { sha: string; excluded: string[]; replaced: string | null } {
   const { tree, excluded } = workingTree()
   const head = headSha()
   if (head && git(['rev-parse', `${head}^{tree}`]).trim() === tree) {
@@ -97,13 +100,17 @@ export function snapshotWorkingTree(): { sha: string; excluded: string[] } {
   const current = gitTry(['rev-parse', '--verify', '--quiet', WIP_REF])?.trim()
   if (current) {
     const c = treeAndParent(current)
-    if (c.tree === tree && c.parent === head) return { sha: current, excluded }
-    // Only the latest snapshot is glossed and adopted; drop the old one's gloss.
-    dropWipNote(current)
+    if (c.tree === tree && c.parent === head) return { sha: current, excluded, replaced: null }
   }
-  const sha = git(['commit-tree', tree, ...(head ? ['-p', head] : []), '-m', WIP_MESSAGE]).trim()
+  // The snapshot is a commit object, which needs an identity; fall back to a
+  // placeholder where git has none configured rather than fail.
+  const ident = (v: string) => gitTry(['var', v]) !== null
+  const env: Record<string, string> = {}
+  if (!ident('GIT_AUTHOR_IDENT')) Object.assign(env, { GIT_AUTHOR_NAME: 'git-gloss', GIT_AUTHOR_EMAIL: 'git-gloss@localhost' })
+  if (!ident('GIT_COMMITTER_IDENT')) Object.assign(env, { GIT_COMMITTER_NAME: 'git-gloss', GIT_COMMITTER_EMAIL: 'git-gloss@localhost' })
+  const sha = git(['commit-tree', tree, ...(head ? ['-p', head] : []), '-m', WIP_MESSAGE], undefined, env).trim()
   git(['update-ref', WIP_REF, sha])
-  return { sha, excluded }
+  return { sha, excluded, replaced: current ?? null }
 }
 
 export const dropWipNote = (sha: string) => gitTry(['notes', '--ref', WIP_NOTES_REF, 'remove', '--ignore-missing', sha])
