@@ -1,0 +1,111 @@
+{
+  "gloss": 1,
+  "commit": "4346912d6624eb6a447821ff703b9b81c3011107",
+  "created_at": "2026-10-17T09:34:36.163Z",
+  "annotation": {
+    "version": 1,
+    "task": "Give the reviewing agent somewhere to run code, so it can verify findings instead of only reading (two of three reviews couldn't confirm their best finding)",
+    "summary": "A script that reviews a glossed commit with Claude Code inside a disposable clone, with file tools scoped to the sandbox, and asks it to label findings verified or read.",
+    "groups": [
+      {
+        "id": "sandbox",
+        "intent": "Clone the repo with notes and deps, without a remote, and delete it after",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The reviewer would have to experiment in the real repository or not at all",
+        "evidence": "dry run: clone at the reviewed commit, 0 remotes, 7 notes, node_modules copied; the temp dir was gone afterwards",
+        "hunks": [
+          "h2"
+        ],
+        "notes": "Removing the remote and copying node_modules don't isolate anything while git -C and node can reach the real path (the reflog even names it). The prompt is built with the globally installed git-gloss, not the clone's"
+      },
+      {
+        "id": "permissions",
+        "intent": "Allow git, node, npm test and sandbox-only edits; deny push and remote",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Either the reviewer can't run anything (as before), or it can edit any file",
+        "evidence": "probe: an Edit inside the sandbox succeeded and one outside was refused (Read, git -C and push via -C were not probed)",
+        "hunks": [
+          "h2"
+        ],
+        "notes": "Overclaims, found by review: only Edit was scoped. Read, Grep and Glob could read any file, `git -C <real repo>` could read and change the real repository, and the push/remote denies only matched commands starting with those words. The probe only tested Edit"
+      },
+      {
+        "id": "verified-labels",
+        "intent": "Ask the reviewer to mark each finding verified or read",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A reader can't tell which findings were demonstrated, which is what made earlier reviews hard to act on",
+        "hunks": [
+          "h2"
+        ]
+      },
+      {
+        "id": "dry-run",
+        "intent": "GLOSS_REVIEW_DRY=1 prints the setup and prompt without running an agent",
+        "necessity": "defensive",
+        "serves": "task",
+        "removal_impact": "The setup can only be checked by spending an agent run",
+        "hunks": [
+          "h2"
+        ]
+      },
+      {
+        "id": "docs",
+        "intent": "Document the script and its limits in the README",
+        "necessity": "supporting",
+        "serves": "permissions",
+        "removal_impact": "Users wouldn't know the reviewer can run code as them",
+        "hunks": [
+          "h1"
+        ]
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "A `git gloss review --run` flag",
+        "rejected_because": "It would tie the CLI to one agent and its permission flags; the review prompt stays agent-neutral and the script is one way to run it"
+      },
+      {
+        "option": "Run the reviewer in a container",
+        "rejected_because": "Real isolation, but needs Docker or similar; a clone plus scoped tools is enough for reviewing your own code"
+      },
+      {
+        "option": "Link node_modules instead of copying it",
+        "rejected_because": "The reviewer could then modify the real repo's dependencies through the link"
+      }
+    ],
+    "risks": [
+      "Found by review, fixed in the next commit: the reviewer can read and modify the real repository via git -C, Read is not confined, the reviewed commit's CLAUDE.md/.claude settings configure its own reviewer, and the script aborts on repos without glosses",
+      "Project-specific commands (npm test, node bin/git-gloss.js) are hard-coded in the allowed tools and preamble",
+      "All five groups share the script's single hunk"
+    ],
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-opus-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 35,
+      "oldLines": 6,
+      "newStart": 35,
+      "newLines": 10,
+      "hash": "9e30ff228de5c038"
+    },
+    {
+      "id": "h2",
+      "file": "scripts/agent-review.sh",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 54,
+      "hash": "33d393f4f3df5062"
+    }
+  ]
+}
