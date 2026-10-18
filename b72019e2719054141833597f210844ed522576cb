@@ -1,0 +1,255 @@
+{
+  "gloss": 1,
+  "commit": "b72019e2719054141833597f210844ed522576cb",
+  "created_at": "2026-10-17T09:04:09.551Z",
+  "annotation": {
+    "version": 1,
+    "task": "Add an HTML view of a gloss, as agreed: overview first, necessity bar, group cards with code collapsed, necessity filters, line-numbered diffs, light/dark, keyboard navigation, visible stale/unannotated warnings, everything escaped",
+    "summary": "`git gloss html` writes one offline HTML file. The server side precomputes page data (sorted groups, line-numbered diffs, shared-hunk links, line weights); a small DOM-only client lays it out under a nonce CSP.",
+    "groups": [
+      {
+        "id": "page-data",
+        "intent": "Build the page's data: sorted groups, numbered diff lines, weights",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The client would have to parse diffs and work out shared hunks itself",
+        "evidence": "tests 'diffLines numbers old and new lines', 'html writes a self-contained page…'",
+        "hunks": [
+          "h7"
+        ],
+        "notes": "A hunk shared by n groups adds 1/n of its lines to each group's weight, so the necessity bar sums to the commit's size instead of double-counting (the problem the step 2 review found in the terminal summary). Bug found in review: stale counts all non-ok hunks but the client divides by the live hunks, and missing hunks are dropped from the page"
+      },
+      {
+        "id": "page-layout",
+        "intent": "Render header, necessity bar, filter chips, cards and collapsible diffs",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "No HTML view",
+        "evidence": "checked by screenshots in headless Chromium: desktop light and dark, 390px phone, expanded diff on phone",
+        "hunks": [
+          "h6",
+          "h9"
+        ],
+        "notes": "Screenshots caught a real bug: the single-column grid let wide diffs widen the page at narrow widths; fixed with minmax(0, 1fr)"
+      },
+      {
+        "id": "safe-rendering",
+        "intent": "Embed data as escaped JSON, render via textContent, add a nonce CSP",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A gloss or a diff containing </script> or HTML could run script in the reader's browser",
+        "evidence": "test 'html cannot be broken out of by gloss or diff content' (in this commit it only puts the payload in gloss text, not the diff or subject); a manual Chromium check",
+        "hunks": [
+          "h8",
+          "h6"
+        ],
+        "notes": "The CSP's img-src data: was speculative (the page uses no images); removed in the next commit"
+      },
+      {
+        "id": "command",
+        "intent": "Add `git gloss html` with -o and --open",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Nothing would produce the page",
+        "hunks": [
+          "h5"
+        ],
+        "notes": "Default output goes to a fresh mkdtemp directory; a fixed /tmp path could be pre-created as a symlink by another user. I found this while listing risks for this gloss, and amended the commit before glossing it."
+      },
+      {
+        "id": "keyboard-nav",
+        "intent": "j/k between groups, o (and an undocumented Enter) to toggle code, e/c for all",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Mouse-only navigation; it was in the agreed plan",
+        "hunks": [
+          "h6"
+        ],
+        "notes": "Enter misfired on links (toggling the previous card before jumping); removed in the next commit. Not exercised by any test or screenshot"
+      },
+      {
+        "id": "sidebar-and-links",
+        "intent": "Sticky group sidebar on wide screens and #g-<id> deep links on load",
+        "necessity": "speculative",
+        "serves": "page-layout",
+        "removal_impact": "Long glosses are slower to navigate and groups can't be linked to; neither was in the plan",
+        "hunks": [
+          "h6",
+          "h9"
+        ],
+        "notes": "Only the sticky sidebar, its CSS and the load-time deep link are speculative. focusGroup and groupLink also power the serves/also-in links, which page-layout needs. Headless screenshots of a scrolled deep link came out blank, so it was verified only with a window tall enough not to scroll"
+      },
+      {
+        "id": "cli-registration",
+        "intent": "Register the html command",
+        "necessity": "mechanical",
+        "serves": "command",
+        "removal_impact": "Command not reachable",
+        "hunks": [
+          "h3",
+          "h4"
+        ]
+      },
+      {
+        "id": "docs",
+        "intent": "Document the html command, its controls and its safety model",
+        "necessity": "supporting",
+        "serves": "command",
+        "removal_impact": "Users don't learn the keys, filters or deep links exist",
+        "hunks": [
+          "h1",
+          "h2"
+        ]
+      },
+      {
+        "id": "tests",
+        "intent": "Tests for diff numbering, page data, escaping/CSP, client syntax",
+        "necessity": "supporting",
+        "serves": "safe-rendering",
+        "removal_impact": "Escaping and data shaping would be unverified",
+        "hunks": [
+          "h10",
+          "h11"
+        ],
+        "notes": "Half of it tests page-data (diffLines, order, weights); serves can only name one group. The escaping test claims diff content but doesn't test it"
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Render the HTML on the server with string templates",
+        "rejected_because": "Every value would need manual escaping; building the DOM with textContent makes injection structurally impossible"
+      },
+      {
+        "option": "Use a framework or syntax highlighter from a CDN",
+        "rejected_because": "The page should work offline and with a strict CSP; plain DOM code is ~280 lines"
+      },
+      {
+        "option": "Side-by-side diffs",
+        "rejected_because": "Unified diffs fit phone widths; side-by-side can come later"
+      }
+    ],
+    "risks": [
+      "Found by review, fixed in the next commit: stale count wrong and missing hunks invisible; Enter toggles the wrong card from a link; links to filtered-out groups do nothing; each run leaks a temp dir; malformed hashes throw",
+      "Client interactions (filters, toggles, keys) have no automated test; only static rendering was checked by screenshot",
+      "Big commits produce big files: every hunk's lines are embedded even if never expanded",
+      "Only one commit per page; a branch/PR view (commit ranges) is the obvious next step",
+      "New files are one hunk each, so four groups share client.js's single hunk and each group's 'code' is the whole file; the necessity bar's split of those lines is arbitrary"
+    ],
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-opus-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 15,
+      "oldLines": 6,
+      "newStart": 15,
+      "newLines": 7,
+      "hash": "c7e78680bc5042c3"
+    },
+    {
+      "id": "h2",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 34,
+      "oldLines": 6,
+      "newStart": 35,
+      "newLines": 12,
+      "hash": "8f0967fed22b865e"
+    },
+    {
+      "id": "h3",
+      "file": "src/cli.ts",
+      "oldFile": "src/cli.ts",
+      "oldStart": 1,
+      "oldLines": 5,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "b81526421c924b90"
+    },
+    {
+      "id": "h4",
+      "file": "src/cli.ts",
+      "oldFile": "src/cli.ts",
+      "oldStart": 8,
+      "oldLines": 7,
+      "newStart": 9,
+      "newLines": 7,
+      "hash": "b024a1ef015fe7ca"
+    },
+    {
+      "id": "h5",
+      "file": "src/commands/html.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 45,
+      "hash": "5a2ea985c1a58dad"
+    },
+    {
+      "id": "h6",
+      "file": "src/html/client.js",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 276,
+      "hash": "4ceb39c2026e263c"
+    },
+    {
+      "id": "h7",
+      "file": "src/html/data.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 131,
+      "hash": "3eb89aeba59ff795"
+    },
+    {
+      "id": "h8",
+      "file": "src/html/page.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 41,
+      "hash": "7b30956cfe5d5f82"
+    },
+    {
+      "id": "h9",
+      "file": "src/html/style.css",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 210,
+      "hash": "44029a3fc186eb3e"
+    },
+    {
+      "id": "h10",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 1,
+      "oldLines": 11,
+      "newStart": 1,
+      "newLines": 12,
+      "hash": "96cce50bf770eaf8"
+    },
+    {
+      "id": "h11",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 361,
+      "oldLines": 6,
+      "newStart": 362,
+      "newLines": 51,
+      "hash": "9a91de088d6e10c4"
+    }
+  ]
+}
