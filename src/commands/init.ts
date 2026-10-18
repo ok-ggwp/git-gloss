@@ -29,12 +29,30 @@ exit 0
 `
 
 // Runs after every commit: if uncommitted work was glossed (a wip snapshot),
-// move the parts this commit contains onto it. Never fails the commit.
+// move the parts this commit contains onto it; if the commit is a
+// cherry-pick, or a squash merge with git's default message, gloss it from
+// the commits it came from. Never fails the commit.
 const POST_COMMIT = `#!/bin/sh
-${HOOK_MARKER}: move the gloss of uncommitted work onto new commits (git gloss init --hooks)
-# Most commits have no snapshot to adopt from; don't start git-gloss for them.
-git rev-parse -q --verify ${WIP_REF} >/dev/null || exit 0
-git gloss adopt --quiet-unless-adopted >&2 || echo "git-gloss: adopting the wip gloss failed; run: git gloss adopt" >&2
+${HOOK_MARKER}: move glosses onto new commits (git gloss init --hooks)
+# Most commits have neither; don't start git-gloss for them.
+if git rev-parse -q --verify ${WIP_REF} >/dev/null; then
+  git gloss adopt --quiet-unless-adopted >&2 || echo "git-gloss: adopting the wip gloss failed; run: git gloss adopt" >&2
+fi
+case "$(git reflog -1 --format=%gs HEAD 2>/dev/null)" in
+  cherry-pick*|"commit: Squashed commit of the following:"*)
+    git gloss carry --find --quiet >&2 || echo "git-gloss: carrying the gloss failed; run: git gloss carry --find" >&2 ;;
+esac
+exit 0
+`
+
+// Runs after an amend or a rebase, with git's old -> new commit list on
+// stdin: a commit squashed or fixed up from several glossed commits is
+// glossed from all of them, and one whose diff the rewrite changed is
+// re-glossed line by line from the original. Never fails.
+const POST_REWRITE = `#!/bin/sh
+${HOOK_MARKER}: carry glosses through squashes, fixups and changed rewrites (git gloss init --hooks)
+git rev-parse -q --verify ${NOTES_REF} >/dev/null || exit 0
+git gloss carry --rewritten "$1" --quiet >&2 || echo "git-gloss: carrying glosses after the $1 failed; run git gloss carry <old commits> --to <new commit>" >&2
 exit 0
 `
 
@@ -104,10 +122,15 @@ export function run(argv: string[] = []): number {
       'git remote | grep -qxF -- "$1" && { GIT_TERMINAL_PROMPT=0 git gloss sync "$1" --pushing >&2 ||',
       '  echo "git-gloss: syncing glosses failed; your push continues" >&2; }',
     ])
-    installHook('post-commit', POST_COMMIT, '`git commit` now moves the gloss of uncommitted work onto the new commit', [
+    installHook('post-commit', POST_COMMIT, '`git commit` now moves the gloss of uncommitted work, or of a cherry-picked commit, onto the new commit', [
       `git rev-parse -q --verify ${WIP_REF} >/dev/null && { git gloss adopt --quiet-unless-adopted >&2 || true; }`,
+      'case "$(git reflog -1 --format=%gs HEAD)" in cherry-pick*|"commit: Squashed commit of the following:"*) git gloss carry --find --quiet >&2 || true ;; esac',
+    ])
+    installHook('post-rewrite', POST_REWRITE, 'squashes and fixups in a rebase now combine their glosses', [
+      `git rev-parse -q --verify ${NOTES_REF} >/dev/null && { git gloss carry --rewritten "$1" --quiet >&2 || true; }`,
     ])
   }
-  console.log('  note: squash merges drop notes; re-gloss the squashed commit if you squash')
+  console.log('  squash and rebase merges done on a server (GitHub\'s "Squash and merge") are glossed from the')
+  console.log('  original commits by git gloss sync, which every push runs with --hooks; by hand: git gloss carry --find --squash')
   return 0
 }

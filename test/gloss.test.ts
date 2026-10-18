@@ -1082,7 +1082,8 @@ test('the post-commit hook adopts the wip gloss, split across commits, and clear
   const r = spawnSync('git', ['commit', '-qm', 'two'], { cwd: dir, encoding: 'utf8', env })
   assert.match(r.stderr, /all work is committed; cleared the wip snapshot/)
   assert.deepEqual(JSON.parse(g('notes', '--ref', 'refs/notes/gloss', 'show', 'HEAD')).annotation.groups.map((x: { id: string }) => x.id), ['new'])
-  assert.equal(g('for-each-ref', 'refs/worktree/gloss').trim(), '')
+  // The snapshot is cleared; the archive keeps it (and its gloss) reachable.
+  assert.equal(g('for-each-ref', '--format=%(refname)', 'refs/worktree/gloss').trim(), 'refs/worktree/gloss/archive')
 })
 
 test('adopt reports changes made after glossing and stays quiet for directly glossed commits', () => {
@@ -1240,7 +1241,7 @@ test('init --hooks leaves a shared core.hooksPath alone', () => {
   // A hooks directory inside the working tree belongs to this repository.
   execFileSync('git', ['config', 'core.hooksPath', '.githooks'], { cwd: dir })
   gloss(dir, ['init', '--hooks'])
-  assert.deepEqual(readdirSync(join(dir, '.githooks')).sort(), ['post-commit', 'pre-push'])
+  assert.deepEqual(readdirSync(join(dir, '.githooks')).sort(), ['post-commit', 'post-rewrite', 'pre-push'])
 })
 
 test('after a partial adopt, a new snapshot keeps the rest of the wip gloss for the next commit', () => {

@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { git, gitTry, GitError, NOTES_REF } from '../git.ts'
+import { carryNew } from '../origins.ts'
+import { carry } from './carry.ts'
 
 export const usage = 'sync [<remote>]   fetch, merge and push glosses (default remote: origin)'
 
@@ -54,7 +56,7 @@ type Outcome = { fetched: number; pushed: number; withheld: number; conflicts: s
 
 // One fetch → merge → push round. Returns null if the push lost a race with
 // someone else's push and the round should be retried.
-function round(remote: string, pushing: string[]): Outcome | null {
+function round(remote: string, pushing: string[], carried: string[]): Outcome | null {
   const tracking = `refs/notes/remotes/${remote}/gloss`
   const remoteHas = gitTry(['ls-remote', '--exit-code', remote, NOTES_REF]) !== null
   if (remoteHas) git(['fetch', '-q', remote, `+${NOTES_REF}:${tracking}`])
@@ -107,6 +109,12 @@ function round(remote: string, pushing: string[]): Outcome | null {
     for (const [object, blob] of takeTheirs) git(['notes', '--ref', NOTES_REF, 'add', '-f', '-C', blob, object])
   }
 
+  // Commits made on the remote by squash or rebase merges (or being pushed
+  // after a local squash or cherry-pick) get the gloss of the commits they
+  // came from, so it goes out with the rest.
+  const tips = (gitTry(['for-each-ref', '--format=%(objectname)', `refs/remotes/${remote}/`]) ?? '').split('\n').filter(Boolean)
+  carried.push(...carryNew([...tips, ...pushing], carry))
+
   // What to send: glosses that differ from the remote's, of commits it may
   // see. They are added on top of the remote's notes history in a scratch
   // ref, so the push fast-forwards and carries nothing else; local history
@@ -153,8 +161,9 @@ export function run(argv: string[]): number {
     throw new GitError(`no remote named "${remote}"${remotes.length ? `; remotes are ${remotes.join(', ')}` : ''}`)
   }
 
+  const carried: string[] = []
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const outcome = round(remote, pushing)
+    const outcome = round(remote, pushing, carried)
     if (!outcome) continue
     const parts = [`fetched ${outcome.fetched}`, `pushed ${outcome.pushed}`]
     if (!outcome.fetched && !outcome.pushed && !outcome.conflicts.length) {
@@ -164,6 +173,7 @@ export function run(argv: string[]): number {
         (outcome.conflicts.length ? `, ${outcome.conflicts.length} glossed on both sides` : ''))
       for (const c of outcome.conflicts) console.log(`  ${c}`)
     }
+    for (const c of carried) console.log(c)
     if (outcome.withheld) {
       console.log(`  kept ${outcome.withheld} gloss${outcome.withheld === 1 ? '' : 'es'} local: their commits aren't on ${remote} yet`)
     }

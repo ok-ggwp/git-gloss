@@ -59,10 +59,11 @@ export function run(argv: string[]): number {
     console.log(`ok: annotation is valid for ${sha.slice(0, 10)} (${parsed.data.groups.length} groups, ${hunks.length} hunks)`)
     return 0
   }
-  // A gloss carried over from an earlier snapshot is a placeholder for the
-  // unchanged parts; a fresh gloss replaces it without --force.
+  // A gloss carried over from an earlier snapshot, or by `carry` from the
+  // commits these changes came from, is a starting point; a fresh gloss
+  // replaces it without --force (the old one stays in the notes history).
   const existing = values.force ? null : readNote(sha)
-  if (existing && !existing.carried_from) {
+  if (existing && !existing.carried_from && !existing.sources) {
     console.error(`error: ${sha.slice(0, 10)} already has a gloss; pass --force to replace it`)
     return 1
   }

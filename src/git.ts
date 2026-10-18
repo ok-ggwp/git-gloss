@@ -14,7 +14,7 @@ export const WIP_NOTES_REF = 'refs/notes/gloss-wip'
 export const WIP_REF = 'refs/worktree/gloss/wip'
 const WIP_MESSAGE = 'git-gloss wip snapshot'
 export const REMOTE_NOTES_REF = 'refs/notes/remotes/origin/gloss'
-const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+export const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 
 // Errors whose message is fit to show the user without a stack trace.
 export class GlossError extends Error {}
@@ -102,15 +102,34 @@ export function snapshotWorkingTree(): { sha: string; excluded: string[]; replac
     const c = treeAndParent(current)
     if (c.tree === tree && c.parent === head) return { sha: current, excluded, replaced: null }
   }
-  // The snapshot is a commit object, which needs an identity; fall back to a
-  // placeholder where git has none configured rather than fail.
+  const sha = git(['commit-tree', tree, ...(head ? ['-p', head] : []), '-m', WIP_MESSAGE], undefined, commitIdentity()).trim()
+  if (current) archiveSnapshot(current)
+  git(['update-ref', WIP_REF, sha])
+  return { sha, excluded, replaced: current ?? null }
+}
+
+// Snapshots and archive entries are commit objects, which need an identity;
+// fall back to a placeholder where git has none configured rather than fail.
+function commitIdentity(): Record<string, string> {
   const ident = (v: string) => gitTry(['var', v]) !== null
   const env: Record<string, string> = {}
   if (!ident('GIT_AUTHOR_IDENT')) Object.assign(env, { GIT_AUTHOR_NAME: 'git-gloss', GIT_AUTHOR_EMAIL: 'git-gloss@localhost' })
   if (!ident('GIT_COMMITTER_IDENT')) Object.assign(env, { GIT_COMMITTER_NAME: 'git-gloss', GIT_COMMITTER_EMAIL: 'git-gloss@localhost' })
-  const sha = git(['commit-tree', tree, ...(head ? ['-p', head] : []), '-m', WIP_MESSAGE], undefined, env).trim()
-  git(['update-ref', WIP_REF, sha])
-  return { sha, excluded, replaced: current ?? null }
+  return env
+}
+
+// A glossed snapshot that is being replaced or cleared stays reachable from
+// this ref, so git gc keeps it: its old gloss, which the notes history keeps,
+// still has the changes it describes (`versions wip` reads and restores them).
+// Each entry is an empty commit whose parents are the previous entry and the
+// snapshot. Per worktree, like WIP_REF.
+export const ARCHIVE_REF = 'refs/worktree/gloss/archive'
+export function archiveSnapshot(sha: string): void {
+  if (rawNote(WIP_NOTES_REF, sha) === null) return
+  const prev = gitTry(['rev-parse', '-q', '--verify', ARCHIVE_REF])?.trim()
+  const entry = git(['commit-tree', EMPTY_TREE, ...(prev ? ['-p', prev] : []), '-p', sha, '-m', 'git-gloss: earlier glossed wip snapshot'],
+    undefined, commitIdentity()).trim()
+  git(['update-ref', ARCHIVE_REF, entry])
 }
 
 export const dropWipNote = (sha: string) => gitTry(['notes', '--ref', WIP_NOTES_REF, 'remove', '--ignore-missing', sha])
@@ -171,14 +190,18 @@ export function commitSubject(sha: string): string {
 // commit). Every option that changes which hunks git produces, or their order,
 // is pinned so hunk ids are the same regardless of the user's diff config.
 export function commitDiff(sha: string): string {
-  const parent = gitTry(['rev-parse', '--verify', '--quiet', `${sha}^1`])?.trim() || EMPTY_TREE
+  return diffBetween(gitTry(['rev-parse', '--verify', '--quiet', `${sha}^1`])?.trim() || EMPTY_TREE, sha)
+}
+
+// The diff between two commits (or trees), with the same pinned options.
+export function diffBetween(from: string, to: string): string {
   return git([
     '-c', 'core.quotePath=false', '-c', 'diff.suppressBlankEmpty=false',
     'diff', '--no-color', '--no-ext-diff', '--no-textconv', '--find-renames',
     '--src-prefix=a/', '--dst-prefix=b/', '-U3',
     '-O/dev/null', '--diff-algorithm=myers', '--indent-heuristic',
     '--inter-hunk-context=0', '--no-relative', '--submodule=short', '-l1000',
-    parent, sha,
+    from, to,
   ])
 }
 

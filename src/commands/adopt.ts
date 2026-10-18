@@ -1,11 +1,11 @@
 import { existsSync } from 'node:fs'
 import { parseArgs } from 'node:util'
-import { commitDiff, dropWipNote, git, gitTry, GlossError, readNote, resolveCommit, WIP_REF, writeNote } from '../git.ts'
+import { archiveSnapshot, commitDiff, dropWipNote, git, gitTry, GlossError, readNote, resolveCommit, WIP_REF, writeNote } from '../git.ts'
 import { carryGloss } from '../carry.ts'
 import { location, parseDiff } from '../diff.ts'
 import { noteFormat } from '../schema.ts'
 import { refLabel } from '../selection.ts'
-import { validate } from '../validate.ts'
+import { carriedErrors } from '../validate.ts'
 
 export const usage = 'adopt [<commit>] [--force]   move the gloss of uncommitted work (wip) onto a commit made from it'
 
@@ -60,10 +60,7 @@ export function run(argv: string[]): number {
     return skip(`nothing to adopt for ${sha.slice(0, 7)}: none of its changes are in the wip gloss`)
   }
   const { annotation, gaps } = carried
-  const { errors } = validate(annotation, current)
-  // Re-pointing serves can leave a "supporting" group serving the task; that
-  // is recorded in its notes, so it isn't an error here.
-  const real = errors.filter((e) => !/is "supporting" but serves "task"/.test(e))
+  const real = carriedErrors(annotation, current)
   if (real.length) throw new GlossError(`the adopted gloss doesn't fit ${sha.slice(0, 7)}:\n${real.map((e) => `  ✖ ${e}`).join('\n')}`)
 
   writeNote(sha, {
@@ -84,6 +81,7 @@ export function run(argv: string[]): number {
     say(`  gloss them with: git gloss add ${sha.slice(0, 7)} --force -f <annotation including them>`)
   }
   if (done) {
+    archiveSnapshot(wip)
     dropWipNote(wip)
     git(['update-ref', '-d', WIP_REF])
     say('  all work is committed; cleared the wip snapshot')

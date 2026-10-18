@@ -110,4 +110,8 @@ export type GlossNote = {
   // Set when the gloss was carried over from an earlier wip snapshot (the
   // parts whose changes were unchanged); a fresh gloss may replace it.
   carried_from?: string
+  // Set when the gloss was built by `carry` from the glosses of the commits
+  // these changes came from (a squash, cherry-pick or rebase); a fresh gloss
+  // may replace it.
+  sources?: string[]
 }

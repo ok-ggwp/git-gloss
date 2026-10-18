@@ -62,3 +62,20 @@ export function validate(annotation: Annotation, hunks: Hunk[]): ValidationResul
 
   return { errors, uncovered: uncovered(hunks, claims).map((u) => refLabel(u.hunk.id, u.lines)) }
 }
+
+// The note a carried group gets when groups it served didn't come along, so
+// it serves the task instead; carriedErrors recognises it by this prefix.
+const ALSO_SERVED = '(also served '
+export const alsoServed = (lost: string[], why: string) => `${ALSO_SERVED}${lost.join(', ')}, ${why})`
+
+// Errors in a gloss moved onto another commit (by adopt or carry). A group
+// whose supported groups didn't come along serves the task instead, with
+// "(also served …)" in its notes; that isn't an error for such a group, but
+// is for any other.
+export function carriedErrors(annotation: Annotation, hunks: Hunk[]): string[] {
+  const repointed = new Set(annotation.groups.filter((g) => g.notes?.includes(ALSO_SERVED)).map((g) => g.id))
+  return validate(annotation, hunks).errors.filter((e) => {
+    const m = /^group "([^"]+)" is "supporting" but serves "task"/.exec(e)
+    return !(m && repointed.has(m[1]))
+  })
+}

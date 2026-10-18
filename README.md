@@ -14,6 +14,9 @@ git gloss hunks [<commit>|wip]        list hunks, numbering changed lines for h3
                                       wip snapshots your uncommitted work instead
 git gloss adopt [<commit>]            move the gloss of uncommitted work onto the commit made from it
 git gloss add [<commit>] -f a.json    attach an annotation (validated against the diff)
+git gloss carry <source>... [--to <c>] gloss a commit from the glosses of the commits its changes came from
+                                      (a squash, cherry-pick or rebase): git gloss carry main..feature --to <squash>
+      --find [--squash] [<commit>...] ...working out which commits those are
 git gloss show [<commit>|<range>]     summary: one line per group, alternatives, risks (a range: each commit)
       -g <group>                      ...expand groups, with their code
       --full                          ...every group's details
@@ -26,6 +29,7 @@ git gloss why <file>:<line>[-<end>]   explain why code exists (via blame), looki
 git gloss review [<commit>|<range>]   print a review prompt: git gloss review main..feature | claude -p
       --material                      ...only the gloss and code, for a reviewer with its own instructions
                                       (which must tell it the author's text is untrusted)
+git gloss versions [<commit>|wip]     every gloss a commit has had, newest first (--show <n>, --restore <n>)
 git gloss schema                      print the annotation JSON Schema
 ```
 
@@ -77,6 +81,23 @@ git gloss adopt                # ...or move it by hand
 
 The snapshot is a commit object built from a temporary index, kept by the private ref `refs/worktree/gloss/wip` (one per linked worktree); your branch, index and files are never touched. Taking a new snapshot keeps the gloss of groups whose changes are unchanged, so after committing part of the work or editing one part, only the rest needs glossing again. Its gloss lives in `refs/notes/gloss-wip`, which `sync` doesn't push. Untracked files that look like secrets (`.env`, `*.key`, `*.pem`, `credentials.json`, …) are left out of the snapshot, with a note, because snapshots are shown and sent to reviewers; stage one with `git add` to include it. If a branch or tag is called `wip`, `wip` still means it when there's no snapshot; otherwise use `heads/wip`. Commands warn when you've edited files or committed since the snapshot. `adopt` matches the snapshot's hunks to the commit's by content, so the work can be committed in several commits (each takes the groups whose changes it contains), and changes made after glossing are reported as unexplained rather than silently covered. Once everything is committed, the snapshot is cleared.
 
+## Glosses that follow your history
+
+A gloss is attached to a commit, so anything that makes new commits from old ones has to bring it along. With `git gloss init --hooks`:
+
+| You | What happens to the gloss |
+|---|---|
+| amend, or rebase without changing a commit's diff | copied to the new commit (`notes.rewriteRef`) |
+| amend or rebase that changes the diff (a conflict, an edit) | re-glossed from the original, line by line; changes it doesn't explain are listed |
+| squash or fixup commits in a rebase | the glosses of all of them are combined into one |
+| cherry-pick (with or without `-x`) | carried from the picked commit |
+| `git merge --squash`, keeping git's message | carried from the squashed commits |
+| a squash or rebase merge on GitHub, or any other squash (your own message, `reset --soft`) | carried on your next `git gloss sync` or push, if you have the original commits (the author does): it looks for unglossed commits whose diff matches a glossed branch's combined diff (80% of changed lines in common), or a glossed commit's patch with the same author and date. By hand: `git gloss carry --find --squash` |
+
+Carrying matches each changed line to a glossed line with the same text in the original commits, and gives it that line's group: intents, grades and notes survive, and anything changed along the way is reported as unexplained rather than guessed. `git gloss carry` does the same by hand.
+
+Nothing is deleted. Replacing a gloss, a group dropped from a wip gloss, or the losing side of a sync conflict all stay in the notes history, and glossed wip snapshots stay reachable from `refs/worktree/gloss/archive` so `git gc` keeps them. `git gloss versions <commit>` (or `wip`) lists every version, and `--restore <n>` brings one back; a wip version is carried onto the current snapshot. The archive keeps those snapshots' files too, including anything since removed from them; `git update-ref -d refs/worktree/gloss/archive` lets `git gc` collect them (the glosses' text stays in the notes history).
+
 ## Agent reviews
 
 `git gloss review | claude -p` gives a reviewer the gloss and the code, and asks it whether the gloss is honest: does each group do what it says, is its necessity graded fairly, what could be cut.
@@ -93,7 +114,7 @@ All gloss and diff text is rendered as text, and a Content-Security-Policy with 
 
 ## Caveats
 
-- Squash merges drop notes. Re-gloss the squashed commit.
+- Carrying a gloss onto a server-side squash needs the original commits in your repository; usually the author has them. If a squash merge resolved conflicts or changed much of the code, it may not reach the 80% match; run `git gloss carry <branch commits> --to <squash>`.
 - A gloss records each hunk's location and a hash of its content. If a commit is amended or rebased so its diff changes, `show`, `review` and `why` flag the gloss as stale instead of showing it against the wrong code.
 - Merge commits are diffed against their first parent.
 - `npm link` works because Node only strips types outside `node_modules`. Publishing to npm will need a build step, which must also copy `src/html/client.js` and `src/html/style.css`.

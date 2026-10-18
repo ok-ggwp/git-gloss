@@ -1,6 +1,7 @@
 import type { Hunk } from './diff.ts'
 import { servesOf, type Annotation, type GlossNote } from './schema.ts'
 import { bodyLines, changedCount, parseRef, selections, uncovered, type Claim, type Uncovered } from './selection.ts'
+import { alsoServed } from './validate.ts'
 
 export type Carried = {
   // The gloss as it applies to the new diff, or null if no group carried over.
@@ -59,7 +60,7 @@ export function carryGloss(note: GlossNote, current: Hunk[], previous: Hunk[] = 
     const lost = targets.filter((t) => t !== 'task' && !keptIds.has(t))
     if (!lost.length) return g
     const remaining = targets.filter((t) => t === 'task' || keptIds.has(t))
-    const note = `(also served ${lost.join(', ')}, glossed with other changes)`
+    const note = alsoServed(lost, 'glossed with other changes')
     return { ...g, serves: remaining.length > 1 ? remaining : remaining[0] ?? 'task', notes: g.notes ? `${g.notes} ${note}` : note }
   })
 

@@ -1,6 +1,7 @@
 import { GlossError } from './git.ts'
 import * as add from './commands/add.ts'
 import * as adopt from './commands/adopt.ts'
+import * as carry from './commands/carry.ts'
 import * as html from './commands/html.ts'
 import * as hunks from './commands/hunks.ts'
 import * as init from './commands/init.ts'
@@ -8,10 +9,11 @@ import * as review from './commands/review.ts'
 import * as schema from './commands/schema.ts'
 import * as show from './commands/show.ts'
 import * as sync from './commands/sync.ts'
+import * as versions from './commands/versions.ts'
 import * as why from './commands/why.ts'
 
 const COMMANDS: Record<string, { usage: string; run: (argv: string[]) => number }> = {
-  init, hunks, add, adopt, show, html, why, review, sync, schema,
+  init, hunks, add, adopt, carry, show, html, why, review, sync, versions, schema,
 }
 
 function help(): string {
