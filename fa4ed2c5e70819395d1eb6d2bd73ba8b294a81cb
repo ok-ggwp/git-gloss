@@ -1,0 +1,200 @@
+{
+  "gloss": 3,
+  "commit": "fa4ed2c5e70819395d1eb6d2bd73ba8b294a81cb",
+  "created_at": "2026-10-18T04:55:10.133Z",
+  "annotation": {
+    "version": 1,
+    "task": "Make `why` show a line's history, not just its latest gloss, and look past mechanical edits that hide the original intent (user's question: does why give the most recent gloss or the history?)",
+    "summary": "why traces the line back with git log -L, builds a step per commit with the groups that own the line there, and shows steps until one isn't mechanical-only. --history shows all; --json always has the full history.",
+    "groups": [
+      {
+        "id": "line-trail",
+        "intent": "Trace every commit that changed a line, with its path and line number there",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "why can only ever see the last commit to touch the line",
+        "evidence": "tests 'why follows a line across a file rename…' and 'why history handles added lines that look like diff headers' (fails with a prefix-based parser)",
+        "hunks": [
+          "h5"
+        ],
+        "notes": "Parses git log -L output by position in the hunk, not by prefix, so an added '++ x' line isn't read as a '+++' header. Bug found by review, fixed in the next commit: paths with spaces keep git's trailing tab and quoted paths stay quoted, so older steps lose their groups"
+      },
+      {
+        "id": "history-steps",
+        "intent": "Build a step per commit: gloss and the groups owning the line",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The trail would have commits but no explanations",
+        "hunks": [
+          "h3:7-16",
+          "h3:31-36",
+          "h4:15-21",
+          "h3:1-6"
+        ],
+        "notes": "Bug found by review: if git log -L's first commit isn't blame's, the whole older history is dropped silently"
+      },
+      {
+        "id": "look-through",
+        "intent": "By default, keep going while the shown change is only mechanical",
+        "necessity": "required",
+        "serves": "history-steps",
+        "removal_impact": "A rename or reformat on the line hides why the line exists",
+        "evidence": "test 'why looks past mechanical changes to the line by default'",
+        "hunks": [
+          "h3:37-39",
+          "h4:39-44"
+        ],
+        "notes": "Stops at an unglossed commit or one where the line isn't in any group, since neither can be judged mechanical"
+      },
+      {
+        "id": "history-flag",
+        "intent": "--history shows every change; a hint says how many are hidden",
+        "necessity": "required",
+        "serves": "history-steps",
+        "removal_impact": "No way to see older intent when the latest change isn't mechanical",
+        "evidence": "test 'why shows only the latest real change by default, the rest with --history'",
+        "hunks": [
+          "h3:61-62",
+          "h4:65-95"
+        ],
+        "notes": "The hint drops --rev (found by review). Also adds small UI extras the intent doesn't mention: the '(file:line then)' suffix and the '↓ before that' separator"
+      },
+      {
+        "id": "json-history",
+        "intent": "Add the full history and `shown` to --json, keeping top-level fields",
+        "necessity": "required",
+        "serves": "history-steps",
+        "removal_impact": "Agents calling why before editing would only see the latest change",
+        "hunks": [
+          "h4:45-64"
+        ],
+        "notes": "Top-level commit/groups/task still describe the latest change, so existing consumers keep working"
+      },
+      {
+        "id": "refactor",
+        "intent": "Move group lookup, serves chain and JSON shaping into functions",
+        "necessity": "supporting",
+        "serves": "history-steps",
+        "removal_impact": "The per-step logic would have to be duplicated inline",
+        "hunks": [
+          "h3:17-30",
+          "h3:40-60",
+          "h4:1-14",
+          "h4:22-38"
+        ],
+        "notes": "h4:1-14 and h4:22-38 remove the old inline versions"
+      },
+      {
+        "id": "docs",
+        "intent": "Document --history and the history array for people and agents",
+        "necessity": "supporting",
+        "serves": [
+          "history-flag",
+          "json-history"
+        ],
+        "removal_impact": "Agents wouldn't know older intent is in the history array",
+        "hunks": [
+          "h1",
+          "h2"
+        ]
+      },
+      {
+        "id": "tests",
+        "intent": "Tests for look-through, --history, JSON, renames, unglossed stops, ++ lines",
+        "necessity": "supporting",
+        "serves": [
+          "line-trail",
+          "look-through",
+          "history-flag",
+          "json-history"
+        ],
+        "removal_impact": "Unverified",
+        "hunks": [
+          "h6"
+        ]
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Repeated blame at each commit's parent",
+        "rejected_because": "A changed line has no number in the parent; git log -L tracks the line through edits for us"
+      },
+      {
+        "option": "Always show the full history",
+        "rejected_because": "Most of the time the latest real change is what matters; mechanical look-through plus --history keeps the default short"
+      }
+    ],
+    "risks": [
+      "Found by review, fixed in the next commit: space and quote paths break older steps; the trail is dropped when blame and log -L disagree; the hint loses --rev",
+      "Understated in the first version of this gloss: every why call, including the default and --json (which the skill tells agents to run before editing), runs git log -L and loads a gloss and diff for every commit that changed the line",
+      "git log -L is approximate: heavily rewritten lines can lose or gain history, and lines moved between files aren't followed",
+      "If the line expands into several in one commit, the step uses all of them for groups but reports only the first number"
+    ],
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-opus-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 17,
+      "oldLines": 7,
+      "newStart": 17,
+      "newLines": 8,
+      "hash": "b1de3d3e99519d24"
+    },
+    {
+      "id": "h2",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 77,
+      "oldLines": 4,
+      "newStart": 77,
+      "newLines": 4,
+      "hash": "f6d5c4c62325b385"
+    },
+    {
+      "id": "h3",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 1,
+      "oldLines": 17,
+      "newStart": 1,
+      "newLines": 71,
+      "hash": "1ddaa97cfab34bed"
+    },
+    {
+      "id": "h4",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 26,
+      "oldLines": 65,
+      "newStart": 80,
+      "newLines": 70,
+      "hash": "d8dae81469618385"
+    },
+    {
+      "id": "h5",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 110,
+      "oldLines": 6,
+      "newStart": 110,
+      "newLines": 38,
+      "hash": "80b06887d13de962"
+    },
+    {
+      "id": "h6",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 823,
+      "oldLines": 3,
+      "newStart": 823,
+      "newLines": 77,
+      "hash": "fa7462b5f15eacb6"
+    }
+  ]
+}
