@@ -1,0 +1,314 @@
+{
+  "gloss": 3,
+  "commit": "04d786857d152f46cd8a549a54af877a8eee8c23",
+  "created_at": "2026-10-18T05:19:20.973Z",
+  "annotation": {
+    "version": 1,
+    "task": "Position `why` as an investigation tool rather than a step in every edit (user's direction): agents use it only when genuinely unsure why code exists; ask about a region, not a line; look past mechanical changes to the real explanation without an arbitrary limit",
+    "summary": "The skill now tells agents to use why only when genuinely unsure. why takes a range, blames it once, gives one explanation per commit (each gloss loaded once), walks history only when the latest explanation is mechanical and then back to the first real one, and puts risks and rejected alternatives in --json.",
+    "groups": [
+      {
+        "id": "usage-guidance",
+        "intent": "Tell agents to use why only when genuinely unsure, per block",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The skill keeps telling agents to run why before editing, adding a history lookup to ordinary edits",
+        "hunks": [
+          "h2",
+          "h3"
+        ],
+        "notes": "Includes the skill's frontmatter description, which decides when Claude Code reaches for the skill"
+      },
+      {
+        "id": "region-query",
+        "intent": "Explain a line range with one blame and one explanation per commit",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Understanding a function means one why per line, repeating the same commits",
+        "evidence": "test 'why explains a range with one explanation per commit, and lists uncommitted lines'",
+        "hunks": [
+          "h9",
+          "h4:1-8",
+          "h7"
+        ],
+        "notes": "h7 is the rewritten run(): range parsing, per-commit grouping, uncommitted lines, and both output formats (also claimed by agent-json)"
+      },
+      {
+        "id": "load-once",
+        "intent": "Load each commit's gloss once per lookup",
+        "necessity": "incidental",
+        "serves": "task",
+        "removal_impact": "Little: lines are already grouped by commit, so the cache only helps when history steps repeat across explanations",
+        "hunks": [
+          "h4:12-19",
+          "h5:1-2"
+        ]
+      },
+      {
+        "id": "look-through",
+        "intent": "Walk back only past mechanical changes, to the first real one, uncapped",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Either every lookup walks the full history, or a long run of renames hides the original intent",
+        "evidence": "test 'why looks back through every mechanical change to the first real explanation'",
+        "hunks": [
+          "h6:4-33",
+          "h8",
+          "h4:9-11",
+          "h5:3-6"
+        ],
+        "notes": "An intermediate version capped this at 3 commits; I removed the cap after the user pointed out why is used when investigating, where completeness matters more than speed. Bug found by review: for a commit whose lines in the range aren't contiguous, the walk spans the lines between them and can stop at an unrelated change, presenting it as the reason (fixed in the next commit)"
+      },
+      {
+        "id": "agent-json",
+        "intent": "Return an explanations array in --json, plus risks and alternatives",
+        "necessity": "supporting",
+        "serves": "region-query",
+        "removal_impact": "An agent could re-propose an approach the author already tried and rejected",
+        "hunks": [
+          "h6:1-3",
+          "h6:34-43",
+          "h7"
+        ],
+        "notes": "The array shape is supporting (region-query needs it). Adding risks and rejected alternatives, and the text pointer to them, is speculative: the task didn't ask for it. Also drops line positions (origFile/origLine, per-step line) and the full default history from --json, which no intent mentions"
+      },
+      {
+        "id": "docs",
+        "intent": "Document ranges and --json contents in the README",
+        "necessity": "supporting",
+        "serves": [
+          "region-query",
+          "agent-json"
+        ],
+        "removal_impact": "Users wouldn't know they can ask about a block",
+        "hunks": [
+          "h1"
+        ]
+      },
+      {
+        "id": "tests",
+        "intent": "Update why tests to the new JSON; add range and uncapped look-through tests",
+        "necessity": "supporting",
+        "serves": [
+          "region-query",
+          "look-through",
+          "agent-json"
+        ],
+        "removal_impact": "Unverified",
+        "hunks": [
+          "h10",
+          "h11",
+          "h12",
+          "h13",
+          "h14",
+          "h15",
+          "h16",
+          "h17",
+          "h18"
+        ],
+        "notes": "h14 deleted an assertion that no --history hint appears when nothing older exists, hiding a regression rather than updating to the new shape; restored in the next commit"
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Cap the look-through at a few commits",
+        "rejected_because": "Arbitrary: it cuts off exactly when the answer is one step further back; why runs when someone is investigating, so walking to the first real explanation is worth it"
+      },
+      {
+        "option": "Keep advising agents to run why before every edit",
+        "rejected_because": "Most edits don't need intent, and it would add a history lookup to the normal flow; the value is in glossing and reviewing changes"
+      }
+    ],
+    "risks": [
+      "Found by review, fixed in the next commit: split runs get the wrong explanation; SHA-256 repositories return nothing; the --history hint is printed even when nothing older exists",
+      "why --json changed shape and no longer includes full history by default; any script reading the old fields breaks",
+      "Without a cap, a lookup through a long chain of mechanical commits walks the whole line history with git log -L, which may be slow on very large repositories (not measured)"
+    ],
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-opus-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 17,
+      "oldLines": 8,
+      "newStart": 17,
+      "newLines": 9,
+      "hash": "28273519e0eb4ba3"
+    },
+    {
+      "id": "h2",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "fd9678a07b4c3d3b"
+    },
+    {
+      "id": "h3",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 77,
+      "oldLines": 4,
+      "newStart": 77,
+      "newLines": 6,
+      "hash": "e11c832c32291567"
+    },
+    {
+      "id": "h4",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 1,
+      "oldLines": 22,
+      "newStart": 1,
+      "newLines": 29,
+      "hash": "8e6677af28f9663b"
+    },
+    {
+      "id": "h5",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 31,
+      "oldLines": 13,
+      "newStart": 38,
+      "newLines": 13,
+      "hash": "e7347d8817595983"
+    },
+    {
+      "id": "h6",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 57,
+      "oldLines": 9,
+      "newStart": 64,
+      "newLines": 46,
+      "hash": "5bc0f5bd9255d87d"
+    },
+    {
+      "id": "h7",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 67,
+      "oldLines": 104,
+      "newStart": 111,
+      "newLines": 76,
+      "hash": "4e5f8abb30448f9b"
+    },
+    {
+      "id": "h8",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 113,
+      "oldLines": 16,
+      "newStart": 113,
+      "newLines": 16,
+      "hash": "fa1ce155e541c954"
+    },
+    {
+      "id": "h9",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 144,
+      "oldLines": 16,
+      "newStart": 144,
+      "newLines": 22,
+      "hash": "25365892c9829000"
+    },
+    {
+      "id": "h10",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 93,
+      "oldLines": 7,
+      "newStart": 93,
+      "newLines": 7,
+      "hash": "f96be4b45698c453"
+    },
+    {
+      "id": "h11",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 514,
+      "oldLines": 7,
+      "newStart": 514,
+      "newLines": 7,
+      "hash": "531781b919a10b4f"
+    },
+    {
+      "id": "h12",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 589,
+      "oldLines": 7,
+      "newStart": 589,
+      "newLines": 7,
+      "hash": "a27db2d79db45c4d"
+    },
+    {
+      "id": "h13",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 603,
+      "oldLines": 7,
+      "newStart": 603,
+      "newLines": 7,
+      "hash": "c2afba2df1faa8bd"
+    },
+    {
+      "id": "h14",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 852,
+      "oldLines": 7,
+      "newStart": 852,
+      "newLines": 6,
+      "hash": "cb4cf98691751e56"
+    },
+    {
+      "id": "h15",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 863,
+      "oldLines": 15,
+      "newStart": 862,
+      "newLines": 16,
+      "hash": "94bf1dca358f32c0"
+    },
+    {
+      "id": "h16",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 880,
+      "oldLines": 10,
+      "newStart": 880,
+      "newLines": 12,
+      "hash": "b267c555b8b11df2"
+    },
+    {
+      "id": "h17",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 892,
+      "oldLines": 10,
+      "newStart": 894,
+      "newLines": 9,
+      "hash": "e45cd86138080d94"
+    },
+    {
+      "id": "h18",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 909,
+      "oldLines": 13,
+      "newStart": 910,
+      "newLines": 35,
+      "hash": "eab667d22641ea35"
+    }
+  ]
+}
