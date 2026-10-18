@@ -1,0 +1,445 @@
+{
+  "gloss": 3,
+  "commit": "442467d7bf36aeb5e1dc16191b81e88cd644aa4c",
+  "created_at": "2026-10-18T06:09:50.743Z",
+  "annotation": {
+    "version": 1,
+    "task": "Let the main workflow (gloss, read, agent review) run on uncommitted changes, since the user only commits once happy, and carry the gloss onto the commit afterwards",
+    "summary": "`hunks wip` snapshots the working tree as a commit object without touching branch, index or files; the other commands use that snapshot. Its gloss is kept in an unsynced notes ref, and `adopt` (or a post-commit hook) moves it onto the real commit(s) by matching hunks by content.",
+    "groups": [
+      {
+        "id": "snapshot",
+        "intent": "Snapshot uncommitted work as a commit object via a temporary index",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Nothing can be glossed or reviewed before it is committed",
+        "evidence": "test 'hunks wip snapshots uncommitted work without touching the branch, index or files'",
+        "hunks": [
+          "h19:1-7",
+          "h19:16-44",
+          "h10",
+          "h11",
+          "h17",
+          "h18"
+        ],
+        "notes": "Includes untracked files and respects .gitignore. Reuses the current snapshot if nothing changed, so its gloss stays attached. Found by review: includes untracked secrets such as .env, which then reach `review wip` and the sandboxed reviewer; and the `wip` keyword shadows a branch named wip (both fixed in the next commit)"
+      },
+      {
+        "id": "racy-clean",
+        "intent": "Keep the copied index's timestamps so fresh edits aren't missed",
+        "necessity": "required",
+        "serves": "snapshot",
+        "removal_impact": "A same-size edit right after a commit is left out of the snapshot (missed in 19 of 30 measured runs; every run with a 1.2 s pause)",
+        "evidence": "same test, which fails 3/3 with the fix removed",
+        "hunks": [
+          "h19:8-15"
+        ],
+        "notes": "Found in my first end-to-end run. The test took three attempts to actually catch it: my first versions ran git status (which refreshes the index) or aligned the commit to a second boundary, both of which hide the race"
+      },
+      {
+        "id": "stale-warning",
+        "intent": "Warn when the working tree or HEAD has changed since the snapshot",
+        "necessity": "defensive",
+        "serves": "task",
+        "removal_impact": "A gloss could be read or reviewed against code that has since changed, without notice",
+        "evidence": "test 'wip glosses live in their own notes ref, are reviewable, and are flagged when stale'",
+        "hunks": [
+          "h19:47-62"
+        ]
+      },
+      {
+        "id": "private-notes",
+        "intent": "Keep wip glosses in refs/notes/gloss-wip, which sync never pushes",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Half-finished intent would be shared with the team, and notes would point at snapshot objects the remote doesn't have",
+        "evidence": "same test",
+        "hunks": [
+          "h19:45-46",
+          "h20",
+          "h21",
+          "h17"
+        ],
+        "notes": "Found by review: clearing a snapshot (and replacing one) leaves its note behind, so the ref grows without bound"
+      },
+      {
+        "id": "adopt",
+        "intent": "Match the wip gloss's hunks to a commit by content and write it there",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The gloss stays on the snapshot and has to be rewritten for the commit",
+        "evidence": "tests 'the post-commit hook adopts the wip gloss, split across commits…' and 'adopt reports changes made after glossing…'",
+        "hunks": [
+          "h9:1-35",
+          "h9:45-66",
+          "h9:83-95",
+          "h9:99-113",
+          "h9:122-123",
+          "h7",
+          "h8"
+        ],
+        "notes": "The core: matching, renaming hunk refs, validation and writing. The guards, re-pointing, gap report and clean-up are graded separately"
+      },
+      {
+        "id": "adopt-guards",
+        "intent": "Skip commits not descended from the snapshot's base, and rebases",
+        "necessity": "defensive",
+        "serves": "adopt",
+        "removal_impact": "The hook could attach the wip gloss to unrelated or replayed commits",
+        "hunks": [
+          "h9:36-44"
+        ],
+        "notes": "The comment claims it skips 'a commit on another branch'; it actually checks ancestry from the base. Rebase silence is untested"
+      },
+      {
+        "id": "repoint-serves",
+        "intent": "Re-point serves at groups adopted by another commit",
+        "necessity": "defensive",
+        "serves": "adopt",
+        "removal_impact": "A split commit's gloss would reference a group that isn't in it and fail validation",
+        "hunks": [
+          "h9:67-82",
+          "h9:96-98"
+        ],
+        "notes": "Untested in this commit"
+      },
+      {
+        "id": "gap-report",
+        "intent": "Report the commit's changes the wip gloss doesn't explain",
+        "necessity": "defensive",
+        "serves": "adopt",
+        "removal_impact": "Edits made after glossing would go unexplained silently",
+        "hunks": [
+          "h9:114-117"
+        ]
+      },
+      {
+        "id": "clear-snapshot",
+        "intent": "Clear the snapshot once all work is committed",
+        "necessity": "incidental",
+        "serves": "adopt",
+        "removal_impact": "A stale snapshot ref lingers",
+        "hunks": [
+          "h9:118-121"
+        ],
+        "notes": "Leaves the snapshot's note in refs/notes/gloss-wip (found by review)"
+      },
+      {
+        "id": "post-commit-hook",
+        "intent": "init --hooks also adopts wip glosses after every commit",
+        "necessity": "supporting",
+        "serves": "adopt",
+        "removal_impact": "Users would have to remember to run adopt after committing",
+        "hunks": [
+          "h12",
+          "h13",
+          "h14"
+        ],
+        "notes": "Generalises installHook to install both hooks; never fails a commit"
+      },
+      {
+        "id": "review-wip",
+        "intent": "Review uncommitted work: label it in the prompt; sandbox script fetches it",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The agent review step would still need a commit",
+        "hunks": [
+          "h3",
+          "h4",
+          "h5",
+          "h15",
+          "h16"
+        ],
+        "notes": "The sandbox script copies the snapshot and both notes refs into its clone. Not run end to end in this commit; the review of this commit will be the first use"
+      },
+      {
+        "id": "skill-default",
+        "intent": "Make the skill gloss uncommitted work by default",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Agents keep committing before glossing, against how the user works",
+        "hunks": [
+          "h6"
+        ],
+        "notes": "Includes the frontmatter description, which decides when Claude Code uses the skill"
+      },
+      {
+        "id": "docs",
+        "intent": "Document glossing before committing",
+        "necessity": "supporting",
+        "serves": [
+          "snapshot",
+          "adopt"
+        ],
+        "removal_impact": "Users wouldn't know about wip and adopt",
+        "hunks": [
+          "h1",
+          "h2"
+        ]
+      },
+      {
+        "id": "tests",
+        "intent": "Tests for snapshots, stale warnings, private notes, adopt and the hook",
+        "necessity": "supporting",
+        "serves": [
+          "snapshot",
+          "racy-clean",
+          "stale-warning",
+          "private-notes",
+          "adopt",
+          "post-commit-hook"
+        ],
+        "removal_impact": "Unverified",
+        "hunks": [
+          "h22"
+        ]
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "git stash create for the snapshot",
+        "rejected_because": "It leaves out untracked files"
+      },
+      {
+        "option": "Staging everything into the real index",
+        "rejected_because": "It would change what the user has staged"
+      },
+      {
+        "option": "Starting the temporary index empty (from HEAD's tree)",
+        "rejected_because": "Correct but rehashes every tracked file on each snapshot; copying the index with its timestamps keeps git's stat cache"
+      }
+    ],
+    "risks": [
+      "Found by review, fixed in the next commit: untracked secrets reach reviewers; wip notes are never pruned; a branch named wip is shadowed",
+      "Each `wip` command other than hunks rebuilds the working tree's tree to check staleness, which costs a git add -A on a temporary index",
+      "Adoption only matches hunks whose changes are identical; splitting one hunk across commits leaves it unexplained",
+      "The post-commit hook may run during other git operations (cherry-pick, merge commits); it only adopts into commits built on the snapshot's base"
+    ],
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-opus-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 7,
+      "oldLines": 9,
+      "newStart": 7,
+      "newLines": 12,
+      "hash": "a7f8c4a9037e564e"
+    },
+    {
+      "id": "h2",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 42,
+      "oldLines": 6,
+      "newStart": 45,
+      "newLines": 20,
+      "hash": "8e536c9a07dc5166"
+    },
+    {
+      "id": "h3",
+      "file": "scripts/agent-review.sh",
+      "oldFile": "scripts/agent-review.sh",
+      "oldStart": 3,
+      "oldLines": 7,
+      "newStart": 3,
+      "newLines": 7,
+      "hash": "cb756a34d4dd3c00"
+    },
+    {
+      "id": "h4",
+      "file": "scripts/agent-review.sh",
+      "oldFile": "scripts/agent-review.sh",
+      "oldStart": 21,
+      "oldLines": 9,
+      "newStart": 21,
+      "newLines": 13,
+      "hash": "0de31c4aeedecd47"
+    },
+    {
+      "id": "h5",
+      "file": "scripts/agent-review.sh",
+      "oldFile": "scripts/agent-review.sh",
+      "oldStart": 32,
+      "oldLines": 7,
+      "newStart": 36,
+      "newLines": 11,
+      "hash": "e875824f66c3f788"
+    },
+    {
+      "id": "h6",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 1,
+      "oldLines": 24,
+      "newStart": 1,
+      "newLines": 29,
+      "hash": "cbd0db3de4e6e675"
+    },
+    {
+      "id": "h7",
+      "file": "src/cli.ts",
+      "oldFile": "src/cli.ts",
+      "oldStart": 1,
+      "oldLines": 5,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "5b3c4743c9c94bf7"
+    },
+    {
+      "id": "h8",
+      "file": "src/cli.ts",
+      "oldFile": "src/cli.ts",
+      "oldStart": 10,
+      "oldLines": 7,
+      "newStart": 11,
+      "newLines": 7,
+      "hash": "e2b661e06835086a"
+    },
+    {
+      "id": "h9",
+      "file": "src/commands/adopt.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 123,
+      "hash": "b2aa7c5b59a322f1"
+    },
+    {
+      "id": "h10",
+      "file": "src/commands/hunks.ts",
+      "oldFile": "src/commands/hunks.ts",
+      "oldStart": 1,
+      "oldLines": 10,
+      "newStart": 1,
+      "newLines": 10,
+      "hash": "722958649820b3ae"
+    },
+    {
+      "id": "h11",
+      "file": "src/commands/hunks.ts",
+      "oldFile": "src/commands/hunks.ts",
+      "oldStart": 12,
+      "oldLines": 7,
+      "newStart": 12,
+      "newLines": 9,
+      "hash": "3dbdaeb7ede19d1c"
+    },
+    {
+      "id": "h12",
+      "file": "src/commands/init.ts",
+      "oldFile": "src/commands/init.ts",
+      "oldStart": 3,
+      "oldLines": 7,
+      "newStart": 3,
+      "newLines": 7,
+      "hash": "6e07aea8829ae563"
+    },
+    {
+      "id": "h13",
+      "file": "src/commands/init.ts",
+      "oldFile": "src/commands/init.ts",
+      "oldStart": 20,
+      "oldLines": 24,
+      "newStart": 20,
+      "newLines": 31,
+      "hash": "6b33291088e18805"
+    },
+    {
+      "id": "h14",
+      "file": "src/commands/init.ts",
+      "oldFile": "src/commands/init.ts",
+      "oldStart": 65,
+      "oldLines": 7,
+      "newStart": 72,
+      "newLines": 15,
+      "hash": "fc28d73152d1b16d"
+    },
+    {
+      "id": "h15",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 1,
+      "oldLines": 5,
+      "newStart": 1,
+      "newLines": 5,
+      "hash": "38d7a6b83028b4e8"
+    },
+    {
+      "id": "h16",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 56,
+      "oldLines": 7,
+      "newStart": 56,
+      "newLines": 9,
+      "hash": "988a08816163b6b2"
+    },
+    {
+      "id": "h17",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 1,
+      "oldLines": 8,
+      "newStart": 1,
+      "newLines": 17,
+      "hash": "9cc9d58fb8aba0ad"
+    },
+    {
+      "id": "h18",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 10,
+      "oldLines": 13,
+      "newStart": 19,
+      "newLines": 13,
+      "hash": "55f125989bab2fc9"
+    },
+    {
+      "id": "h19",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 34,
+      "oldLines": 7,
+      "newStart": 43,
+      "newLines": 69,
+      "hash": "ba2c55b89505e8de"
+    },
+    {
+      "id": "h20",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 77,
+      "oldLines": 14,
+      "newStart": 148,
+      "newLines": 19,
+      "hash": "92d33404bb7a08c9"
+    },
+    {
+      "id": "h21",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 108,
+      "oldLines": 7,
+      "newStart": 184,
+      "newLines": 8,
+      "hash": "790ef5abdb9ba002"
+    },
+    {
+      "id": "h22",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 992,
+      "oldLines": 3,
+      "newStart": 992,
+      "newLines": 98,
+      "hash": "ceea238c72db0200"
+    }
+  ]
+}
