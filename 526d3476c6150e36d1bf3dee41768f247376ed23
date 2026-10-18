@@ -1,0 +1,209 @@
+{
+  "gloss": 2,
+  "commit": "526d3476c6150e36d1bf3dee41768f247376ed23",
+  "created_at": "2026-10-17T09:43:41.706Z",
+  "annotation": {
+    "version": 1,
+    "task": "Address the review of 3356aec: quadratic cost when splitting a large hunk, crashes on oversized ranges (including from fetched notes), duplicate errors, and older versions misreading ranged notes",
+    "groups": [
+      {
+        "id": "parse-cache",
+        "intent": "Cache each hunk's parsed body; count changed lines once per hunk",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Splitting a 20,000-line file takes ~33s per add/show/html (measured 0.3s with the cache)",
+        "evidence": "test 'splitting a large new file stays fast'; timed by hand: add 0.31s, show 0.31s, html 0.37s",
+        "hunks": [
+          "h6",
+          "h9"
+        ]
+      },
+      {
+        "id": "clamp-ranges",
+        "intent": "Clamp ranges to the hunk's changed lines before expanding them",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "add --dry-run with h1:3-99999999999 dies with RangeError; a fetched note with a huge range crashes show/html/why",
+        "evidence": "test 'oversized ranges are rejected by add and clamped when read from a note'",
+        "hunks": [
+          "h7",
+          "h8",
+          "h3",
+          "h4",
+          "h10:7-8"
+        ]
+      },
+      {
+        "id": "one-error",
+        "intent": "Report a header-only or out-of-range ref once, not once per range",
+        "necessity": "incidental",
+        "serves": "task",
+        "removal_impact": "Repeated identical error lines",
+        "hunks": [
+          "h10:1-6"
+        ]
+      },
+      {
+        "id": "format-2",
+        "intent": "Mark notes that use ranges as format 2",
+        "necessity": "defensive",
+        "serves": "task",
+        "removal_impact": "Older git-gloss versions silently show ranged groups as missing instead of saying the note is newer",
+        "evidence": "tests 'oversized ranges…' (format 2) and 'notes without ranges stay format 1'",
+        "hunks": [
+          "h1",
+          "h2",
+          "h5"
+        ],
+        "notes": "Versions before ec49705 call any format other than 1 malformed rather than newer"
+      },
+      {
+        "id": "tests",
+        "intent": "Tests for speed, oversized ranges and the note format",
+        "necessity": "supporting",
+        "serves": "parse-cache",
+        "removal_impact": "The fixes would be unverified",
+        "hunks": [
+          "h11",
+          "h12"
+        ]
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Store selections as [a, b] pairs instead of sets",
+        "rejected_because": "Clamping plus caching fixes both problems with a smaller change; sets keep coverage and lookups simple"
+      }
+    ],
+    "risks": [
+      "A stale hunk's ranges are still clamped and applied silently (only the gloss-level stale warning shows)",
+      "This commit was not reviewed again"
+    ],
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-opus-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "src/commands/add.ts",
+      "oldFile": "src/commands/add.ts",
+      "oldStart": 65,
+      "oldLines": 7,
+      "newStart": 65,
+      "newLines": 7,
+      "hash": "15c88ea947d68c1e"
+    },
+    {
+      "id": "h2",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 78,
+      "oldLines": 11,
+      "newStart": 78,
+      "newLines": 11,
+      "hash": "5cf44a22b7af26ad"
+    },
+    {
+      "id": "h3",
+      "file": "src/loader.ts",
+      "oldFile": "src/loader.ts",
+      "oldStart": 1,
+      "oldLines": 7,
+      "newStart": 1,
+      "newLines": 7,
+      "hash": "84599cbc80f5907d"
+    },
+    {
+      "id": "h4",
+      "file": "src/loader.ts",
+      "oldFile": "src/loader.ts",
+      "oldStart": 75,
+      "oldLines": 7,
+      "newStart": 75,
+      "newLines": 7,
+      "hash": "ab151d6ad79c9c21"
+    },
+    {
+      "id": "h5",
+      "file": "src/schema.ts",
+      "oldFile": "src/schema.ts",
+      "oldStart": 86,
+      "oldLines": 8,
+      "newStart": 86,
+      "newLines": 11,
+      "hash": "98dd9e635a5e9ba5"
+    },
+    {
+      "id": "h6",
+      "file": "src/selection.ts",
+      "oldFile": "src/selection.ts",
+      "oldStart": 44,
+      "oldLines": 9,
+      "newStart": 44,
+      "newLines": 20,
+      "hash": "7bcad57a4506affc"
+    },
+    {
+      "id": "h7",
+      "file": "src/selection.ts",
+      "oldFile": "src/selection.ts",
+      "oldStart": 101,
+      "oldLines": 8,
+      "newStart": 112,
+      "newLines": 11,
+      "hash": "f68b1f3171641cc2"
+    },
+    {
+      "id": "h8",
+      "file": "src/selection.ts",
+      "oldFile": "src/selection.ts",
+      "oldStart": 111,
+      "oldLines": 7,
+      "newStart": 125,
+      "newLines": 8,
+      "hash": "2d513e7766e5ac41"
+    },
+    {
+      "id": "h9",
+      "file": "src/selection.ts",
+      "oldFile": "src/selection.ts",
+      "oldStart": 130,
+      "oldLines": 7,
+      "newStart": 145,
+      "newLines": 8,
+      "hash": "c74a071907fc0838"
+    },
+    {
+      "id": "h10",
+      "file": "src/validate.ts",
+      "oldFile": "src/validate.ts",
+      "oldStart": 21,
+      "oldLines": 12,
+      "newStart": 21,
+      "newLines": 12,
+      "hash": "b16d94e9e1469daa"
+    },
+    {
+      "id": "h11",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 219,
+      "oldLines": 7,
+      "newStart": 219,
+      "newLines": 7,
+      "hash": "afb812fe5d5079b7"
+    },
+    {
+      "id": "h12",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 533,
+      "oldLines": 3,
+      "newStart": 533,
+      "newLines": 41,
+      "hash": "aa13096a1c03cc39"
+    }
+  ]
+}
