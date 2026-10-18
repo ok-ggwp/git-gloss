@@ -1,0 +1,626 @@
+{
+  "gloss": 3,
+  "commit": "f8cfd22e597a33ad4985071f99ed865f5eeead2a",
+  "created_at": "2026-10-18T20:16:39.019Z",
+  "annotation": {
+    "version": 1,
+    "task": "Record reviews beside the glosses, so someone reviewing a teammate's branch can see whether each commit's gloss was checked, what the check found, and whether it still applies",
+    "summary": "A new notes ref holds review records, one JSON line each, so everyone's records combine without conflicts. Each record keeps what the reviewer saw (a fingerprint of each changed line and of each gloss group) and its verdict. From those, show, the HTML view and `git gloss reviews` say per stage whether the commit as it is now was reviewed, what was concluded, and whether the code or gloss changed since. Records follow adopt and carry, travel with sync and pushes, and are copied through rebases. git-gud records through `reviews --stamp` and `--record`.",
+    "groups": [
+      {
+        "id": "reviews-core",
+        "intent": "Review records: storage, content fingerprints, per-stage status and verdict",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "there would be nothing to record reviews in or to judge whether a review still applies",
+        "evidence": "test/reviews.test.ts: status follows gloss, risk and code changes, repeated lines, squashes; verdict rules incl. a verdict-less later review and a quoted verdict; 8 concurrent records all kept (the test fails without the retry; a check-and-retry alone still lost one in three runs); a binary file added after review shows as new code; a forged record with an unknown verdict is ignored",
+        "hunks": [
+          "h36"
+        ],
+        "notes": "Line keys hash file plus line text, one key per occurrence, so a second copy of a reviewed line isn't 'seen'; coverage adds up counts across distinct stamps (a squash's source reviews), counting the same stamp once. Gloss keys cover each group (its meaning, serves targets included, without id, hunk refs or the notes carrying adds) and each risk and rejected alternative, keyed one by one so combined glosses still match; task and summary are left out because carrying joins them. A stage's verdict takes, for each part, the latest review with a verdict that saw it (a review without a VERDICT line doesn't override), and an earlier review with issues stays visible. The VERDICT line must be one of the report's last three lines, at line start. Records are validated when read, so a malformed one from another machine is skipped. Writes are a compare-and-swap on the notes ref (built under a private ref, moved only if unchanged), because concurrent recorders lost reviews: 12 parallel records kept 10, and a check-and-retry still lost one in three runs. Per-stage wording: improve says 'suggestions', bugs 'defects found'; a review taken before the commit had a gloss says so. Most of this came from git-gud's own reviews of the change. A change with no lines (a binary file, a mode change) is keyed by file and content hash, so adding one shows as new code. Records with an unknown verdict, model or mode are skipped; a note joined by a rebase is read once per line. --record checks every stamped commit exists before writing anything. The VERDICT line must be a line of its own. Temporary refs for the compare-and-swap are named outside the gloss* glob."
+      },
+      {
+        "id": "reviews-cmd",
+        "intent": "`git gloss reviews`: list findings; --stamp and --record for review tools",
+        "necessity": "required",
+        "serves": "reviews-core",
+        "removal_impact": "git-gud couldn't record reviews, and nobody could read the findings",
+        "hunks": [
+          "h17",
+          "h6",
+          "h7"
+        ]
+      },
+      {
+        "id": "verdict-prompt",
+        "intent": "The honesty prompt asks for a final VERDICT: CLEAN or ISSUES line",
+        "necessity": "required",
+        "serves": "reviews-core",
+        "removal_impact": "a recorded honesty review couldn't say whether it found anything, so 'reviewed' would read as 'passed'",
+        "hunks": [
+          "h16"
+        ]
+      },
+      {
+        "id": "show-reviews",
+        "intent": "show: a reviews line per commit, and a range's honesty-reviewed count",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "a reader of a branch in the terminal couldn't see which glosses were checked",
+        "evidence": "Live: after a real git-gud honesty review, `show main..feat` read '2 commits, 2 glossed, 2 honesty-reviewed'",
+        "hunks": [
+          "h18",
+          "h19",
+          "h20",
+          "h21"
+        ]
+      },
+      {
+        "id": "html-reviews",
+        "intent": "HTML view: review status per commit, findings on click, header count",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "the branch page, the view most likely used for a large PR, wouldn't show which commits were checked",
+        "evidence": "Checked in headless Chromium driven over the DevTools protocol: the review opens on click and its findings stay text (no elements created from them); a screenshot was looked at in dark mode. That check is now a test, which fails if the findings are rendered as HTML.",
+        "hunks": [
+          "h25",
+          "h26",
+          "h27",
+          "h28",
+          "h29",
+          "h30",
+          "h31",
+          "h32",
+          "h33",
+          "h34",
+          "h35"
+        ],
+        "notes": "A new --ok colour token for both themes keeps the green readable in dark mode."
+      },
+      {
+        "id": "follow-commits",
+        "intent": "adopt, carry and new wip snapshots carry reviews along",
+        "necessity": "required",
+        "serves": "reviews-core",
+        "removal_impact": "a review of uncommitted work, or of commits later squashed, would stay on the snapshot or the originals and the new commit would read 'not reviewed'",
+        "evidence": "Tests: a wip review shows on the commit after adopt; a squash carried from two reviewed commits is covered; a new snapshot keeps the last one's reviews (and shows the code changed since)",
+        "hunks": [
+          "h8",
+          "h9",
+          "h10",
+          "h11",
+          "h12",
+          "h13"
+        ]
+      },
+      {
+        "id": "sync-reviews",
+        "intent": "sync shares reviews of shareable commits, merging by keeping every line",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "a teammate's reviews would never reach the person reviewing their branch",
+        "evidence": "Test: two clones each record a review; after syncing both see both",
+        "hunks": [
+          "h22",
+          "h23",
+          "h24"
+        ],
+        "notes": "Uses git's cat_sort_uniq notes merge, so there are no conflicts. Retries a lost push race like glosses do."
+      },
+      {
+        "id": "init-refs",
+        "intent": "init: reviews follow rebased commits, like glosses",
+        "necessity": "required",
+        "serves": "follow-commits",
+        "removal_impact": "rebased or amended commits would lose their reviews",
+        "hunks": [
+          "h14",
+          "h15:1-3"
+        ],
+        "notes": "A squash joins the notes' lines, which is what review records need; duplicates from such joins are read once."
+      },
+      {
+        "id": "fetch-fix",
+        "intent": "One glob fetch refspec, so git fetch can't fail on an origin without glosses",
+        "necessity": "incidental",
+        "serves": "task",
+        "removal_impact": "`git fetch` keeps failing in any repo set up with init until someone pushes a gloss",
+        "hunks": [
+          "h15:4-18",
+          "h38"
+        ],
+        "notes": "A pre-existing bug found while testing, bundled here; the review sync fetches its ref explicitly and doesn't need it. The glob also matches refs/notes/gloss-wip, which is never pushed, so nothing more is fetched in practice. init replaces the old plain refspec."
+      },
+      {
+        "id": "skill",
+        "intent": "Skill: how an agent helps review someone else's branch",
+        "necessity": "supporting",
+        "serves": "show-reviews",
+        "removal_impact": "an agent asked to help review a PR wouldn't know to start from the glosses and their review status",
+        "hunks": [
+          "h5"
+        ]
+      },
+      {
+        "id": "docs",
+        "intent": "README: recorded reviews, what the reviews line means, how they're shared",
+        "necessity": "supporting",
+        "serves": [
+          "show-reviews",
+          "sync-reviews"
+        ],
+        "removal_impact": "readers wouldn't know a review records what it saw, or that 'reviewed' isn't 'passed'",
+        "hunks": [
+          "h2",
+          "h3"
+        ],
+        "notes": "Also rewords 'review in a sandbox' to 'review in a disposable clone', since git-gud now runs reviewers directly by default."
+      },
+      {
+        "id": "version",
+        "intent": "Version 0.2.0 for the package and the plugin (a release decision)",
+        "necessity": "incidental",
+        "serves": "reviews-cmd",
+        "removal_impact": "git-gud couldn't depend on a git-gloss that has the reviews command",
+        "hunks": [
+          "h1",
+          "h4"
+        ],
+        "notes": "A release decision bundled for convenience: git-gud depends on a git-gloss with the reviews command. Rewriting plugin.json reformatted its keywords list onto several lines."
+      },
+      {
+        "id": "tests",
+        "intent": "Review tests, browser test included; updated refspec and header tests; a flaky test fixed",
+        "necessity": "supporting",
+        "serves": [
+          "reviews-core",
+          "show-reviews",
+          "html-reviews",
+          "follow-commits",
+          "sync-reviews",
+          "init-refs"
+        ],
+        "removal_impact": "the fingerprint rules, verdicts, syncing and the page's text-only findings would have no guard",
+        "hunks": [
+          "h39",
+          "h40"
+        ],
+        "notes": "Includes a browser test that clicks a review open in headless Chromium; it fails if findings are rendered as HTML."
+      },
+      {
+        "id": "flake-fix",
+        "intent": "Fix the flaky wip-restore test: the put-back snapshot always differs now",
+        "necessity": "incidental",
+        "serves": "task",
+        "removal_impact": "test/carry.test.ts's restore test keeps failing about one run in four",
+        "hunks": [
+          "h37"
+        ]
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Store reviews inside the gloss note",
+        "rejected_because": "reviews come from other people and machines and would conflict with the gloss; a separate ref merges cleanly"
+      },
+      {
+        "option": "Tie a review to a commit id",
+        "rejected_because": "commit ids change with rebases and squashes; content fingerprints keep a review valid exactly as long as the code and gloss it saw"
+      },
+      {
+        "option": "Parse the reviewer's prose for a verdict",
+        "rejected_because": "unreliable; an explicit last line is simple to ask for and to read"
+      }
+    ],
+    "risks": [
+      "A recorded review is a claim: anyone who can push can record one, and agent, mode and verdict are self-reported. It shows that a check ran and what it said, not how thorough it was",
+      "Findings are pushed with sync; a report that quotes secrets or private code shares them with whoever can read the remote",
+      "Verdicts depend on the reviewer ending with the VERDICT line; reports without it show as 'reviewed'",
+      "Ordering across machines uses each machine's clock, so a skewed clock can make an older review look like the latest",
+      "A range review is recorded on each commit with that commit's lines and gloss, though the reviewer saw the whole branch at once",
+      "Repos set up with the old refspec keep it until `git gloss init` is run again"
+    ]
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": ".claude-plugin/plugin.json",
+      "oldFile": ".claude-plugin/plugin.json",
+      "oldStart": 1,
+      "oldLines": 10,
+      "newStart": 1,
+      "newLines": 16,
+      "hash": "5ca5784ca75297f8"
+    },
+    {
+      "id": "h2",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 30,
+      "oldLines": 6,
+      "newStart": 30,
+      "newLines": 7,
+      "hash": "e052876f5344d5db"
+    },
+    {
+      "id": "h3",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 121,
+      "oldLines": 7,
+      "newStart": 122,
+      "newLines": 24,
+      "hash": "39b86aaba1189b23"
+    },
+    {
+      "id": "h4",
+      "file": "package.json",
+      "oldFile": "package.json",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "99fd8df309f26ebc"
+    },
+    {
+      "id": "h5",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 100,
+      "oldLines": 3,
+      "newStart": 100,
+      "newLines": 7,
+      "hash": "2247a8e85d1798de"
+    },
+    {
+      "id": "h6",
+      "file": "src/cli.ts",
+      "oldFile": "src/cli.ts",
+      "oldStart": 6,
+      "oldLines": 6,
+      "newStart": 6,
+      "newLines": 7,
+      "hash": "2d3e4b5ad4a6fc39"
+    },
+    {
+      "id": "h7",
+      "file": "src/cli.ts",
+      "oldFile": "src/cli.ts",
+      "oldStart": 13,
+      "oldLines": 7,
+      "newStart": 14,
+      "newLines": 7,
+      "hash": "2e0cb0adc9186c3a"
+    },
+    {
+      "id": "h8",
+      "file": "src/commands/adopt.ts",
+      "oldFile": "src/commands/adopt.ts",
+      "oldStart": 6,
+      "oldLines": 6,
+      "newStart": 6,
+      "newLines": 7,
+      "hash": "dd874ac607423a77"
+    },
+    {
+      "id": "h9",
+      "file": "src/commands/adopt.ts",
+      "oldFile": "src/commands/adopt.ts",
+      "oldStart": 70,
+      "oldLines": 6,
+      "newStart": 71,
+      "newLines": 8,
+      "hash": "c6525ea9a968ab7d"
+    },
+    {
+      "id": "h10",
+      "file": "src/commands/carry.ts",
+      "oldFile": "src/commands/carry.ts",
+      "oldStart": 8,
+      "oldLines": 6,
+      "newStart": 8,
+      "newLines": 7,
+      "hash": "cf4b5bb41b571e11"
+    },
+    {
+      "id": "h11",
+      "file": "src/commands/carry.ts",
+      "oldFile": "src/commands/carry.ts",
+      "oldStart": 63,
+      "oldLines": 6,
+      "newStart": 64,
+      "newLines": 8,
+      "hash": "7a09a0a92681a7b7"
+    },
+    {
+      "id": "h12",
+      "file": "src/commands/hunks.ts",
+      "oldFile": "src/commands/hunks.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 7,
+      "hash": "952bfbd16ee31454"
+    },
+    {
+      "id": "h13",
+      "file": "src/commands/hunks.ts",
+      "oldFile": "src/commands/hunks.ts",
+      "oldStart": 41,
+      "oldLines": 6,
+      "newStart": 42,
+      "newLines": 9,
+      "hash": "38ad9db20e079bff"
+    },
+    {
+      "id": "h14",
+      "file": "src/commands/init.ts",
+      "oldFile": "src/commands/init.ts",
+      "oldStart": 3,
+      "oldLines": 6,
+      "newStart": 3,
+      "newLines": 7,
+      "hash": "da61e7742ef43fb0"
+    },
+    {
+      "id": "h15",
+      "file": "src/commands/init.ts",
+      "oldFile": "src/commands/init.ts",
+      "oldStart": 90,
+      "oldLines": 23,
+      "newStart": 91,
+      "newLines": 29,
+      "hash": "8eda4997a5a51e21"
+    },
+    {
+      "id": "h16",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 124,
+      "oldLines": 7,
+      "newStart": 124,
+      "newLines": 9,
+      "hash": "48b027f48208d558"
+    },
+    {
+      "id": "h17",
+      "file": "src/commands/reviews.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 75,
+      "hash": "bb7ca98b31bd38ea"
+    },
+    {
+      "id": "h18",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 4,
+      "oldLines": 6,
+      "newStart": 4,
+      "newLines": 7,
+      "hash": "5d651b3dad2f6006"
+    },
+    {
+      "id": "h19",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 86,
+      "oldLines": 8,
+      "newStart": 87,
+      "newLines": 15,
+      "hash": "2faa8edd239832ad"
+    },
+    {
+      "id": "h20",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 109,
+      "oldLines": 6,
+      "newStart": 117,
+      "newLines": 15,
+      "hash": "d2c3bb7fa74c8749"
+    },
+    {
+      "id": "h21",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 119,
+      "oldLines": 6,
+      "newStart": 136,
+      "newLines": 7,
+      "hash": "081006633e8d2bac"
+    },
+    {
+      "id": "h22",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 2,
+      "oldLines": 6,
+      "newStart": 2,
+      "newLines": 7,
+      "hash": "1e3313191cafa8ec"
+    },
+    {
+      "id": "h23",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 145,
+      "oldLines": 6,
+      "newStart": 146,
+      "newLines": 43,
+      "hash": "69fdbcbe35c7783e"
+    },
+    {
+      "id": "h24",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 174,
+      "oldLines": 6,
+      "newStart": 212,
+      "newLines": 10,
+      "hash": "ef64018edc267464"
+    },
+    {
+      "id": "h25",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 188,
+      "oldLines": 11,
+      "newStart": 188,
+      "newLines": 31,
+      "hash": "95f11635dc667a14"
+    },
+    {
+      "id": "h26",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 201,
+      "oldLines": 6,
+      "newStart": 221,
+      "newLines": 13,
+      "hash": "12ace70560d41ed4"
+    },
+    {
+      "id": "h27",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 214,
+      "oldLines": 6,
+      "newStart": 241,
+      "newLines": 7,
+      "hash": "e732c8b6e9ea0db2"
+    },
+    {
+      "id": "h28",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 266,
+      "oldLines": 6,
+      "newStart": 294,
+      "newLines": 7,
+      "hash": "7b41e0af2c5e1e61"
+    },
+    {
+      "id": "h29",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 1,
+      "oldLines": 4,
+      "newStart": 1,
+      "newLines": 5,
+      "hash": "93d5b2f82ed931b8"
+    },
+    {
+      "id": "h30",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 59,
+      "oldLines": 6,
+      "newStart": 60,
+      "newLines": 28,
+      "hash": "8f520421c26f9eb7"
+    },
+    {
+      "id": "h31",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 174,
+      "oldLines": 6,
+      "newStart": 197,
+      "newLines": 7,
+      "hash": "19ff1e6819df7405"
+    },
+    {
+      "id": "h32",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 191,
+      "oldLines": 6,
+      "newStart": 215,
+      "newLines": 7,
+      "hash": "c38bb9431fdcf1ed"
+    },
+    {
+      "id": "h33",
+      "file": "src/html/style.css",
+      "oldFile": "src/html/style.css",
+      "oldStart": 3,
+      "oldLines": 6,
+      "newStart": 3,
+      "newLines": 7,
+      "hash": "86a59fb6212629e1"
+    },
+    {
+      "id": "h34",
+      "file": "src/html/style.css",
+      "oldFile": "src/html/style.css",
+      "oldStart": 34,
+      "oldLines": 6,
+      "newStart": 35,
+      "newLines": 7,
+      "hash": "f3207db0919da4f2"
+    },
+    {
+      "id": "h35",
+      "file": "src/html/style.css",
+      "oldFile": "src/html/style.css",
+      "oldStart": 218,
+      "oldLines": 3,
+      "newStart": 220,
+      "newLines": 10,
+      "hash": "30b2a874ed0e0acf"
+    },
+    {
+      "id": "h36",
+      "file": "src/reviews.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 248,
+      "hash": "40c64ee2e1ccbca5"
+    },
+    {
+      "id": "h37",
+      "file": "test/carry.test.ts",
+      "oldFile": "test/carry.test.ts",
+      "oldStart": 385,
+      "oldLines": 8,
+      "newStart": 385,
+      "newLines": 10,
+      "hash": "8813603c6e54c342"
+    },
+    {
+      "id": "h38",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 255,
+      "oldLines": 7,
+      "newStart": 255,
+      "newLines": 7,
+      "hash": "da1fac909779530a"
+    },
+    {
+      "id": "h39",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 1195,
+      "oldLines": 7,
+      "newStart": 1195,
+      "newLines": 7,
+      "hash": "c5a465fcf97dd27e"
+    },
+    {
+      "id": "h40",
+      "file": "test/reviews.test.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 308,
+      "hash": "0964b76261de69aa"
+    }
+  ]
+}
