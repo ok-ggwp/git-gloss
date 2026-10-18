@@ -52,7 +52,7 @@ Self-grading tends to call everything "required". Resist that. Use these categor
 - `defensive`: guards edge cases or failures nobody asked about.
 - `speculative`: added because it might be useful later.
 
-Test each group with "what concretely breaks if this is removed?" and write the answer in `removal_impact`. If the honest answer is "nothing the task needs", the group is `incidental`, `defensive` or `speculative`. Saying so is the useful outcome; it tells the reviewer what can be dropped.
+Test each group with "what concretely breaks if this is removed?" and write the answer in `removal_impact`. Name the specific loss, even for tests and docs: "the merge-base conflict rule would have no test", not "Unverified"; "users wouldn't know `--rev` exists", not "Undocumented". If the honest answer is "nothing the task needs", the group is `incidental`, `defensive` or `speculative`. Saying so is the useful outcome; it tells the reviewer what can be dropped.
 
 Tests are `supporting`, with `serves` listing every group they verify: `"serves": ["retry-core", "retry-config"]`. The same goes for a shared helper that several groups need. Groups the tests cover can cite them in `evidence`.
 

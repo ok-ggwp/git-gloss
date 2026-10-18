@@ -1,15 +1,15 @@
 import { parseArgs } from 'node:util'
-import { commitSubject, gitTry, readNote, resolveCommit } from '../git.ts'
+import { commitSubject, gitTry, readNote, resolveCommits } from '../git.ts'
 import type { Hunk } from '../diff.ts'
 import { refLabel, sliceStats, sliceText } from '../selection.ts'
-import { loadGloss, type LoadedGroup } from '../loader.ts'
+import { loadGloss, type LoadedGloss, type LoadedGroup } from '../loader.ts'
 import { NECESSITY, type Necessity } from '../schema.ts'
 import {
-  colorDiff, field, groupHeader, hunkLabel, necessityWord, noteFooter, page, risksBlock, style, termWidth, wrap,
+  colorDiff, field, groupHeader, hunkLabel, necessityWord, noteFooter, page, style, termWidth, wrap,
 } from '../render.ts'
 
 export const usage =
-  'show [<commit>] [-g <group>]... [--full] [--diff] [--only <necessity,...>]   summarise a gloss; expand groups with -g'
+  'show [<commit> | <range>] [-g <group>]... [--full] [--diff] [--only <necessity,...>]   summarise a gloss, or each commit in a range'
 
 // Counts over the lines each part selects, not whole hunks, so groups that
 // split a hunk don't both count all of it.
@@ -35,37 +35,83 @@ export function run(argv: string[]): number {
       only: { type: 'string' },
     },
   })
-  const sha = resolveCommit(positionals[0] ?? 'HEAD')
-  const gloss = loadGloss(sha)
-  if (!gloss) {
-    console.error(`${sha.slice(0, 10)} has no gloss (annotate it with \`git gloss add\`)`)
-    return 1
-  }
-
   const only = values.only?.split(',').map((s) => s.trim()) as Necessity[] | undefined
   const unknown = only?.filter((n) => !NECESSITY.includes(n))
   if (unknown?.length) {
     console.error(`error: unknown necessity ${unknown.join(', ')}; expected ${NECESSITY.join(', ')}`)
     return 2
   }
-  const ids = gloss.groups.map((g) => g.group.id)
-  const missing = values.group?.filter((id) => !ids.includes(id))
-  if (missing?.length) {
-    // Usually the group is in an earlier commit's gloss, e.g. one shown just
-    // before HEAD moved. Look a little way back for one that has them all.
-    const earlier = (gitTry(['rev-list', '--max-count=30', `${sha}~1`]) ?? '').split('\n').filter(Boolean).find((c) => {
-      try {
-        const groups = readNote(c)?.annotation.groups.map((g) => g.id) ?? []
-        return missing.every((id) => groups.includes(id))
-      } catch {
-        return false
-      }
-    })
-    const flags = missing.map((id) => `-g ${id}`).join(' ')
-    console.error(`error: the gloss on ${sha.slice(0, 7)} (${gloss.subject}) has no group ${missing.join(', ')}; its groups are ${ids.join(', ')}` +
-      (earlier ? `\n  found in ${earlier.slice(0, 7)} (${commitSubject(earlier)}): git gloss show ${earlier.slice(0, 7)} ${flags}` : ''))
+
+  const { shas, merges, range } = resolveCommits(positionals[0] ?? 'HEAD')
+  if (!range) {
+    const gloss = loadGloss(shas[0])
+    if (!gloss) {
+      console.error(`${shas[0].slice(0, 10)} has no gloss (annotate it with \`git gloss add\`)`)
+      return 1
+    }
+    const sha = shas[0]
+    const ids = gloss.groups.map((g) => g.group.id)
+    const missing = values.group?.filter((id) => !ids.includes(id))
+    if (missing?.length) {
+      // Usually the group is in an earlier commit's gloss, e.g. one shown just
+      // before HEAD moved. Look a little way back for one that has them all.
+      const earlier = (gitTry(['rev-list', '--max-count=30', `${sha}~1`]) ?? '').split('\n').filter(Boolean).find((c) => {
+        try {
+          const groups = readNote(c)?.annotation.groups.map((g) => g.id) ?? []
+          return missing.every((id) => groups.includes(id))
+        } catch {
+          return false
+        }
+      })
+      const flags = missing.map((id) => `-g ${id}`).join(' ')
+      console.error(`error: the gloss on ${sha.slice(0, 7)} (${gloss.subject}) has no group ${missing.join(', ')}; its groups are ${ids.join(', ')}` +
+        (earlier ? `\n  found in ${earlier.slice(0, 7)} (${commitSubject(earlier)}): git gloss show ${earlier.slice(0, 7)} ${flags}` : ''))
+      return 2
+    }
+    const out = renderCommit(sha, gloss, values, only, true)
+    if (!out) {
+      console.error(`no groups match ${[values.group && `-g ${values.group.join(',')}`, only && `--only ${only.join(',')}`].filter(Boolean).join(' and ')}`)
+      return 1
+    }
+    page(out.join('\n'))
+    return 0
+  }
+
+  // A range: each commit in turn, oldest first. Group ids repeat across
+  // commits, so -g is for single commits.
+  if (values.group) {
+    console.error('error: -g needs a single commit; pick one from the range, e.g. git gloss show <commit> -g <group>')
     return 2
   }
+  const glosses = shas.map((sha) => loadGloss(sha))
+  const glossed = glosses.filter(Boolean).length
+  const stale = glosses.filter((g) => g?.stale).length
+  const out: string[] = [
+    style('bold', `${range}: ${shas.length} commit${shas.length === 1 ? '' : 's'}, ${glossed} glossed`) +
+      (stale ? style('red', ` (${stale} stale)`) : '') +
+      (merges.length ? style('dim', `  (${merges.length} merge${merges.length === 1 ? '' : 's'} not shown)`) : ''),
+  ]
+  shas.forEach((sha, i) => {
+    out.push('', style('dim', '─'.repeat(Math.min(termWidth(), 60))))
+    const gloss = glosses[i]
+    if (!gloss) {
+      out.push(`${style('yellow', sha.slice(0, 10))} ${style('bold', commitSubject(sha))}`, style('dim', 'no gloss for this commit'))
+      return
+    }
+    // An --only filter can leave a commit with nothing to show; say so and move on.
+    out.push(...(renderCommit(sha, gloss, values, only, false) ??
+      [`${style('yellow', sha.slice(0, 10))} ${style('bold', gloss.subject)}`, style('dim', `no ${only?.join('/')} groups`)]))
+  })
+  if (glossed) out.push('', style('dim', 'One commit in detail: git gloss show <commit> --full   (or -g <group> for its code)'))
+  page(out.join('\n'))
+  return 0
+}
+
+type ShowOptions = { group?: string[]; full?: boolean; diff?: boolean }
+
+// One commit's view, or null if no group matches -g/--only. `hints` adds the
+// footer on how to expand, which a range prints once instead.
+function renderCommit(sha: string, gloss: LoadedGloss, values: ShowOptions, only: Necessity[] | undefined, hints: boolean): string[] | null {
 
   const a = gloss.note.annotation
   const short = sha.slice(0, 7)
@@ -78,10 +124,7 @@ export function run(argv: string[]): number {
     .filter((g) => !only || only.includes(g.group.necessity))
     .filter((g) => !values.group || values.group.includes(g.group.id))
 
-  if (!groups.length) {
-    console.error(`no groups match ${[values.group && `-g ${values.group.join(',')}`, only && `--only ${only.join(',')}`].filter(Boolean).join(' and ')}`)
-    return 1
-  }
+  if (!groups.length) return null
 
   // -g: chosen groups with their code. --full: every group's details, plus
   // alternatives and risks. --diff: --full plus code.
@@ -104,8 +147,7 @@ export function run(argv: string[]): number {
       }
     }
     if (!values.group) out.push(...noteFooter(gloss.note))
-    page(out.join('\n'))
-    return 0
+    return out
   }
 
   // Summary: one line per group.
@@ -151,13 +193,15 @@ export function run(argv: string[]): number {
     out.push(`  ${style(['bold', 'red'], 'unannotated'.padEnd(11))}  ${style('red', `+${un.added} -${un.removed} not in any group: ${where}`)}`)
   }
 
-  out.push(...risksBlock(gloss.note))
-  const alts = a.alternatives?.length ?? 0
-  out.push(
-    '',
-    style('dim', `Expand a group:  git gloss show ${short} -g <group>`),
-    style('dim', `Everything:      --full (details${alts ? `, ${alts} alternative${alts === 1 ? '' : 's'} considered` : ''})   --diff (details and code)`),
-  )
-  page(out.join('\n'))
-  return 0
+  // Rejected alternatives and risks: short, and often what a reader most
+  // lacks, so they're in the summary rather than only behind --full.
+  out.push(...noteFooter(gloss.note))
+  if (hints) {
+    out.push(
+      '',
+      style('dim', `Expand a group:  git gloss show ${short} -g <group>`),
+      style('dim', `Everything:      --full (each group's evidence and notes)   --diff (and code)`),
+    )
+  }
+  return out
 }

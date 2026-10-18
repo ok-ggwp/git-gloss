@@ -14,7 +14,7 @@ git gloss hunks [<commit>|wip]        list hunks, numbering changed lines for h3
                                       wip snapshots your uncommitted work instead
 git gloss adopt [<commit>]            move the gloss of uncommitted work onto the commit made from it
 git gloss add [<commit>] -f a.json    attach an annotation (validated against the diff)
-git gloss show [<commit>]             summary: one line per group, risks
+git gloss show [<commit>|<range>]     summary: one line per group, alternatives, risks (a range: each commit)
       -g <group>                      ...expand groups, with their code
       --full                          ...every group's details
       --diff                          ...every group's details and code

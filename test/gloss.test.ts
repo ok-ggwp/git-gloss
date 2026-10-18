@@ -295,7 +295,8 @@ test('show summarises one line per group, required first, and expands groups wit
   assert.deepEqual(rows, ['retry-core', 'config', 'tidy'])
   assert.match(r.out, /3 groups: 1 required · 1 speculative · 1 mechanical/)
   assert.match(r.out, /Duplicate uploads/)
-  assert.doesNotMatch(r.out, /@@|Retry in the client/, 'no code or alternatives in the summary')
+  assert.doesNotMatch(r.out, /@@/, 'no code in the summary')
+  assert.match(r.out, /Alternatives considered\n *• Retry in the client: too broad/, 'rejected alternatives are in the summary')
 
   r = gloss(dir, ['show', '-g', 'config'])
   assert.match(r.out, /\+export const MAX_RETRIES = 3/)
@@ -1146,4 +1147,35 @@ test('adopt re-points serves at groups left in another commit, and honours --for
   g('checkout', '-q', '--orphan', 'other'); g('rm', '-rqf', '.'); writeFileSync(join(dir, 'o.txt'), 'o\n'); g('add', 'o.txt'); g('commit', '-qm', 'unrelated')
   r = gloss(dir, ['adopt'])
   assert.match(r.out, /isn't built on the commit the wip snapshot was taken from/)
+})
+
+test('show takes a range: each commit summarised in turn, unglossed ones marked, -g refused', () => {
+  const dir = branchRepo()
+  let r = gloss(dir, ['show', 'HEAD~2..HEAD'])
+  assert.equal(r.code, 0, r.err)
+  assert.match(r.out, /HEAD~2\.\.HEAD: 2 commits, 1 glossed/)
+  assert.match(r.out, /add retry[\s\S]*Wrap send in retry[\s\S]*sneak in a file\nno gloss for this commit/)
+  assert.equal((r.out.match(/Expand a group/g) ?? []).length, 0, 'per-commit hints are left out of a range')
+
+  r = gloss(dir, ['show', 'HEAD~2..HEAD', '--only', 'speculative'])
+  assert.match(r.out, /Make retry count configurable/)
+  assert.doesNotMatch(r.out, /Wrap send in retry/)
+
+  r = gloss(dir, ['show', 'HEAD~2..HEAD', '-g', 'config'])
+  assert.equal(r.code, 2)
+  assert.match(r.err, /-g needs a single commit/)
+  r = gloss(dir, ['show', 'HEAD~1..HEAD'])
+  assert.match(r.out, /1 commit, 0 glossed/)
+  assert.doesNotMatch(r.out, /One commit in detail/, 'no expand hint when nothing is glossed')
+
+})
+
+test('a range header counts stale glosses', () => {
+  const dir = repo()
+  gloss(dir, ['init'])
+  gloss(dir, ['add'], annotation([retryCore, config]))
+  writeFileSync(join(dir, 'config.js'), 'export const MAX_RETRIES = 5\n')
+  execFileSync('git', ['commit', '-qa', '--amend', '--no-edit'], { cwd: dir })
+  const r = gloss(dir, ['show', 'HEAD~1..HEAD'])
+  assert.match(r.out, /1 commit, 1 glossed \(1 stale\)/)
 })
