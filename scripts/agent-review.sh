@@ -60,8 +60,10 @@ else
   prompt=$(cd "$clone" && git gloss review "$sha")
 fi
 
+what="the reviewed commit"
+[ "$rev" = wip ] && what="a snapshot commit of the author's uncommitted work (HEAD is that snapshot; the changes are not committed in the real repository)"
 preamble="You are running in a sandbox directory $work containing a disposable clone of the repository at $clone,
-checked out at the reviewed commit. Your shell commands run in an OS sandbox: you can write only under $work, cannot
+checked out at $what. Your shell commands run in an OS sandbox: you can write only under $work, cannot
 read the user's home directory, and have no network. Create scratch tests and throwaway git repos under $work/scratch
 and run them. To run the code under review, use the clone's own entry points (for this project: node bin/git-gloss.js,
 npm test), not any globally installed copy.${removed:+

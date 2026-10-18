@@ -41,7 +41,23 @@ npm link                      # puts git-gloss on PATH, so `git gloss` works
 ln -s "$PWD/skills/gloss" ~/.claude/skills/gloss   # teach Claude Code to write glosses
 ```
 
-In each repo you use it in, run `git gloss init --hooks`. After that, every `git push` to a named remote also syncs glosses with it. Without the hook, run `git gloss sync` yourself.
+### Setting up a repo
+
+In each repo you use it in:
+
+1. Run `git gloss init --hooks`. Glosses then follow amends and rebases, `git commit` moves a wip-gloss onto the new commit, and `git push` to a named remote also syncs glosses with it. The hooks call `git gloss`, so it must be on the PATH of whatever runs git (a GUI client may not have it); `init` warns if it isn't. Without the hooks, run `git gloss adopt` after committing and `git gloss sync` to share.
+2. Tell your coding agent to wip-gloss its changes. Add this to the repo's `CLAUDE.md` (Claude Code), or `AGENTS.md` for agents that read that file:
+
+   ```markdown
+   ## git-gloss
+   After making a non-trivial code change, wip-gloss it before reporting back: leave
+   the changes uncommitted and gloss them with git-gloss, following the gloss skill.
+   Don't commit unless asked.
+   ```
+
+   Claude Code finds the procedure in the `gloss` skill (installed above). Other agents won't have the skill, so for them add a pointer in `AGENTS.md` to a copy of `skills/gloss/SKILL.md`.
+
+Put the line in the repo rather than in your user-level `CLAUDE.md`: it only makes sense where `git gloss init` has been run.
 
 `sync` fetches the remote's glosses into `refs/notes/remotes/<remote>/gloss`, merges them into yours and pushes the result, retrying if someone else pushed in between. Glosses on different commits simply combine, and a gloss changed on only one side since you last synced is taken from that side. Only when both sides changed the same commit's gloss since then is it a conflict: the newer gloss (by its `created_at`) wins, because a re-gloss is normally a correction, and if either can't be read, yours is kept. It prints what it fetched, pushed and decided. The hook never blocks a push: if syncing fails it prints a warning and the push goes ahead. It syncs before the branch is pushed (so glosses arrive even if the branch push is then rejected), and it disables credential prompts so a remote that needs one fails fast instead of stalling the push. If you already have a `pre-push` hook, `init --hooks` leaves it alone and prints the one line to add to it.
 

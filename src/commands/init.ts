@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -73,6 +74,11 @@ export function run(argv: string[] = []): number {
     console.log('  no origin remote; skipped fetch config')
   }
   if (values.hooks) {
+    // The hooks run `git gloss`; a git without it on PATH (a GUI client, a
+    // different shell) would print an error after every commit and push.
+    if (spawnSync('sh', ['-c', 'command -v git-gloss'], { stdio: 'ignore' }).status !== 0) {
+      console.log('! git-gloss is not on PATH here; the hooks need it wherever git runs (see README: npm link)')
+    }
     installHook('pre-push', HOOK, '`git push` now syncs glosses with the remote it pushes to', [
       'git remote | grep -qxF -- "$1" && { GIT_TERMINAL_PROMPT=0 git gloss sync "$1" >&2 ||',
       '  echo "git-gloss: syncing glosses failed; your push continues" >&2; }',
