@@ -1,0 +1,604 @@
+{
+  "gloss": 2,
+  "commit": "3356aec1aba9249c632b7c3858766ba237cbbe5e",
+  "created_at": "2026-10-17T09:43:24.563Z",
+  "annotation": {
+    "version": 1,
+    "task": "Let a group claim part of a hunk, the limitation every review hit: new files couldn't be split by intent and shared hunks were double-counted",
+    "summary": "Groups can refer to a hunk's changed lines (h6:5-12). Validation, every view, the line counts and `why` all work from the same per-line selections in a new selection module.",
+    "groups": [
+      {
+        "id": "ref-syntax",
+        "intent": "Parse and format h6 / h6:5-12 / h6:1,4-6 references",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "No way to express part of a hunk",
+        "evidence": "test 'refs parse, format and slice by changed-line number'",
+        "hunks": [
+          "h34:1-35",
+          "h32",
+          "h33"
+        ],
+        "notes": "Numbers count only changed lines, so a range stays valid when a rebase changes context lines (the same lines the hunk hash covers)"
+      },
+      {
+        "id": "body-lines",
+        "intent": "Parse a hunk body into numbered changed lines",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Coverage, slicing, the HTML view and why all build on it",
+        "hunks": [
+          "h34:36-63"
+        ],
+        "notes": "Re-parsed on every call, which made coverage quadratic: found by review, fixed in the next commit"
+      },
+      {
+        "id": "hunks-numbering",
+        "intent": "Show changed-line numbers in `git gloss hunks`",
+        "necessity": "supporting",
+        "serves": "ref-syntax",
+        "removal_impact": "Authors would have to count lines by hand to write a range",
+        "hunks": [
+          "h5",
+          "h6"
+        ],
+        "notes": "Also adds an undocumented `changed` count to `hunks --json`"
+      },
+      {
+        "id": "coverage",
+        "intent": "Validate ranges and require every changed line to be in a group",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Out-of-range references would be stored, and lines in a split hunk could go unexplained without warning",
+        "evidence": "test 'add validates line ranges and requires every changed line to be covered'",
+        "hunks": [
+          "h34:103-137",
+          "h35",
+          "h36",
+          "h37"
+        ],
+        "notes": "selections() expands ranges before bounds are checked, so a huge range crashes add (and the loader, which doesn't check at all): found by review, fixed in the next commit"
+      },
+      {
+        "id": "slicing",
+        "intent": "Show each group only its lines, with ⋯ gaps, in show and review",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Every group sharing a hunk would still display and count all of it",
+        "evidence": "test 'split hunks show only their lines, count only their lines, and answer why precisely'",
+        "hunks": [
+          "h34:64-102",
+          "h7",
+          "h8",
+          "h9",
+          "h10",
+          "h11",
+          "h12",
+          "h13",
+          "h14",
+          "h29",
+          "h30",
+          "h31"
+        ],
+        "notes": "Also changes the summary's unannotated row from a hunk count to +/- line counts, which the intent doesn't mention"
+      },
+      {
+        "id": "loader-selections",
+        "intent": "Carry each group's line selection, and uncovered lines, through the loader",
+        "necessity": "supporting",
+        "serves": "slicing",
+        "removal_impact": "Views would have no selection to slice by",
+        "hunks": [
+          "h26",
+          "h27",
+          "h28"
+        ]
+      },
+      {
+        "id": "html-lines",
+        "intent": "Slice hunks in the HTML view and weight the bar per line",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The HTML view would ignore ranges and split shared lines arbitrarily",
+        "evidence": "test 'html splits a hunk between groups by line'",
+        "hunks": [
+          "h20",
+          "h21",
+          "h22",
+          "h23",
+          "h24",
+          "h17",
+          "h18",
+          "h19",
+          "h25"
+        ],
+        "notes": "'also in' now means groups sharing at least one of this group's lines, not merely the same hunk; the label changes from 'also in' to 'shares lines with'"
+      },
+      {
+        "id": "precise-why",
+        "intent": "Make `why` name only groups that own the blamed line",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "For a split hunk, why would name every group that claims any part of it",
+        "evidence": "same test: f.js:1 → fix, f.js:6 → tail",
+        "hunks": [
+          "h15",
+          "h16"
+        ]
+      },
+      {
+        "id": "docs",
+        "intent": "Document range references in the skill and README",
+        "necessity": "supporting",
+        "serves": "ref-syntax",
+        "removal_impact": "Agents writing glosses wouldn't know they can split a hunk",
+        "hunks": [
+          "h1",
+          "h2",
+          "h3",
+          "h4"
+        ]
+      },
+      {
+        "id": "tests",
+        "intent": "Tests for parsing, slicing, validation, views, why and HTML weights",
+        "necessity": "supporting",
+        "serves": "coverage",
+        "removal_impact": "None of the range behaviour would be verified",
+        "hunks": [
+          "h38",
+          "h39",
+          "h40",
+          "h41",
+          "h42"
+        ],
+        "notes": "Also covers slicing, html-lines and precise-why; serves can only name one group (step 6)"
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "File line numbers (src/x.ts:120-180)",
+        "rejected_because": "Deleted lines have no new-file number, and numbers shift whenever the hunk moves"
+      },
+      {
+        "option": "Numbering every body line, context included",
+        "rejected_because": "A rebase that changes context would shift the numbers while the hunk hash still matched"
+      },
+      {
+        "option": "Showing other groups' lines dimmed instead of collapsing them",
+        "rejected_because": "Collapsing keeps each group's view short, which was the point; the gap says how much is hidden"
+      }
+    ],
+    "risks": [
+      "Found by review, fixed in the next commit: splitting a large hunk is quadratic (~33s per command for a 20,000-line file), a huge range crashes add and any view reading the note, and older git-gloss versions show ranged groups as 'missing' rather than an error",
+      "A range refers to the hunk as glossed; if the hunk changes (status 'changed'), numbers past its end are dropped and the rest may point at different lines. The gloss is flagged stale",
+      "Old glosses with whole-hunk references still count shared hunks fully for each group"
+    ],
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-opus-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 8,
+      "oldLines": 7,
+      "newStart": 8,
+      "newLines": 7,
+      "hash": "bfc85f3e72447622"
+    },
+    {
+      "id": "h2",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 21,
+      "oldLines": 6,
+      "newStart": 21,
+      "newLines": 8,
+      "hash": "e9b70f9329cf6d4b"
+    },
+    {
+      "id": "h3",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 10,
+      "oldLines": 8,
+      "newStart": 10,
+      "newLines": 8,
+      "hash": "8ced0909af966c51"
+    },
+    {
+      "id": "h4",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 54,
+      "oldLines": 7,
+      "newStart": 54,
+      "newLines": 7,
+      "hash": "80420200d21d6e0f"
+    },
+    {
+      "id": "h5",
+      "file": "src/commands/hunks.ts",
+      "oldFile": "src/commands/hunks.ts",
+      "oldStart": 1,
+      "oldLines": 9,
+      "newStart": 1,
+      "newLines": 10,
+      "hash": "dffac88f4dcddf16"
+    },
+    {
+      "id": "h6",
+      "file": "src/commands/hunks.ts",
+      "oldFile": "src/commands/hunks.ts",
+      "oldStart": 15,
+      "oldLines": 9,
+      "newStart": 16,
+      "newLines": 17,
+      "hash": "b41b534802b41ce4"
+    },
+    {
+      "id": "h7",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 7,
+      "hash": "e2f837471151eb4a"
+    },
+    {
+      "id": "h8",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 40,
+      "oldLines": 13,
+      "newStart": 41,
+      "newLines": 15,
+      "hash": "aa6af66289ebeb7c"
+    },
+    {
+      "id": "h9",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 71,
+      "oldLines": 14,
+      "newStart": 74,
+      "newLines": 14,
+      "hash": "c09df4f31f7b28ed"
+    },
+    {
+      "id": "h10",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 7,
+      "hash": "d08be7b72a0d7432"
+    },
+    {
+      "id": "h11",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 10,
+      "oldLines": 15,
+      "newStart": 11,
+      "newLines": 18,
+      "hash": "e86a23fbf2f16a5d"
+    },
+    {
+      "id": "h12",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 77,
+      "oldLines": 14,
+      "newStart": 81,
+      "newLines": 14,
+      "hash": "2b82becb050feb72"
+    },
+    {
+      "id": "h13",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 101,
+      "oldLines": 14,
+      "newStart": 105,
+      "newLines": 14,
+      "hash": "da6660415bb25eab"
+    },
+    {
+      "id": "h14",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 131,
+      "oldLines": 7,
+      "newStart": 135,
+      "newLines": 8,
+      "hash": "1da87b17d83d0979"
+    },
+    {
+      "id": "h15",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 3,
+      "oldLines": 6,
+      "newStart": 3,
+      "newLines": 7,
+      "hash": "87bdaf7cede765de"
+    },
+    {
+      "id": "h16",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 29,
+      "oldLines": 9,
+      "newStart": 30,
+      "newLines": 15,
+      "hash": "3e13de067cc6ee7a"
+    },
+    {
+      "id": "h17",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 34,
+      "oldLines": 7,
+      "newStart": 34,
+      "newLines": 7,
+      "hash": "320bc0e9c5601aec"
+    },
+    {
+      "id": "h18",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 44,
+      "oldLines": 14,
+      "newStart": 44,
+      "newLines": 14,
+      "hash": "6a628df2fed8a099"
+    },
+    {
+      "id": "h19",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 190,
+      "oldLines": 8,
+      "newStart": 190,
+      "newLines": 8,
+      "hash": "d873b5632efbe41e"
+    },
+    {
+      "id": "h20",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 1,
+      "oldLines": 13,
+      "newStart": 1,
+      "newLines": 18,
+      "hash": "62365bf421fbe34d"
+    },
+    {
+      "id": "h21",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 52,
+      "oldLines": 30,
+      "newStart": 57,
+      "newLines": 24,
+      "hash": "05820528317c3dc2"
+    },
+    {
+      "id": "h22",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 87,
+      "oldLines": 32,
+      "newStart": 86,
+      "newLines": 47,
+      "hash": "6a8bb43104ab6ed5"
+    },
+    {
+      "id": "h23",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 123,
+      "oldLines": 11,
+      "newStart": 137,
+      "newLines": 11,
+      "hash": "91d57597d3ce6f36"
+    },
+    {
+      "id": "h24",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 143,
+      "oldLines": 7,
+      "newStart": 157,
+      "newLines": 7,
+      "hash": "a61106505aa03338"
+    },
+    {
+      "id": "h25",
+      "file": "src/html/style.css",
+      "oldFile": "src/html/style.css",
+      "oldStart": 197,
+      "oldLines": 6,
+      "newStart": 197,
+      "newLines": 7,
+      "hash": "1db7cf957869a3ee"
+    },
+    {
+      "id": "h26",
+      "file": "src/loader.ts",
+      "oldFile": "src/loader.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 7,
+      "hash": "6af6ec64b2cdbb01"
+    },
+    {
+      "id": "h27",
+      "file": "src/loader.ts",
+      "oldFile": "src/loader.ts",
+      "oldStart": 14,
+      "oldLines": 15,
+      "newStart": 15,
+      "newLines": 18,
+      "hash": "1e01da7955be80bf"
+    },
+    {
+      "id": "h28",
+      "file": "src/loader.ts",
+      "oldFile": "src/loader.ts",
+      "oldStart": 71,
+      "oldLines": 13,
+      "newStart": 75,
+      "newLines": 14,
+      "hash": "5c4561f98bbbef6c"
+    },
+    {
+      "id": "h29",
+      "file": "src/render.ts",
+      "oldFile": "src/render.ts",
+      "oldStart": 2,
+      "oldLines": 6,
+      "newStart": 2,
+      "newLines": 7,
+      "hash": "180d0d7cc26c78de"
+    },
+    {
+      "id": "h30",
+      "file": "src/render.ts",
+      "oldFile": "src/render.ts",
+      "oldStart": 46,
+      "oldLines": 12,
+      "newStart": 47,
+      "newLines": 14,
+      "hash": "0ea0f4681e8152c0"
+    },
+    {
+      "id": "h31",
+      "file": "src/render.ts",
+      "oldFile": "src/render.ts",
+      "oldStart": 61,
+      "oldLines": 7,
+      "newStart": 64,
+      "newLines": 7,
+      "hash": "fefee4ee5a171796"
+    },
+    {
+      "id": "h32",
+      "file": "src/schema.ts",
+      "oldFile": "src/schema.ts",
+      "oldStart": 1,
+      "oldLines": 4,
+      "newStart": 1,
+      "newLines": 5,
+      "hash": "d145362f6a026010"
+    },
+    {
+      "id": "h33",
+      "file": "src/schema.ts",
+      "oldFile": "src/schema.ts",
+      "oldStart": 41,
+      "oldLines": 9,
+      "newStart": 42,
+      "newLines": 9,
+      "hash": "0a4d208e99fc01e6"
+    },
+    {
+      "id": "h34",
+      "file": "src/selection.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 137,
+      "hash": "8dfcc5a9b98c9d96"
+    },
+    {
+      "id": "h35",
+      "file": "src/validate.ts",
+      "oldFile": "src/validate.ts",
+      "oldStart": 1,
+      "oldLines": 11,
+      "newStart": 1,
+      "newLines": 11,
+      "hash": "712736298ff7da05"
+    },
+    {
+      "id": "h36",
+      "file": "src/validate.ts",
+      "oldFile": "src/validate.ts",
+      "oldStart": 13,
+      "oldLines": 11,
+      "newStart": 13,
+      "newLines": 22,
+      "hash": "e8b2f35586543806"
+    },
+    {
+      "id": "h37",
+      "file": "src/validate.ts",
+      "oldFile": "src/validate.ts",
+      "oldStart": 36,
+      "oldLines": 6,
+      "newStart": 47,
+      "newLines": 5,
+      "hash": "c5c3801785f58a8e"
+    },
+    {
+      "id": "h38",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 6,
+      "oldLines": 7,
+      "newStart": 6,
+      "newLines": 8,
+      "hash": "b628f70563854798"
+    },
+    {
+      "id": "h39",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 188,
+      "oldLines": 7,
+      "newStart": 189,
+      "newLines": 7,
+      "hash": "ea50d42f68471cd1"
+    },
+    {
+      "id": "h40",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 314,
+      "oldLines": 7,
+      "newStart": 315,
+      "newLines": 7,
+      "hash": "635d2c50256ad319"
+    },
+    {
+      "id": "h41",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 362,
+      "oldLines": 13,
+      "newStart": 363,
+      "newLines": 27,
+      "hash": "6c19f26e939f3a2a"
+    },
+    {
+      "id": "h42",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 456,
+      "oldLines": 3,
+      "newStart": 471,
+      "newLines": 65,
+      "hash": "124a0221fdb32f36"
+    }
+  ]
+}
