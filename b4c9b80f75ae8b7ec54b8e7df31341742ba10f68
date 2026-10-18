@@ -1,0 +1,148 @@
+{
+  "gloss": 1,
+  "commit": "b4c9b80f75ae8b7ec54b8e7df31341742ba10f68",
+  "created_at": "2026-10-18T18:17:09.374Z",
+  "annotation": {
+    "version": 1,
+    "task": "Package git-gloss for npm: installable with npm install -g or as a project devDependency, on Node 20.12+",
+    "summary": "A build compiles src/ to dist/ (rewriting .ts imports to .js) and copies the HTML view's assets. The launcher runs the TypeScript source from a checkout on a Node that can, and dist/ otherwise, so development needs no rebuild. package.json becomes @ok-ggwp/git-gloss, ships only bin, dist, the skill, README and LICENSE, needs Node 20.12+, and builds on prepare (so pack, publish and git-URL installs all get dist/). The README describes global and per-project installs.",
+    "groups": [
+      {
+        "id": "build",
+        "intent": "Compile src/ to dist/ for Node 20 and copy the HTML assets",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "the package couldn't be installed from npm: Node won't strip TypeScript inside node_modules, and running .ts at all needs Node 23.6+",
+        "evidence": "The packed tarball, installed globally under Node 20.20.2, ran init --hooks, hunks/add wip, a commit adopted by the hook, show, why, html (styles present), review and versions",
+        "hunks": [
+          "h6",
+          "h7"
+        ],
+        "notes": "rewriteRelativeImportExtensions turns the .ts imports into .js (checked: none left in dist). TypeScript 7 doesn't export bin/tsc, so the script finds it beside typescript/package.json. Target es2022. Verified again from a clean tree: npm pack builds through prepare."
+      },
+      {
+        "id": "launcher",
+        "intent": "Run the source in a checkout on a TypeScript-capable Node, dist/ otherwise",
+        "necessity": "supporting",
+        "serves": "build",
+        "removal_impact": "either the published package would point at source it doesn't ship, or every edit in a checkout would need a rebuild before the linked git gloss (and its hooks) picked it up",
+        "hunks": [
+          "h4"
+        ],
+        "notes": "Uses process.features.typescript (set from Node 22.18/23.6) and whether src/cli.ts exists (it isn't in the package). A checkout on an older Node with no build gets a message saying to run npm run build, instead of a raw module-not-found error (the bugs review found that)."
+      },
+      {
+        "id": "package-meta",
+        "intent": "@ok-ggwp/git-gloss: files, engines, build on pack, public access, links",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "the package would publish under the unscoped name, include tests and source, fail to build on publish, or be rejected as a private scoped package",
+        "evidence": "npm pack: 32 files, 62 kB, no src/ or test/",
+        "hunks": [
+          "h5",
+          "h1"
+        ],
+        "notes": "Node >=20.12: render.ts imports styleText from node:util, which arrived in 20.12 (the reviews caught the first >=20). prepare rather than prepack, so a git-URL install builds too. keywords/homepage/repository/bugs are npm-page metadata, not needed to install. dist/ is gitignored. The version stays 0.1.0 for the first publish."
+      },
+      {
+        "id": "docs",
+        "intent": "README setup: global and per-project installs, development from a checkout",
+        "necessity": "supporting",
+        "serves": "package-meta",
+        "removal_impact": "readers would still be told to npm link a clone and that Node 23.6+ is required",
+        "hunks": [
+          "h2",
+          "h3"
+        ],
+        "notes": "Windows is described as expected to work but untested (the first version claimed it worked). The development note says which Node runs the source directly and that older ones need a build."
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Always run dist/, rebuilding during development",
+        "rejected_because": "the linked git gloss and its hooks would silently run stale code after every edit until a rebuild"
+      },
+      {
+        "option": "A bundler (esbuild) producing one file",
+        "rejected_because": "tsc already emits runnable ESM; a bundler adds a tool for no gain at this size"
+      }
+    ],
+    "risks": [
+      "Windows is untested: the global install's launcher and git's lookup of git-gloss there follow npm's and Git for Windows' documented behaviour, not a check",
+      "Not yet published: the scope needs the user's npm login",
+      "A project install puts git-gloss in node_modules/.bin, which the hooks only find if that's on the PATH git runs with"
+    ]
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": ".gitignore",
+      "oldFile": ".gitignore",
+      "oldStart": 1,
+      "oldLines": 1,
+      "newStart": 1,
+      "newLines": 2,
+      "hash": "dcd18cdc1f3fac8d"
+    },
+    {
+      "id": "h2",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 39,
+      "oldLines": 14,
+      "newStart": 39,
+      "newLines": 26,
+      "hash": "123677aa75f5c105"
+    },
+    {
+      "id": "h3",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 117,
+      "oldLines": 7,
+      "newStart": 129,
+      "newLines": 6,
+      "hash": "dc5b2879e42f6ec1"
+    },
+    {
+      "id": "h4",
+      "file": "bin/git-gloss.js",
+      "oldFile": "bin/git-gloss.js",
+      "oldStart": 1,
+      "oldLines": 4,
+      "newStart": 1,
+      "newLines": 15,
+      "hash": "67879cdf7b5c67e4"
+    },
+    {
+      "id": "h5",
+      "file": "package.json",
+      "oldFile": "package.json",
+      "oldStart": 1,
+      "oldLines": 19,
+      "newStart": 1,
+      "newLines": 47,
+      "hash": "50f4af5373b23a53"
+    },
+    {
+      "id": "h6",
+      "file": "scripts/build.mjs",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 13,
+      "hash": "ff3afef81955dc58"
+    },
+    {
+      "id": "h7",
+      "file": "tsconfig.build.json",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 12,
+      "hash": "c6eccf4aa98d60ad"
+    }
+  ]
+}
