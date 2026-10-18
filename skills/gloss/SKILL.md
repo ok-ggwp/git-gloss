@@ -56,6 +56,8 @@ Test each group with "what concretely breaks if this is removed?" and write the 
 
 Tests are `supporting`, with `serves` listing every group they verify: `"serves": ["retry-core", "retry-config"]`. The same goes for a shared helper that several groups need. Groups the tests cover can cite them in `evidence`.
 
+Documentation has no category of its own; grade it by why it changed. Docs for a feature or behaviour change in the same change are `supporting`, with `serves` set to that group. Docs that are themselves the task are `required`. Typos, reflowing and renames are `mechanical`; unrelated doc improvements are `incidental`; documenting something that doesn't exist yet is `speculative`. Agent instructions (a skill, `CLAUDE.md`, `AGENTS.md`) change what agents do, so grade them like behaviour, not as `mechanical`.
+
 Where you can, set `evidence` to a test that exercises the change or the line of the task that requires it.
 
 ## Annotation shape
