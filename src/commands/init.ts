@@ -15,7 +15,8 @@ ${HOOK_MARKER}: sync glosses with the remote being pushed to (git gloss init --h
 remote="$1"
 # Pushes to a URL rather than a named remote have nowhere to keep its glosses.
 git remote | grep -qxF -- "$remote" || exit 0
-git gloss sync "$remote" >&2 || echo "git-gloss: syncing glosses failed; your push continues. Retry with: git gloss sync $remote" >&2
+# No credential prompts: a sync that needs one fails fast instead of stalling the push.
+GIT_TERMINAL_PROMPT=0 git gloss sync "$remote" >&2 || echo "git-gloss: syncing glosses failed; your push continues. Retry with: git gloss sync $remote" >&2
 exit 0
 `
 
@@ -27,7 +28,9 @@ function installHook(): void {
     const current = readFileSync(path, 'utf8')
     if (!current.includes(HOOK_MARKER)) {
       console.log(`✗ ${path} already exists and isn't git-gloss's; left it unchanged.`)
-      console.log(`  to sync glosses on push, add this line to it: git gloss sync "$1" >&2 || true`)
+      console.log('  to sync glosses on push, add these lines to it:')
+      console.log('    git remote | grep -qxF -- "$1" && { GIT_TERMINAL_PROMPT=0 git gloss sync "$1" >&2 ||')
+      console.log('      echo "git-gloss: syncing glosses failed; your push continues" >&2; }')
       return
     }
   }

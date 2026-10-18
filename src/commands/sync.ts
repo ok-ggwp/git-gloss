@@ -26,6 +26,16 @@ function createdAt(blob: string): string | null {
   }
 }
 
+// The notes at a commit of a notes ref, e.g. the merge base. Notes trees fan
+// paths out (ab/cdef…), so joining the path gives the annotated object.
+function notesAt(commit: string): Map<string, string> {
+  const out = git(['ls-tree', '-r', '--full-tree', commit])
+  return new Map(out.split('\n').filter(Boolean).map((line) => {
+    const [meta, path] = line.split('\t')
+    return [path.replaceAll('/', ''), meta.split(' ')[2]] as [string, string]
+  }))
+}
+
 type Outcome = { fetched: number; pushed: number; conflicts: string[]; pushedRef: boolean }
 
 // One fetch → merge → push round. Returns null if the push lost a race with
@@ -37,25 +47,44 @@ function round(remote: string): Outcome | null {
 
   const local = noteList(NOTES_REF)
   const theirs = remoteHas ? noteList(tracking) : new Map<string, string>()
+  // The last state both sides shared. A gloss changed on one side only is
+  // simply taken from that side (as the merge below does); only a gloss
+  // changed on both sides since then is a conflict.
+  const hasLocal = gitTry(['rev-parse', '-q', '--verify', NOTES_REF]) !== null
+  const baseCommit = remoteHas && hasLocal ? gitTry(['merge-base', NOTES_REF, tracking])?.trim() : null
+  const base = baseCommit ? notesAt(baseCommit) : new Map<string, string>()
+
+  let fetched = 0, pushed = 0
   const conflicts: string[] = []
-  // When both sides glossed a commit differently, keep the newer gloss: a
-  // re-gloss with --force is normally a correction. Ties and unreadable
-  // notes keep the local one.
   const takeTheirs: [string, string][] = []
-  for (const [object, blob] of theirs) {
-    const mine = local.get(object)
-    if (!mine || mine === blob) continue
-    const [a, b] = [createdAt(mine), createdAt(blob)]
+  for (const object of new Set([...local.keys(), ...theirs.keys()])) {
+    const [mine, other, was] = [local.get(object), theirs.get(object), base.get(object)]
+    if (mine === other) continue
+    if (mine === was) { if (other !== undefined) fetched++; continue } // only they changed it
+    if (other === was) { if (mine !== undefined) pushed++; continue } // only we changed it
+    // Deleted on one side, changed on the other: keep the gloss rather than
+    // lose a correction. (-s ours alone would keep a local deletion.)
+    if (mine === undefined) {
+      takeTheirs.push([object, other!]); fetched++
+      conflicts.push(`${object.slice(0, 10)}: kept theirs (you deleted it, they changed it)`)
+      continue
+    }
+    if (other === undefined) {
+      pushed++
+      conflicts.push(`${object.slice(0, 10)}: kept yours (they deleted it, you changed it)`)
+      continue
+    }
+    // Both sides changed it: keep the newer gloss, since a re-gloss with
+    // --force is normally a correction. Ties and unreadable notes keep yours.
+    const [a, b] = [createdAt(mine), createdAt(other)]
     const theirsNewer = a !== null && b !== null && b > a
-    if (theirsNewer) takeTheirs.push([object, blob])
+    if (theirsNewer) { takeTheirs.push([object, other]); fetched++ } else pushed++
     conflicts.push(`${object.slice(0, 10)}: kept ${theirsNewer ? 'theirs' : 'yours'}` +
       (a === null || b === null ? " (couldn't read both glosses' dates)" : ' (newer)'))
   }
-  const fetched = [...theirs.keys()].filter((o) => !local.has(o)).length + takeTheirs.length
-  const pushed = [...local.keys()].filter((o) => !theirs.has(o)).length + (conflicts.length - takeTheirs.length)
 
   if (remoteHas) {
-    if (gitTry(['rev-parse', '-q', '--verify', NOTES_REF]) === null) {
+    if (!hasLocal) {
       git(['update-ref', NOTES_REF, tracking])
     } else {
       // -s ours makes the remote history an ancestor of ours, so the push

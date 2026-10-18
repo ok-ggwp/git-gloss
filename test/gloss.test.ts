@@ -716,10 +716,37 @@ test('when both sides glossed a commit, sync keeps the newer gloss and reports i
   rawNote(g, b, 'HEAD', body('b', '2026-10-02T00:00:00.000Z'))
   let r = gloss(b, ['sync'])
   assert.match(r.out, /kept yours \(newer\)/)
+  // a hasn't changed its gloss since the state it shares with origin, so this
+  // is a one-sided update for a: fetched, not a conflict.
   r = gloss(a, ['sync'])
-  assert.match(r.out, /kept theirs \(newer\)/)
+  assert.match(r.out, /fetched 1, pushed 0$/m)
+  assert.doesNotMatch(r.out, /kept/)
   assert.match(noteOn(g, a, 'HEAD')!, /"who":"b"/)
   assert.match(noteOn(g, b, 'HEAD')!, /"who":"b"/)
+
+  // Now both change it after that shared state: newer wins, either way round.
+  rawNote(g, a, 'HEAD', body('a2', '2026-10-04T00:00:00.000Z'))
+  rawNote(g, b, 'HEAD', body('b2', '2026-10-03T00:00:00.000Z'))
+  gloss(b, ['sync'])
+  r = gloss(a, ['sync'])
+  assert.match(r.out, /kept yours \(newer\)/)
+  gloss(b, ['sync'])
+  assert.match(noteOn(g, b, 'HEAD')!, /"who":"a2"/)
+})
+
+test('a one-sided change to a gloss is taken whatever its date, and reported as fetched', () => {
+  const { a, b, g } = team()
+  const body = (who: string, at: string) => JSON.stringify({ gloss: 1, commit: 'x', created_at: at, who, annotation: {}, hunks: [] })
+  rawNote(g, a, 'HEAD', body('shared', '2026-10-05T00:00:00.000Z'))
+  gloss(a, ['sync']); gloss(b, ['sync'])
+  rawNote(g, b, 'HEAD', body('b-older-date', '2020-01-01T00:00:00.000Z'))
+  let r = gloss(b, ['sync'])
+  assert.match(r.out, /fetched 0, pushed 1$/m)
+  assert.doesNotMatch(r.out, /glossed on both sides/, 'no false conflict for the person who re-glossed')
+  r = gloss(a, ['sync'])
+  assert.match(r.out, /fetched 1, pushed 0$/m)
+  assert.doesNotMatch(r.out, /kept/)
+  assert.match(noteOn(g, a, 'HEAD')!, /"who":"b-older-date"/)
 })
 
 test('sync passes through notes it cannot read and keeps yours on an unreadable conflict', () => {
@@ -783,4 +810,16 @@ exec "${realGit}" "$@"
   assert.match(r.stdout, /fetched 1, pushed 1/)
   gloss(b, ['sync'])
   assert.ok(noteOn(g, b, 'HEAD') && noteOn(g, a, 'HEAD~1'), 'neither gloss was lost')
+})
+
+test('a gloss changed on one side and deleted on the other is kept, not lost', () => {
+  const { a, b, g } = team()
+  rawNote(g, a, 'HEAD', JSON.stringify({ created_at: '2026-10-01T00:00:00.000Z', who: 'shared' }))
+  gloss(a, ['sync']); gloss(b, ['sync'])
+  rawNote(g, b, 'HEAD', JSON.stringify({ created_at: '2026-10-02T00:00:00.000Z', who: 'b-fix' }))
+  gloss(b, ['sync'])
+  g(a, 'notes', '--ref', 'refs/notes/gloss', 'remove', 'HEAD')
+  const r = gloss(a, ['sync'])
+  assert.match(r.out, /kept theirs \(you deleted it, they changed it\)/)
+  assert.match(noteOn(g, a, 'HEAD')!, /"who":"b-fix"/)
 })
