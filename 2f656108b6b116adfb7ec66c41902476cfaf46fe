@@ -1,0 +1,228 @@
+{
+  "gloss": 3,
+  "commit": "2f656108b6b116adfb7ec66c41902476cfaf46fe",
+  "created_at": "2026-10-18T05:19:46.043Z",
+  "annotation": {
+    "version": 1,
+    "task": "Address the review of 04d7868: wrong explanations for split runs in a range, SHA-256 repositories returning nothing, an always-on --history hint (and the test assertion I had dropped), lost line positions, and small edge cases",
+    "groups": [
+      {
+        "id": "split-runs",
+        "intent": "Explain each contiguous run of a commit's lines separately",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "For lines 1 and 20 last changed by a reformat, why walks lines 1-20 and presents an unrelated guard on line 10 as their reason",
+        "evidence": "test 'a commit whose lines in a range are split gets each run traced separately' (fails on 04d7868)",
+        "hunks": [
+          "h3:1-21",
+          "h3:27-28",
+          "h5:3-28",
+          "h7:1-3",
+          "h7:6"
+        ]
+      },
+      {
+        "id": "honest-hint",
+        "intent": "Print the --history hint only when older history exists",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Readers are sent to --history for lines with nothing older",
+        "evidence": "restored assertion in 'why looks past mechanical changes…'",
+        "hunks": [
+          "h3:22-26",
+          "h4:1-2",
+          "h6:1",
+          "h8:3-6",
+          "h9"
+        ],
+        "notes": "Checks with a git log -L capped at 2 commits, so the default lookup stays cheap"
+      },
+      {
+        "id": "sha256",
+        "intent": "Accept 64-character hashes from blame",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "In SHA-256 repositories why returns no explanations and exits 0",
+        "evidence": "test 'why works in SHA-256 repositories…' (fails on 04d7868)",
+        "hunks": [
+          "h10"
+        ]
+      },
+      {
+        "id": "positions",
+        "intent": "Show where the lines were in older commits again",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "After a file rename the reader can't tell which file an older step refers to",
+        "hunks": [
+          "h1",
+          "h2",
+          "h4:3",
+          "h6:3-9",
+          "h8:1-2"
+        ]
+      },
+      {
+        "id": "edges",
+        "intent": "Reject line 0, note ranges past the file end, singular 'line'",
+        "necessity": "incidental",
+        "serves": "task",
+        "removal_impact": "A raw git error for line 0, silent trimming, 'lines 20'",
+        "evidence": "same SHA-256 test",
+        "hunks": [
+          "h5:1-2",
+          "h5:29",
+          "h6:2",
+          "h7:4-5",
+          "h8:7"
+        ]
+      },
+      {
+        "id": "tests",
+        "intent": "Restore the dropped hint assertion; add split-run and SHA-256 tests",
+        "necessity": "supporting",
+        "serves": [
+          "split-runs",
+          "honest-hint",
+          "sha256",
+          "edges"
+        ],
+        "removal_impact": "Unverified",
+        "hunks": [
+          "h11",
+          "h12"
+        ]
+      }
+    ],
+    "risks": [
+      "The hint check runs an extra capped git log -L per explanation in the default view",
+      "This commit was not reviewed again"
+    ],
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-opus-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 12,
+      "oldLines": 6,
+      "newStart": 12,
+      "newLines": 8,
+      "hash": "eb3894696bb905f9"
+    },
+    {
+      "id": "h2",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 40,
+      "oldLines": 7,
+      "newStart": 42,
+      "newLines": 7,
+      "hash": "e584bf4b4bca7c3c"
+    },
+    {
+      "id": "h3",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 64,
+      "oldLines": 20,
+      "newStart": 66,
+      "newLines": 26,
+      "hash": "d17460c8012cec19"
+    },
+    {
+      "id": "h4",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 91,
+      "oldLines": 13,
+      "newStart": 99,
+      "newLines": 14,
+      "hash": "20619dd01c910ef9"
+    },
+    {
+      "id": "h5",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 112,
+      "oldLines": 20,
+      "newStart": 121,
+      "newLines": 37,
+      "hash": "761f17f293e54a16"
+    },
+    {
+      "id": "h6",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 138,
+      "oldLines": 17,
+      "newStart": 164,
+      "newLines": 22,
+      "hash": "5c2dc966d57b062a"
+    },
+    {
+      "id": "h7",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 160,
+      "oldLines": 8,
+      "newStart": 191,
+      "newLines": 10,
+      "hash": "1f9be8a3d14c7ae5"
+    },
+    {
+      "id": "h8",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 171,
+      "oldLines": 15,
+      "newStart": 204,
+      "newLines": 14,
+      "hash": "4dbf2633b958bc35"
+    },
+    {
+      "id": "h9",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 116,
+      "oldLines": 13,
+      "newStart": 116,
+      "newLines": 15,
+      "hash": "f2ab2029cd2afed9"
+    },
+    {
+      "id": "h10",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 156,
+      "oldLines": 7,
+      "newStart": 158,
+      "newLines": 8,
+      "hash": "95545bbf03399e41"
+    },
+    {
+      "id": "h11",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 852,
+      "oldLines": 6,
+      "newStart": 852,
+      "newLines": 7,
+      "hash": "a69c1d89c57d65b4"
+    },
+    {
+      "id": "h12",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 942,
+      "oldLines": 3,
+      "newStart": 943,
+      "newLines": 40,
+      "hash": "32a8369f3da5cf37"
+    }
+  ]
+}
