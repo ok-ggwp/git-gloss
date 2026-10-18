@@ -1,0 +1,10 @@
+{
+  "name": "git-gloss",
+  "version": "0.1.0",
+  "description": "Teaches Claude Code to gloss its changes with git-gloss: intent and necessity for each part of a diff, written before you commit",
+  "author": { "name": "ok-ggwp" },
+  "homepage": "https://github.com/ok-ggwp/git-gloss",
+  "repository": "https://github.com/ok-ggwp/git-gloss",
+  "license": "MIT",
+  "keywords": ["git", "code-review", "annotations"]
+}

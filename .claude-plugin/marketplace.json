@@ -1,0 +1,14 @@
+{
+  "name": "ok-ggwp",
+  "description": "Tools from ok-ggwp for reviewing what coding agents change",
+  "owner": {
+    "name": "ok-ggwp"
+  },
+  "plugins": [
+    {
+      "name": "git-gloss",
+      "source": "./",
+      "description": "The gloss skill: annotate changes with their intent and necessity using git-gloss"
+    }
+  ]
+}

@@ -43,8 +43,15 @@ Requires Node 20.12+ and git.
 
 ```sh
 npm install -g @ok-ggwp/git-gloss     # puts git-gloss on PATH, so `git gloss` works
-ln -s "$(npm root -g)/@ok-ggwp/git-gloss/skills/gloss" ~/.claude/skills/gloss   # teach Claude Code to write glosses
 ```
+
+Then teach Claude Code to write glosses by installing the `gloss` skill as a plugin, at the prompt of a Claude Code session:
+
+```
+/plugin install git-gloss --marketplace ok-ggwp/git-gloss
+```
+
+Answer `y` to add the marketplace and choose the user scope. From a shell, the same is `claude plugin install git-gloss --marketplace ok-ggwp/git-gloss`. `/plugin update` picks up new versions of the skill. (Without the plugin, a symlink works too: `ln -s "$(npm root -g)/@ok-ggwp/git-gloss/skills/gloss" ~/.claude/skills/gloss`.)
 
 git finds `git-gloss` on PATH, so `git gloss` works wherever npm's global folder is on PATH, as it is after a normal Node install. On Windows this should work the same way (npm installs a shell launcher git can run), but it hasn't been tested yet.
 
@@ -73,7 +80,7 @@ In each repo you use it in:
    Don't commit unless asked.
    ```
 
-   Claude Code finds the procedure in the `gloss` skill (installed above). Other agents won't have the skill, so for them add a pointer in `AGENTS.md` to a copy of `skills/gloss/SKILL.md`.
+   Claude Code finds the procedure in the `gloss` skill (the plugin installed above). Other agents won't have the skill, so for them add a pointer in `AGENTS.md` to a copy of `skills/gloss/SKILL.md`.
 
 Put the line in the repo rather than in your user-level `CLAUDE.md`: it only makes sense where `git gloss init` has been run.
 
