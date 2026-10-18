@@ -1,0 +1,307 @@
+{
+  "gloss": 3,
+  "commit": "5a692058df32b211a62aa84820f64844bbaea5e3",
+  "created_at": "2026-10-17T09:59:52.073Z",
+  "annotation": {
+    "version": 1,
+    "task": "Address the review of e88a118: A...B pulling in other-side commits, silently skipped merges, option injection via the range argument, '1 commits', and duplicate gloss loads",
+    "groups": [
+      {
+        "id": "show-merges",
+        "intent": "List a range's merge commits as not reviewed, in page and prompt",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A merge with its own edits or conflict resolutions disappears from the branch view without notice",
+        "evidence": "test 'ranges list skipped merges…'",
+        "hunks": [
+          "h10:1-14",
+          "h10:19-24",
+          "h14",
+          "h15",
+          "h12",
+          "h9:1-5",
+          "h8:11-13"
+        ],
+        "notes": "The merges are listed, not reviewed; their diffs are still not shown"
+      },
+      {
+        "id": "reject-triple-dot",
+        "intent": "Reject A...B with an explanation",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "main...feature reviews commits from main as if they were on the branch",
+        "evidence": "same test",
+        "hunks": [
+          "h10:15-17",
+          "h1"
+        ]
+      },
+      {
+        "id": "end-of-options",
+        "intent": "Pass --end-of-options before the range given to rev-list",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "`review -- --output=<path>..x` makes rev-list write a file",
+        "evidence": "same test; it fails with the flag removed",
+        "hunks": [
+          "h10:18-20"
+        ],
+        "notes": "Shares h10:18-20 with show-merges' list() helper"
+      },
+      {
+        "id": "plural",
+        "intent": "Say '1 commit' in the page title and the review intro",
+        "necessity": "incidental",
+        "serves": "task",
+        "removal_impact": "'(1 commits)'",
+        "evidence": "same test",
+        "hunks": [
+          "h16",
+          "h8:16-17"
+        ]
+      },
+      {
+        "id": "load-once",
+        "intent": "Load each gloss once in html and review",
+        "necessity": "incidental",
+        "serves": "task",
+        "removal_impact": "The first commit's diff is computed twice",
+        "hunks": [
+          "h2",
+          "h3",
+          "h4",
+          "h5",
+          "h6",
+          "h7",
+          "h8:14-15",
+          "h9:6-7"
+        ]
+      },
+      {
+        "id": "tidy",
+        "intent": "Drop commitBody's unused toc parameter and the heading constant",
+        "necessity": "incidental",
+        "serves": "task",
+        "removal_impact": "None functionally",
+        "hunks": [
+          "h11",
+          "h13",
+          "h8:1-10"
+        ]
+      },
+      {
+        "id": "tests",
+        "intent": "Test merges, '...', '1 commit' and option injection",
+        "necessity": "supporting",
+        "serves": [
+          "show-merges",
+          "reject-triple-dot",
+          "end-of-options",
+          "plural"
+        ],
+        "removal_impact": "Unverified fixes",
+        "hunks": [
+          "h17",
+          "h18"
+        ],
+        "notes": "My first version of the injection case passed for the wrong reason (parseArgs rejected the option before git saw it); fixed to pass it after --"
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Review merges' own changes with git's combined diff",
+        "rejected_because": "Combined diffs need their own parsing and display; listing merges closes the silent gap for now"
+      }
+    ],
+    "risks": [
+      "Merges are listed but their content is still not shown or reviewed",
+      "This commit was not reviewed again"
+    ],
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-opus-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 47,
+      "oldLines": 7,
+      "newStart": 47,
+      "newLines": 7,
+      "hash": "792da2905e0b615a"
+    },
+    {
+      "id": "h2",
+      "file": "src/commands/html.ts",
+      "oldFile": "src/commands/html.ts",
+      "oldStart": 4,
+      "oldLines": 7,
+      "newStart": 4,
+      "newLines": 6,
+      "hash": "1b5ebae83780d5d4"
+    },
+    {
+      "id": "h3",
+      "file": "src/commands/html.ts",
+      "oldFile": "src/commands/html.ts",
+      "oldStart": 25,
+      "oldLines": 14,
+      "newStart": 24,
+      "newLines": 16,
+      "hash": "154695d6a7309890"
+    },
+    {
+      "id": "h4",
+      "file": "src/commands/html.ts",
+      "oldFile": "src/commands/html.ts",
+      "oldStart": 40,
+      "oldLines": 7,
+      "newStart": 41,
+      "newLines": 7,
+      "hash": "4a04a13450f1140c"
+    },
+    {
+      "id": "h5",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 2,
+      "oldLines": 7,
+      "newStart": 2,
+      "newLines": 7,
+      "hash": "9b3a65082ff315a8"
+    },
+    {
+      "id": "h6",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 25,
+      "oldLines": 8,
+      "newStart": 25,
+      "newLines": 7,
+      "hash": "9c3fe5b5cc5396c9"
+    },
+    {
+      "id": "h7",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 35,
+      "oldLines": 10,
+      "newStart": 34,
+      "newLines": 9,
+      "hash": "92a7ca3ce1515e32"
+    },
+    {
+      "id": "h8",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 62,
+      "oldLines": 33,
+      "newStart": 60,
+      "newLines": 34,
+      "hash": "ca87596f772b499e"
+    },
+    {
+      "id": "h9",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 111,
+      "oldLines": 9,
+      "newStart": 110,
+      "newLines": 12,
+      "hash": "9a611e8efb5c44ee"
+    },
+    {
+      "id": "h10",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 39,
+      "oldLines": 14,
+      "newStart": 39,
+      "newLines": 22,
+      "hash": "757978082c840ef0"
+    },
+    {
+      "id": "h11",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 135,
+      "oldLines": 7,
+      "newStart": 135,
+      "newLines": 7,
+      "hash": "ed5898b7dfe3c31f"
+    },
+    {
+      "id": "h12",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 203,
+      "oldLines": 6,
+      "newStart": 203,
+      "newLines": 10,
+      "hash": "7ad78c12666e1fef"
+    },
+    {
+      "id": "h13",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 264,
+      "oldLines": 7,
+      "newStart": 268,
+      "newLines": 7,
+      "hash": "7e569f79fb3ced37"
+    },
+    {
+      "id": "h14",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 64,
+      "oldLines": 6,
+      "newStart": 64,
+      "newLines": 8,
+      "hash": "7bcadc7720a86719"
+    },
+    {
+      "id": "h15",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 192,
+      "oldLines": 9,
+      "newStart": 194,
+      "newLines": 10,
+      "hash": "37235289ead421e6"
+    },
+    {
+      "id": "h16",
+      "file": "src/html/page.ts",
+      "oldFile": "src/html/page.ts",
+      "oldStart": 24,
+      "oldLines": 7,
+      "newStart": 24,
+      "newLines": 7,
+      "hash": "b7705f28ab11b4c9"
+    },
+    {
+      "id": "h17",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 1,
+      "oldLines": 7,
+      "newStart": 1,
+      "newLines": 7,
+      "hash": "9338c3e145fb0747"
+    },
+    {
+      "id": "h18",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 643,
+      "oldLines": 3,
+      "newStart": 643,
+      "newLines": 28,
+      "hash": "f22e0cb649a5f1ab"
+    }
+  ]
+}
