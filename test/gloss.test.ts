@@ -897,3 +897,25 @@ test('why history handles added lines that look like diff headers', () => {
     [['edit plus', 2, ['plus2']], ['plus lines', 2, ['plus']]])
   assert.equal(json.shown, 2)
 })
+
+test('why history works for paths with spaces and quotes, and the hint keeps --rev', () => {
+  for (const name of ['my file.js', 'q"x.js']) {
+    const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+    const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
+    g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
+    const whole = (id: string, necessity: string) => ({ id, intent: id, necessity, serves: 'task', removal_impact: 'x', hunks: ['h1'] })
+    writeFileSync(join(dir, name), 'a\nretry(send)\n'); g('add', '.'); g('commit', '-qm', 'add')
+    assert.equal(gloss(dir, ['add'], annotation([whole('original', 'required')])).code, 0)
+    writeFileSync(join(dir, name), 'a\nretry(sendFile)\n'); g('commit', '-qam', 'rename')
+    assert.equal(gloss(dir, ['add'], annotation([whole('renamed', 'mechanical')])).code, 0)
+
+    const json = JSON.parse(gloss(dir, ['why', `${name}:2`, '--json']).out)
+    assert.deepEqual(json.history.map((s: { file: string; groups: { id: string }[] }) => [s.file, s.groups.map((x) => x.id)]),
+      [[name, ['renamed']], [name, ['original']]], name)
+
+    writeFileSync(join(dir, name), 'a\nretry(sendAll)\n'); g('commit', '-qam', 'real change')
+    assert.equal(gloss(dir, ['add'], annotation([whole('real', 'required')])).code, 0)
+    const r = gloss(dir, ['why', `${name}:2`, '--rev', 'HEAD'])
+    assert.match(r.out, /2 earlier commits changed this line: git gloss why .*:2 --rev HEAD --history/)
+  }
+})

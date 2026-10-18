@@ -12,10 +12,31 @@ export type Hunk = HunkLocation & {
 
 const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/
 
-function stripPath(raw: string): string | null {
-  let p = raw.replace(/\t.*$/, '')
+const ESCAPES: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13 }
+
+// git C-quotes paths with unusual characters: "q\"x.js", "a\tb", and octal
+// bytes such as \303\251 for non-ASCII when core.quotePath is on.
+export function unquote(quoted: string): string {
+  const body = quoted.slice(1, -1)
+  const parts: Buffer[] = []
+  let last = 0
+  for (const m of body.matchAll(/\\([0-7]{3}|.)/g)) {
+    parts.push(Buffer.from(body.slice(last, m.index), 'utf8'))
+    const e = m[1]
+    parts.push(Buffer.from([e.length === 3 ? parseInt(e, 8) : (ESCAPES[e] ?? e.charCodeAt(0))]))
+    last = m.index! + m[0].length
+  }
+  parts.push(Buffer.from(body.slice(last), 'utf8'))
+  return Buffer.concat(parts).toString('utf8')
+}
+
+// A path from a "--- a/x" or "+++ b/x" line: null for /dev/null, without the
+// a/ b/ prefix, unquoted, and without the tab git appends to paths that
+// contain spaces.
+export function parsePath(raw: string): string | null {
+  let p = raw.replace(/\t$/, '')
   if (p === '/dev/null') return null
-  if (p.startsWith('"') && p.endsWith('"')) p = JSON.parse(p)
+  if (p.startsWith('"') && p.endsWith('"')) p = unquote(p)
   return p.replace(/^[ab]\//, '')
 }
 
@@ -61,8 +82,8 @@ export function parseDiff(diff: string): Hunk[] {
     }
     if (!file) { i++; continue }
 
-    if (line.startsWith('--- ')) { file.oldFile = stripPath(line.slice(4)); file.meta.push(line); i++; continue }
-    if (line.startsWith('+++ ')) { file.newFile = stripPath(line.slice(4)); file.meta.push(line); i++; continue }
+    if (line.startsWith('--- ')) { file.oldFile = parsePath(line.slice(4)); file.meta.push(line); i++; continue }
+    if (line.startsWith('+++ ')) { file.newFile = parsePath(line.slice(4)); file.meta.push(line); i++; continue }
     if (line.startsWith('new file mode')) { file.oldFile = null }
     if (line.startsWith('deleted file mode')) { file.newFile = null }
     if (line.startsWith('rename from ')) file.oldFile = line.slice(12)

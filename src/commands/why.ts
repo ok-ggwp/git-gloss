@@ -83,13 +83,30 @@ export function run(argv: string[]): number {
   // Blame names the last commit that changed the line and its number there;
   // the history continues back from that commit. If git can't trace it, the
   // blamed commit alone is the history.
-  const trail = lineHistory(blame.origFile, blame.origLine, blame.commit)
-  const older = trail?.length && trail[0].commit === blame.commit ? trail.slice(1) : []
-  // The latest step comes from blame, which is exact; older ones from the trail.
-  const steps = [step(blame.commit, blame.origFile, [blame.origLine]), ...older.map((t) => step(t.commit, t.file, t.lines))]
+  const trail = lineHistory(blame.origFile, blame.origLine, blame.commit) ?? []
+  // Normally the trail starts at blame's commit. If they disagree (blame can
+  // skip commits, e.g. with blame.ignoreRevsFile), keep the trail's older
+  // commits anyway and say so rather than drop the history.
+  const at = trail.findIndex((t) => t.commit === blame.commit)
+  const older = at >= 0 ? trail.slice(at + 1) : trail
+  const traceNote = trail.length && at !== 0
+    ? `git log -L traced this line from a different commit than blame named; the history may be incomplete`
+    : null
+  const total = 1 + older.length
 
+  // Steps are built on demand, since each loads a gloss and a diff. The
+  // latest comes from blame, which is exact; older ones from the trail.
+  const steps: Step[] = [step(blame.commit, blame.origFile, [blame.origLine])]
+  const build = (n: number) => {
+    while (steps.length < Math.min(n, total)) {
+      const t = older[steps.length - 1]
+      steps.push(step(t.commit, t.file, t.lines))
+    }
+  }
   // Default view: the latest change, plus older ones while each shown change
-  // is only mechanical. --history shows every change.
+  // is only mechanical. --history and --json need every change.
+  if (values.history || values.json) build(total)
+  else while (steps.length < total && mechanicalOnly(steps[steps.length - 1])) build(steps.length + 1)
   let shown = 1
   while (shown < steps.length && mechanicalOnly(steps[shown - 1])) shown++
   const visible = values.history ? steps : steps.slice(0, shown)
@@ -115,6 +132,7 @@ export function run(argv: string[]): number {
         groups: groupJson(s),
       })),
       shown,
+      trace_note: traceNote,
     }, null, 2))
     return 0
   }
@@ -141,10 +159,12 @@ export function run(argv: string[]): number {
       for (const parent of chain(s.gloss, g)) out.push(`  ${style('dim', '↳ which serves:')} ${parent.intent} ${style('dim', `(${parent.id})`)}`)
     }
   })
-  const hidden = steps.length - visible.length
+  const hidden = total - visible.length
   if (hidden > 0) {
-    out.push('', style('dim', `${hidden} earlier commit${hidden === 1 ? '' : 's'} changed this line: git gloss why ${file}:${lineStr} --history`))
+    const rev = values.rev ? ` --rev ${values.rev}` : ''
+    out.push('', style('dim', `${hidden} earlier commit${hidden === 1 ? '' : 's'} changed this line: git gloss why ${file}:${lineStr}${rev} --history`))
   }
+  if (traceNote) out.push(style('dim', traceNote))
   console.log(out.join('\n'))
   return 0
 }

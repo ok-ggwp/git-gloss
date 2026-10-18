@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { Annotation, NOTE_FORMAT, type GlossNote } from './schema.ts'
+import { parsePath, unquote } from './diff.ts'
 
 export const NOTES_REF = 'refs/notes/gloss'
 export const REMOTE_NOTES_REF = 'refs/notes/remotes/origin/gloss'
@@ -119,7 +120,8 @@ export type LineStep = { commit: string; file: string; lines: number[] }
 // approximate when a line is heavily rewritten. Null if git can't trace it.
 export function lineHistory(file: string, line: number, commit: string): LineStep[] | null {
   const out = gitTry([
-    '-c', 'core.quotePath=false', 'log', '--no-color', '--no-ext-diff',
+    // showSignature would print signature checks between the commits.
+    '-c', 'core.quotePath=false', '-c', 'log.showSignature=false', 'log', '--no-color', '--no-ext-diff',
     '--src-prefix=a/', '--dst-prefix=b/', `-L${line},${line}:${file}`, '--format=%x00%H', commit,
   ])
   if (out === null) return null
@@ -131,7 +133,7 @@ export function lineHistory(file: string, line: number, commit: string): LineSte
       if (l.startsWith('diff --git ')) { inHunk = false; continue }
       // Inside a hunk, decide by position, not prefix: an added line whose
       // text starts with "++ " would otherwise look like a "+++" header.
-      if (!inHunk && l.startsWith('+++ ')) { if (l !== '+++ /dev/null') path = l.slice(4).replace(/^b\//, ''); continue }
+      if (!inHunk && l.startsWith('+++ ')) { path = parsePath(l.slice(4)) ?? path; continue }
       const h = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(l)
       if (h) { newNo = Number(h[1]); inHunk = true; continue }
       if (!inHunk) continue
@@ -150,6 +152,8 @@ export function blameLine(file: string, line: number, rev?: string): BlameResult
   args.push('--', file)
   const out = git(args).split('\n')
   const [commit, origLine] = out[0].split(' ')
-  const filename = out.find((l) => l.startsWith('filename '))
-  return { commit, origLine: Number(origLine), origFile: filename ? filename.slice(9) : file }
+  // Porcelain C-quotes unusual file names, like diff headers do.
+  const raw = out.find((l) => l.startsWith('filename '))?.slice(9)
+  const origFile = !raw ? file : raw.startsWith('"') ? unquote(raw) : raw
+  return { commit, origLine: Number(origLine), origFile }
 }
