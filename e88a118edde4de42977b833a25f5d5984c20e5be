@@ -1,0 +1,496 @@
+{
+  "gloss": 3,
+  "commit": "e88a118edde4de42977b833a25f5d5984c20e5be",
+  "created_at": "2026-10-17T09:59:33.466Z",
+  "annotation": {
+    "version": 1,
+    "task": "Add a branch/PR view: let `html` and `review` take a commit range, the last item on the phase 1 list",
+    "summary": "Commit ranges resolve to their non-merge commits; the page data becomes a list of commits (one for a single commit); the client renders a branch header and a section per commit; review covers each commit and asks branch-level questions. Unglossed commits appear as unexplained diffs.",
+    "groups": [
+      {
+        "id": "ranges",
+        "intent": "Resolve a commit range to its non-merge commits, oldest first",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Nothing could take a range",
+        "evidence": "test 'an empty range is an error'",
+        "hunks": [
+          "h10",
+          "h4",
+          "h5"
+        ],
+        "notes": "Merges are skipped because their first-parent diff repeats the merged commits"
+      },
+      {
+        "id": "page-model",
+        "intent": "Make the page data a list of commits, including unglossed ones",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The page can only describe one commit",
+        "evidence": "test 'html of a range shows every commit, with unglossed ones as unexplained diffs'",
+        "hunks": [
+          "h24",
+          "h25",
+          "h26",
+          "h27",
+          "h28"
+        ],
+        "notes": "An unglossed commit's whole diff is listed as unannotated rather than being skipped, so a range can't hide unexplained code"
+      },
+      {
+        "id": "commit-sections",
+        "intent": "Render a section per commit, and sidebar entries grouped by commit",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A range page would have no per-commit structure",
+        "hunks": [
+          "h17:1-63",
+          "h17:86-88",
+          "h19"
+        ],
+        "notes": "Most of h17:1-63 is the old single-commit body moved into commitBody(); h19 removes the old copy. Single-commit pages change slightly too: the separate 'Other' sidebar heading is gone and the unannotated link ends the Groups list"
+      },
+      {
+        "id": "branch-header",
+        "intent": "Show the range, its commits and their gloss status at the top",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "No overview of what the branch contains or which commits lack a gloss",
+        "hunks": [
+          "h17:64-85",
+          "h20"
+        ]
+      },
+      {
+        "id": "branch-bar",
+        "intent": "Compute the necessity bar and filters across all commits",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The bar would describe only one commit",
+        "hunks": [
+          "h17:89-97",
+          "h18"
+        ]
+      },
+      {
+        "id": "card-keys",
+        "intent": "Key cards and links by commit on range pages: #g-<sha7>-<group>",
+        "necessity": "supporting",
+        "serves": "commit-sections",
+        "removal_impact": "Group ids repeat across commits (every step has a 'tests' group), so links would jump to the wrong commit",
+        "hunks": [
+          "h11",
+          "h12",
+          "h13",
+          "h14",
+          "h15",
+          "h16",
+          "h21",
+          "h22",
+          "h23"
+        ],
+        "notes": "Single-commit pages keep #g-<group> links. Not tested in a browser: the range page was checked by screenshot only. Effectively required on range pages"
+      },
+      {
+        "id": "range-styles",
+        "intent": "Styles for the commit list, commit sections and sidebar headings",
+        "necessity": "supporting",
+        "serves": [
+          "branch-header",
+          "commit-sections"
+        ],
+        "removal_impact": "The range page would run commits together",
+        "hunks": [
+          "h29"
+        ]
+      },
+      {
+        "id": "review-range",
+        "intent": "Review a range commit by commit, plus branch-level questions",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Branches would have to be reviewed commit by commit, losing cross-commit findings",
+        "evidence": "test 'review of a range covers each commit and asks branch-level questions'",
+        "hunks": [
+          "h6",
+          "h7",
+          "h8",
+          "h9"
+        ],
+        "notes": "Single-commit prompts change too: their headings move down a level (### Groups, #### Group)"
+      },
+      {
+        "id": "docs",
+        "intent": "Document ranges for html and review",
+        "necessity": "supporting",
+        "serves": [
+          "ranges",
+          "review-range"
+        ],
+        "removal_impact": "Users wouldn't know they can pass a range",
+        "hunks": [
+          "h1",
+          "h2"
+        ]
+      },
+      {
+        "id": "skill-spot-check",
+        "intent": "Tell authors to spot-check each group's code with show -g",
+        "necessity": "incidental",
+        "serves": "task",
+        "removal_impact": "Authors may attach the right intents to the wrong hunks, as I did in 5099f06",
+        "hunks": [
+          "h3"
+        ],
+        "notes": "From the step 6 lesson, not this task; serves 'task' only because every group must serve something. It belonged in its own commit"
+      },
+      {
+        "id": "tests",
+        "intent": "Range tests for html, review and empty ranges; helper update",
+        "necessity": "supporting",
+        "serves": [
+          "ranges",
+          "page-model",
+          "review-range"
+        ],
+        "removal_impact": "Range behaviour would be unverified",
+        "hunks": [
+          "h30",
+          "h31"
+        ]
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "A separate `log` or `branch` command",
+        "rejected_because": "html and review taking a range is what a reviewer needs; a range is just another revision argument"
+      },
+      {
+        "option": "Skip unglossed commits in a range",
+        "rejected_because": "It would hide exactly the code nobody explained"
+      }
+    ],
+    "risks": [
+      "Found by review, fixed in the next commit: A...B pulls in commits from the other side; merge commits are dropped without notice (a merge can carry its own edits); the range argument reaches rev-list unguarded, so it can inject options; one-commit ranges say '1 commits'",
+      "Large branches produce large pages and prompts (this repo's 13 commits make a ~370 KB prompt)",
+      "Interactions on range pages (links across sections, filters, keys) were only checked by screenshot",
+      "Only A..B ranges are understood; other revision syntax such as HEAD^! is read as a single commit or fails"
+    ],
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-opus-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 15,
+      "oldLines": 9,
+      "newStart": 15,
+      "newLines": 9,
+      "hash": "c1bd7f8ec98a8539"
+    },
+    {
+      "id": "h2",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 47,
+      "oldLines": 6,
+      "newStart": 47,
+      "newLines": 8,
+      "hash": "59ca56ec4cbed7fb"
+    },
+    {
+      "id": "h3",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 15,
+      "oldLines": 7,
+      "newStart": 15,
+      "newLines": 7,
+      "hash": "6fa6cb14bbacb6d5"
+    },
+    {
+      "id": "h4",
+      "file": "src/commands/html.ts",
+      "oldFile": "src/commands/html.ts",
+      "oldStart": 3,
+      "oldLines": 12,
+      "newStart": 3,
+      "newLines": 12,
+      "hash": "84cb92b39f244f22"
+    },
+    {
+      "id": "h5",
+      "file": "src/commands/html.ts",
+      "oldFile": "src/commands/html.ts",
+      "oldStart": 25,
+      "oldLines": 20,
+      "newStart": 25,
+      "newLines": 22,
+      "hash": "a829d22dea441f13"
+    },
+    {
+      "id": "h6",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 1,
+      "oldLines": 11,
+      "newStart": 1,
+      "newLines": 11,
+      "hash": "e31185bfb41baa45"
+    },
+    {
+      "id": "h7",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 23,
+      "oldLines": 18,
+      "newStart": 23,
+      "newLines": 22,
+      "hash": "2fef92e0abf7e17c"
+    },
+    {
+      "id": "h8",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 54,
+      "oldLines": 7,
+      "newStart": 58,
+      "newLines": 41,
+      "hash": "9db7039d22aad431"
+    },
+    {
+      "id": "h9",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 66,
+      "oldLines": 28,
+      "newStart": 104,
+      "newLines": 16,
+      "hash": "14711268bce805b5"
+    },
+    {
+      "id": "h10",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 39,
+      "oldLines": 6,
+      "newStart": 39,
+      "newLines": 16,
+      "hash": "6eb9f892919c904e"
+    },
+    {
+      "id": "h11",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 5,
+      "oldLines": 6,
+      "newStart": 5,
+      "newLines": 10,
+      "hash": "8e21649b6284a1b0"
+    },
+    {
+      "id": "h12",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 24,
+      "oldLines": 15,
+      "newStart": 28,
+      "newLines": 15,
+      "hash": "006404178564dcf6"
+    },
+    {
+      "id": "h13",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 45,
+      "oldLines": 7,
+      "newStart": 49,
+      "newLines": 7,
+      "hash": "c794e79bbbe581ac"
+    },
+    {
+      "id": "h14",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 69,
+      "oldLines": 9,
+      "newStart": 73,
+      "newLines": 9,
+      "hash": "c7568dae8d268ccb"
+    },
+    {
+      "id": "h15",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 89,
+      "oldLines": 7,
+      "newStart": 93,
+      "newLines": 7,
+      "hash": "71eea9d1eac9fdc1"
+    },
+    {
+      "id": "h16",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 105,
+      "oldLines": 7,
+      "newStart": 109,
+      "newLines": 7,
+      "hash": "627a63b5bd06b5ea"
+    },
+    {
+      "id": "h17",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 121,
+      "oldLines": 30,
+      "newStart": 125,
+      "newLines": 101,
+      "hash": "52217add77647886"
+    },
+    {
+      "id": "h18",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 165,
+      "oldLines": 7,
+      "newStart": 240,
+      "newLines": 8,
+      "hash": "12bba5363828899d"
+    },
+    {
+      "id": "h19",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 176,
+      "oldLines": 45,
+      "newStart": 252,
+      "newLines": 24,
+      "hash": "1b14a5740f9022e0"
+    },
+    {
+      "id": "h20",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 222,
+      "oldLines": 7,
+      "newStart": 277,
+      "newLines": 8,
+      "hash": "f91955ba422245c0"
+    },
+    {
+      "id": "h21",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 235,
+      "oldLines": 7,
+      "newStart": 291,
+      "newLines": 7,
+      "hash": "45b0805c813d50a0"
+    },
+    {
+      "id": "h22",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 254,
+      "oldLines": 8,
+      "newStart": 310,
+      "newLines": 8,
+      "hash": "7b2c17962b8c6417"
+    },
+    {
+      "id": "h23",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 265,
+      "oldLines": 8,
+      "newStart": 321,
+      "newLines": 8,
+      "hash": "c31ec05d7189287e"
+    },
+    {
+      "id": "h24",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 1,
+      "oldLines": 4,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "8b4cc4dd265d6a58"
+    },
+    {
+      "id": "h25",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 42,
+      "oldLines": 19,
+      "newStart": 44,
+      "newLines": 28,
+      "hash": "83650647e39076d2"
+    },
+    {
+      "id": "h26",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 105,
+      "oldLines": 7,
+      "newStart": 116,
+      "newLines": 7,
+      "hash": "2fd3c983a1213490"
+    },
+    {
+      "id": "h27",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 153,
+      "oldLines": 14,
+      "newStart": 164,
+      "newLines": 42,
+      "hash": "3afe8d87b9df4706"
+    },
+    {
+      "id": "h28",
+      "file": "src/html/page.ts",
+      "oldFile": "src/html/page.ts",
+      "oldStart": 24,
+      "oldLines": 7,
+      "newStart": 24,
+      "newLines": 7,
+      "hash": "c683e38c01b7fbee"
+    },
+    {
+      "id": "h29",
+      "file": "src/html/style.css",
+      "oldFile": "src/html/style.css",
+      "oldStart": 209,
+      "oldLines": 3,
+      "newStart": 209,
+      "newLines": 12,
+      "hash": "ef064093a9cf330a"
+    },
+    {
+      "id": "h30",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 384,
+      "oldLines": 13,
+      "newStart": 384,
+      "newLines": 14,
+      "hash": "847e2fe3597f9900"
+    },
+    {
+      "id": "h31",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 605,
+      "oldLines": 3,
+      "newStart": 606,
+      "newLines": 40,
+      "hash": "69c0b96c8a9e875b"
+    }
+  ]
+}
