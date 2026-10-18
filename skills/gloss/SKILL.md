@@ -12,6 +12,7 @@ A gloss records, for each part of a commit, what it does, how necessary it is, a
 1. Commit the change first. A gloss attaches to one commit; for several commits, gloss each one.
 2. Run `git gloss hunks <commit>` (default `HEAD`) to see the diff split into hunks with ids `h1`, `h2`, …, with each hunk's changed (`+`/`-`) lines numbered from 1.
 3. Group changes **by intent**, not by file. One intent often spans several files. When one hunk mixes intents (common in new files, which are a single hunk), give each group only its lines: `"h6:1-40"`, `"h6:41-55,60"`. The numbers count changed lines only, as `hunks` prints them. Every changed line must belong to at least one group; `add` lists any that don't.
+   Take hunk ids and line numbers from the `git gloss hunks` output for this commit, never from memory of the diff or from an earlier commit. Ids depend on the order git lists hunks, and line numbers count only changed lines, so guesses are easily wrong. `add` rejects ranges past the end of a hunk, but a wrong range that stays in bounds is accepted and silently attaches an intent to the wrong code.
 4. Write the annotation JSON (shape below; `git gloss schema` prints the full JSON Schema) to a file in your scratchpad, then run:
    `git gloss add <commit> -f <file>`
    Fix any validation errors it reports and rerun. Use `--force` only to replace your own earlier gloss.
