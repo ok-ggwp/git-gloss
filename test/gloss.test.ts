@@ -823,3 +823,77 @@ test('a gloss changed on one side and deleted on the other is kept, not lost', (
   assert.match(r.out, /kept theirs \(you deleted it, they changed it\)/)
   assert.match(noteOn(g, a, 'HEAD')!, /"who":"b-fix"/)
 })
+
+// f.js line 2 is added (required), renamed (mechanical), left alone by an
+// unrelated commit, then the file is renamed to g.js.
+function historyRepo(): { dir: string; commit: (msg: string, lines: string[], groups: object[], file?: string) => void } {
+  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
+  g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
+  const commit = (msg: string, lines: string[], groups: object[], file = 'f.js') => {
+    writeFileSync(join(dir, file), lines.join('\n') + '\n')
+    g('add', '-A'); g('commit', '-qm', msg)
+    if (groups.length) {
+      const r = gloss(dir, ['add'], annotation(groups))
+      assert.equal(r.code, 0, r.err)
+    }
+  }
+  const whole = (id: string, intent: string, necessity: string) =>
+    ({ id, intent, necessity, serves: 'task', removal_impact: 'x', hunks: ['h1'] })
+  commit('add retry', ['const a = 1', 'retry(send)', 'end'], [whole('retry', 'Retry sends', 'required')])
+  commit('rename send', ['const a = 1', 'retry(sendFile)', 'end'], [whole('rename', 'Rename send to sendFile', 'mechanical')])
+  commit('touch end', ['const a = 1', 'retry(sendFile)', 'END'], [whole('end', 'Shout the end', 'incidental')])
+  return { dir, commit }
+}
+
+test('why looks past mechanical changes to the line by default', () => {
+  const { dir } = historyRepo()
+  const r = gloss(dir, ['why', 'f.js:2'])
+  assert.equal(r.code, 0, r.err)
+  assert.match(r.out, /rename send[\s\S]*Rename send to sendFile[\s\S]*that change was mechanical[\s\S]*add retry[\s\S]*Retry sends/)
+  assert.doesNotMatch(r.out, /Shout the end/, 'commits that did not touch the line are not shown')
+  assert.doesNotMatch(r.out, /earlier commit/, 'nothing older is hidden')
+})
+
+test('why shows only the latest real change by default, the rest with --history', () => {
+  const { dir, commit } = historyRepo()
+  const real = { id: 'backoff', intent: 'Back off between retries', necessity: 'required', serves: 'task', removal_impact: 'x', hunks: ['h1'] }
+  commit('add backoff', ['const a = 1', 'retryWithBackoff(sendFile)', 'END'], [real])
+
+  let r = gloss(dir, ['why', 'f.js:2'])
+  assert.match(r.out, /Back off between retries/)
+  assert.doesNotMatch(r.out, /Rename send/)
+  assert.match(r.out, /2 earlier commits changed this line: git gloss why f\.js:2 --history/)
+
+  r = gloss(dir, ['why', 'f.js:2', '--history'])
+  assert.match(r.out, /Back off between retries[\s\S]*Rename send to sendFile[\s\S]*Retry sends/)
+
+  const json = JSON.parse(gloss(dir, ['why', 'f.js:2', '--json']).out)
+  assert.deepEqual(json.history.map((s: { subject: string }) => s.subject), ['add backoff', 'rename send', 'add retry'])
+  assert.equal(json.shown, 1)
+  assert.deepEqual(json.groups.map((g: { id: string }) => g.id), ['backoff'], 'top-level fields still describe the latest change')
+})
+
+test('why follows a line across a file rename and an unglossed commit stops the look-through', () => {
+  const { dir, commit } = historyRepo()
+  commit('move to g.js', ['const a = 1', 'retry(sendFile)', 'END'], [], 'g.js')
+  execFileSync('git', ['rm', '-q', 'f.js'], { cwd: dir }); execFileSync('git', ['commit', '-q', '--amend', '--no-edit'], { cwd: dir })
+  commit('tweak, unglossed', ['const a = 1', 'retry(sendFile) // tweak', 'END'], [], 'g.js')
+
+  const json = JSON.parse(gloss(dir, ['why', 'g.js:2', '--json']).out)
+  assert.deepEqual(json.history.map((s: { subject: string; file: string }) => [s.subject, s.file]),
+    [['tweak, unglossed', 'g.js'], ['rename send', 'f.js'], ['add retry', 'f.js']])
+  assert.equal(json.shown, 1, 'an unglossed change is not looked past')
+})
+
+test('why history handles added lines that look like diff headers', () => {
+  const { dir, commit } = historyRepo()
+  commit('plus lines', ['const a = 1', '++ x', 'retry(sendFile)', 'END'],
+    [{ id: 'plus', intent: 'Add a ++ line', necessity: 'required', serves: 'task', removal_impact: 'x', hunks: ['h1'] }])
+  commit('edit plus', ['const a = 1', '++ y', 'retry(sendFile)', 'END'],
+    [{ id: 'plus2', intent: 'Edit the ++ line', necessity: 'mechanical', serves: 'task', removal_impact: 'x', hunks: ['h1'] }])
+  const json = JSON.parse(gloss(dir, ['why', 'f.js:2', '--json']).out)
+  assert.deepEqual(json.history.map((s: { subject: string; line: number; groups: { id: string }[] }) => [s.subject, s.line, s.groups.map((g) => g.id)]),
+    [['edit plus', 2, ['plus2']], ['plus lines', 2, ['plus']]])
+  assert.equal(json.shown, 2)
+})

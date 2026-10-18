@@ -110,6 +110,38 @@ export function writeNote(sha: string, note: GlossNote): void {
   git(['notes', '--ref', NOTES_REF, 'add', '-f', '-F', '-', sha], JSON.stringify(note, null, 2) + '\n')
 }
 
+export type LineStep = { commit: string; file: string; lines: number[] }
+
+// Every commit that changed a line, newest first, starting from `commit` (the
+// one blame names), following it through edits and moves within the file and
+// renames. Each step gives the file's path in that commit and the line's
+// number(s) on the new side of that commit's diff. Uses git log -L, so it is
+// approximate when a line is heavily rewritten. Null if git can't trace it.
+export function lineHistory(file: string, line: number, commit: string): LineStep[] | null {
+  const out = gitTry([
+    '-c', 'core.quotePath=false', 'log', '--no-color', '--no-ext-diff',
+    '--src-prefix=a/', '--dst-prefix=b/', `-L${line},${line}:${file}`, '--format=%x00%H', commit,
+  ])
+  if (out === null) return null
+  return out.split('\0').filter((chunk) => chunk.trim()).map((chunk) => {
+    const [first, ...rest] = chunk.split('\n')
+    let path = file, newNo = 0, inHunk = false
+    const lines: number[] = []
+    for (const l of rest) {
+      if (l.startsWith('diff --git ')) { inHunk = false; continue }
+      // Inside a hunk, decide by position, not prefix: an added line whose
+      // text starts with "++ " would otherwise look like a "+++" header.
+      if (!inHunk && l.startsWith('+++ ')) { if (l !== '+++ /dev/null') path = l.slice(4).replace(/^b\//, ''); continue }
+      const h = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(l)
+      if (h) { newNo = Number(h[1]); inHunk = true; continue }
+      if (!inHunk) continue
+      if (l.startsWith('+')) lines.push(newNo++)
+      else if (l.startsWith(' ')) newNo++
+    }
+    return { commit: first.trim(), file: path, lines }
+  })
+}
+
 export type BlameResult = { commit: string; origLine: number; origFile: string }
 
 export function blameLine(file: string, line: number, rev?: string): BlameResult {

@@ -77,4 +77,4 @@ Where you can, set `evidence` to a test that exercises the change or the line of
 
 ## Looking up intent
 
-Before changing or deleting code you don't understand, run `git gloss why <file>:<line> --json`. It blames the line, finds the commit's gloss and returns the group(s) that line belongs to, including the chain of groups it serves.
+Before changing or deleting code you don't understand, run `git gloss why <file>:<line> --json`. It blames the line, finds the commit's gloss and returns the group(s) that line belongs to, including the chain of groups it serves. Its `history` array lists every commit that changed the line, newest first, each with its own groups. The original intent is often in an older entry when recent changes were renames or reformatting. In text output, `why` already looks past changes whose only explanation is `mechanical`; add `--history` to see every change.
