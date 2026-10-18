@@ -1,0 +1,169 @@
+{
+  "gloss": 2,
+  "commit": "07413f18112fcc8348347de93748d0335c945c4d",
+  "created_at": "2026-10-18T06:46:07.986Z",
+  "annotation": {
+    "version": 1,
+    "task": "Make wip-gloss the procedure agents follow when they change code: name it and spell it out in the skill, document the generic CLAUDE.md/AGENTS.md line in the README's repo setup, and add that line to this repo (user's request)",
+    "summary": "The skill gains a 'wip-gloss procedure' section (when to run it, what to say, the loop after review, don't commit unless asked) and its description now triggers after non-trivial code changes. The README has a 'Setting up a repo' section with the line to put in CLAUDE.md or AGENTS.md, which this repo now has.",
+    "groups": [
+      {
+        "id": "procedure",
+        "intent": "Spell out the wip-gloss procedure, for repos that ask for it",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The skill explains how to gloss but never says to do it at the end of a change, so agents can finish without glossing",
+        "hunks": [
+          "h4:1-16"
+        ],
+        "notes": "The description and the procedure now apply only in repos whose CLAUDE.md or AGENTS.md asks for wip-gloss, so agents don't gloss in repos where nothing adopts the gloss (review finding). Steps 4-5 were shortened to avoid restating later paragraphs, and step 4 no longer says --force (a new snapshot doesn't need it)"
+      },
+      {
+        "id": "repo-setup-docs",
+        "intent": "Document repo setup: init --hooks and the generic agent line",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Users and agents setting up a repo wouldn't know to add the instruction, so the skill would only be used when asked for",
+        "hunks": [
+          "h2"
+        ],
+        "notes": "Recommends the repo's CLAUDE.md over the user-level one, since the line only makes sense where git gloss init has run. States that the hooks need git gloss on PATH, and that non-Claude agents need a pointer to a copy of SKILL.md (review findings)"
+      },
+      {
+        "id": "this-repo",
+        "intent": "Add the agent line to git-gloss's own CLAUDE.md",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Agents working on git-gloss itself wouldn't wip-gloss their changes",
+        "hunks": [
+          "h1"
+        ],
+        "notes": "Also applies to me in this session. I ran `git gloss init --hooks` here too (hooks aren't part of the commit)"
+      },
+      {
+        "id": "step-numbering",
+        "intent": "Fix the skill's step numbering (1, 3, 4, 5)",
+        "necessity": "incidental",
+        "serves": "task",
+        "removal_impact": "Steps skip from 1 to 3; a leftover from step 12's rewrite",
+        "hunks": [
+          "h4:19-24"
+        ]
+      },
+      {
+        "id": "adopt-condition",
+        "intent": "Say the automatic move needs git gloss on PATH where git runs",
+        "necessity": "defensive",
+        "serves": "task",
+        "removal_impact": "The skill claims the gloss always moves onto the commit; with a GUI client lacking git-gloss it stays on the snapshot",
+        "evidence": "the reviewer's run: hooks installed, git gloss not on PATH, commit printed \"'gloss' is not a git command\"",
+        "hunks": [
+          "h4:17-18"
+        ]
+      },
+      {
+        "id": "init-path-warning",
+        "intent": "Warn in init --hooks when git-gloss is not on PATH",
+        "necessity": "defensive",
+        "serves": "adopt-condition",
+        "removal_impact": "Hooks are installed that fail on every commit and push without warning",
+        "hunks": [
+          "h5",
+          "h6"
+        ],
+        "notes": "Not tested"
+      },
+      {
+        "id": "wip-review-preamble",
+        "intent": "Tell the reviewer the checkout is a snapshot of uncommitted work",
+        "necessity": "incidental",
+        "serves": "task",
+        "removal_impact": "The reviewer thinks the changes are already committed, as in this review",
+        "hunks": [
+          "h3"
+        ]
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "A Stop hook that makes agents gloss before finishing",
+        "rejected_because": "Fires on every turn with uncommitted changes, including mid-task and trivial edits; add it later if agents forget with just the CLAUDE.md line"
+      },
+      {
+        "option": "Put the line in the user-level CLAUDE.md",
+        "rejected_because": "Agents would try to gloss in repos where git-gloss isn't set up"
+      }
+    ],
+    "risks": [
+      "The procedure depends on agents following a CLAUDE.md instruction; not yet measured in real use",
+      "'Non-trivial' is left to the agent's judgement",
+      "The CLAUDE.md block appears in both README and CLAUDE.md and can drift"
+    ],
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-opus-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "CLAUDE.md",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 4,
+      "hash": "054041c37d1947f0"
+    },
+    {
+      "id": "h2",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 41,
+      "oldLines": 7,
+      "newStart": 41,
+      "newLines": 23,
+      "hash": "a33123ff9700d491"
+    },
+    {
+      "id": "h3",
+      "file": "scripts/agent-review.sh",
+      "oldFile": "scripts/agent-review.sh",
+      "oldStart": 60,
+      "oldLines": 8,
+      "newStart": 60,
+      "newLines": 10,
+      "hash": "3b4f6aada8d20912"
+    },
+    {
+      "id": "h4",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 1,
+      "oldLines": 27,
+      "newStart": 1,
+      "newLines": 39,
+      "hash": "70e9d24f1d69b2e9"
+    },
+    {
+      "id": "h5",
+      "file": "src/commands/init.ts",
+      "oldFile": "src/commands/init.ts",
+      "oldStart": 1,
+      "oldLines": 3,
+      "newStart": 1,
+      "newLines": 4,
+      "hash": "2d82c4780d09f8fc"
+    },
+    {
+      "id": "h6",
+      "file": "src/commands/init.ts",
+      "oldFile": "src/commands/init.ts",
+      "oldStart": 73,
+      "oldLines": 6,
+      "newStart": 74,
+      "newLines": 11,
+      "hash": "f7682b97c7ae0cb2"
+    }
+  ]
+}
