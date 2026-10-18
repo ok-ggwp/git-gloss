@@ -1,18 +1,46 @@
 {
-  "name": "git-gloss",
+  "name": "@ok-ggwp/git-gloss",
   "version": "0.1.0",
   "description": "Annotate agent-written diffs with intent and necessity, stored in git notes",
   "license": "MIT",
+  "keywords": [
+    "git",
+    "notes",
+    "code-review",
+    "ai",
+    "agents",
+    "annotations"
+  ],
+  "homepage": "https://github.com/ok-ggwp/git-gloss#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ok-ggwp/git-gloss.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ok-ggwp/git-gloss/issues"
+  },
   "type": "module",
   "bin": {
     "git-gloss": "bin/git-gloss.js"
   },
+  "files": [
+    "bin",
+    "dist",
+    "skills",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
-    "node": ">=23.6"
+    "node": ">=20.12"
   },
   "scripts": {
+    "build": "node scripts/build.mjs",
+    "prepare": "npm run build",
     "test": "node --test 'test/**/*.test.ts'",
     "typecheck": "tsc"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "zod": "^4.6.7"

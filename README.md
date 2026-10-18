@@ -39,13 +39,25 @@ Necessity categories: `required`, `supporting`, `mechanical`, `incidental`, `def
 
 ## Setup
 
-Requires Node 23.6+ (TypeScript runs directly, no build step).
+Requires Node 20.12+ and git.
 
 ```sh
-npm install
-npm link                      # puts git-gloss on PATH, so `git gloss` works
-ln -s "$PWD/skills/gloss" ~/.claude/skills/gloss   # teach Claude Code to write glosses
+npm install -g @ok-ggwp/git-gloss     # puts git-gloss on PATH, so `git gloss` works
+ln -s "$(npm root -g)/@ok-ggwp/git-gloss/skills/gloss" ~/.claude/skills/gloss   # teach Claude Code to write glosses
 ```
+
+git finds `git-gloss` on PATH, so `git gloss` works wherever npm's global folder is on PATH, as it is after a normal Node install. On Windows this should work the same way (npm installs a shell launcher git can run), but it hasn't been tested yet.
+
+For a team, add it to the project instead, so everyone gets the same version with `npm install`:
+
+```sh
+npm install -D @ok-ggwp/git-gloss
+npx git-gloss init --hooks
+```
+
+The hooks run `git gloss`, so it must be on PATH wherever git runs; with a project install, that means running git from a shell where `node_modules/.bin` is on PATH, or installing it globally as well.
+
+To work on git-gloss itself: clone it, `npm install`, `npm link`, `npm test`. From a checkout, on Node 22.18+, the TypeScript source runs directly; on older versions the launcher runs `dist/`, which `npm install` builds (and `npm run build` rebuilds after changes). The tests need Node 23.6+.
 
 ### Setting up a repo
 
@@ -117,7 +129,6 @@ All gloss and diff text is rendered as text, and a Content-Security-Policy with 
 - Carrying a gloss onto a server-side squash needs the original commits in your repository; usually the author has them. If a squash merge resolved conflicts or changed much of the code, it may not reach the 80% match; run `git gloss carry <branch commits> --to <squash>`.
 - A gloss records each hunk's location and a hash of its content. If a commit is amended or rebased so its diff changes, `show`, `review` and `why` flag the gloss as stale instead of showing it against the wrong code.
 - Merge commits are diffed against their first parent.
-- `npm link` works because Node only strips types outside `node_modules`. Publishing to npm will need a build step, which must also copy `src/html/client.js` and `src/html/style.css`.
 - `git gloss html` writes to `~/.cache/git-gloss/<commit>.html` by default (or `$XDG_CACHE_HOME`). The page is a snapshot; regenerate it after re-glossing.
 
 ## License
