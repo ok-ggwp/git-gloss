@@ -1,0 +1,210 @@
+{
+  "gloss": 3,
+  "commit": "ea34683dbc8e8df913806ace0ba8f2c25133e8e7",
+  "created_at": "2026-10-18T07:30:31.898Z",
+  "annotation": {
+    "version": 1,
+    "task": "Act on an agent's evaluation of `show` (user request, items 1-3): add a range form of show, put rejected alternatives in the default summary, and tell authors to write specific removal_impact for tests and docs",
+    "summary": "`show main..feature` prints each commit's summary in turn (unglossed ones marked). The summary now lists rejected alternatives next to risks. The skill asks for a specific loss in removal_impact, even for tests and docs.",
+    "groups": [
+      {
+        "id": "range-show",
+        "intent": "Show each commit's summary for a range, marking unglossed ones",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Reading a branch means running show once per commit, as the evaluating agent had to (ten times)",
+        "evidence": "tests 'show takes a range…' and 'a range header counts stale glosses'",
+        "hunks": [
+          "h3:1-2",
+          "h3:5-8",
+          "h4:1-7",
+          "h4:24-31",
+          "h4:60-87"
+        ],
+        "notes": "--only and --full work per commit; -g is refused for ranges because group ids repeat across commits; merges are counted but not shown, as in html and review. The header counts stale glosses, and the expand hint is left out when nothing is glossed (review findings). Side effect: --only is now validated before the commit is looked up, so a bad --only on an unglossed commit exits 2 with the --only error rather than 1 with 'has no gloss'; deliberate, since bad arguments should fail first"
+      },
+      {
+        "id": "render-refactor",
+        "intent": "Move one commit's rendering into renderCommit()",
+        "necessity": "supporting",
+        "serves": "range-show",
+        "removal_impact": "The range loop would have to duplicate the whole single-commit view",
+        "hunks": [
+          "h3:3-4",
+          "h4:8-23",
+          "h4:32-59",
+          "h4:88-92",
+          "h5",
+          "h6",
+          "h7:8-9",
+          "h7:13-14",
+          "h7:18-20"
+        ],
+        "notes": "renderCommit returns null when no group matches, and the single-commit branch prints the error and validates -g itself (simplified after review); `hints` now only controls the expand footer"
+      },
+      {
+        "id": "alternatives-in-summary",
+        "intent": "List rejected alternatives in the default summary, beside risks",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The approaches considered and turned down stay hidden behind --full, which the evaluation called the best material",
+        "evidence": "updated assertion in 'show summarises one line per group, required first, and expands groups with -g'",
+        "hunks": [
+          "h7:1-7",
+          "h7:10-12",
+          "h7:15-17"
+        ],
+        "notes": "Group notes and evidence stay behind --full; the footer now says so instead of counting alternatives"
+      },
+      {
+        "id": "removal-impact-rule",
+        "intent": "Ask for a specific loss in removal_impact, even for tests and docs",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Test and docs rows keep saying 'Unverified' or 'users wouldn't know', which the evaluation found added little",
+        "hunks": [
+          "h2"
+        ],
+        "notes": "Agent instructions, so graded as behaviour (by the rule added in 69647b0)"
+      },
+      {
+        "id": "docs",
+        "intent": "Mention ranges and alternatives in the README's show line",
+        "necessity": "supporting",
+        "serves": [
+          "range-show",
+          "alternatives-in-summary"
+        ],
+        "removal_impact": "The README would still describe show as single-commit with risks only",
+        "hunks": [
+          "h1"
+        ]
+      },
+      {
+        "id": "tests",
+        "intent": "Test the range view and alternatives in the summary",
+        "necessity": "supporting",
+        "serves": [
+          "range-show",
+          "alternatives-in-summary"
+        ],
+        "removal_impact": "The range view (marking unglossed commits, refusing -g) and the summary's alternatives would have no test",
+        "hunks": [
+          "h8",
+          "h9"
+        ],
+        "notes": "h8 flips an old assertion that alternatives stay out of the summary; that behaviour is what this change reverses"
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Show group notes in the summary too",
+        "rejected_because": "They are longer and per group; the summary would stop being a quick read"
+      },
+      {
+        "option": "A compact one-line-per-commit range view",
+        "rejected_because": "The evaluation valued the per-commit group rows and risks; a one-liner would drop exactly that"
+      }
+    ],
+    "risks": [
+      "A long range's output is long; it goes through the pager",
+      "Summaries with several alternatives get taller"
+    ],
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-opus-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 14,
+      "oldLines": 7,
+      "newStart": 14,
+      "newLines": 7,
+      "hash": "15bfe659fff37598"
+    },
+    {
+      "id": "h2",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 52,
+      "oldLines": 7,
+      "newStart": 52,
+      "newLines": 7,
+      "hash": "a46f516e3c2a272b"
+    },
+    {
+      "id": "h3",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 1,
+      "oldLines": 15,
+      "newStart": 1,
+      "newLines": 15,
+      "hash": "ff4a0f21353db570"
+    },
+    {
+      "id": "h4",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 35,
+      "oldLines": 37,
+      "newStart": 35,
+      "newLines": 83,
+      "hash": "b8e99b0316098f5f"
+    },
+    {
+      "id": "h5",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 78,
+      "oldLines": 10,
+      "newStart": 124,
+      "newLines": 7,
+      "hash": "55587ee90231fd7a"
+    },
+    {
+      "id": "h6",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 104,
+      "oldLines": 8,
+      "newStart": 147,
+      "newLines": 7,
+      "hash": "1dc48dd1424cc5a6"
+    },
+    {
+      "id": "h7",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 151,
+      "oldLines": 13,
+      "newStart": 193,
+      "newLines": 15,
+      "hash": "f70b224d535c1207"
+    },
+    {
+      "id": "h8",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 295,
+      "oldLines": 7,
+      "newStart": 295,
+      "newLines": 8,
+      "hash": "cb36792f1fbde1dc"
+    },
+    {
+      "id": "h9",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 1147,
+      "oldLines": 3,
+      "newStart": 1148,
+      "newLines": 34,
+      "hash": "53b93f6df36a8095"
+    }
+  ]
+}
