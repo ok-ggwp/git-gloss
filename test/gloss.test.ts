@@ -852,6 +852,7 @@ test('why looks past mechanical changes to the line by default', () => {
   assert.equal(r.code, 0, r.err)
   assert.match(r.out, /rename send[\s\S]*Rename send to sendFile[\s\S]*that change was mechanical[\s\S]*add retry[\s\S]*Retry sends/)
   assert.doesNotMatch(r.out, /Shout the end/, 'commits that did not touch the line are not shown')
+  assert.doesNotMatch(r.out, /Earlier changes/, 'nothing older is hidden, so no hint')
 })
 
 test('why shows only the latest real change by default, the rest with --history', () => {
@@ -941,4 +942,41 @@ test('why looks back through every mechanical change to the first real explanati
   const e = JSON.parse(gloss(dir, ['why', 'f.js:2', '--json']).out).explanations[0]
   assert.equal(e.subject, 'reformat 4')
   assert.deepEqual(e.before.map((s: { subject: string }) => s.subject), ['reformat 3', 'reformat 2', 'reformat 1', 'rename send', 'add retry'])
+})
+
+test('a commit whose lines in a range are split gets each run traced separately', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
+  g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
+  const lines = Array.from({ length: 20 }, (_, i) => `line ${i + 1}`)
+  const write = (ls: string[], msg: string, id: string, necessity: string, hunks: string[]) => {
+    writeFileSync(join(dir, 'f.js'), ls.join('\n') + '\n'); g('add', '.'); g('commit', '-qm', msg)
+    assert.equal(gloss(dir, ['add'], annotation([{ id, intent: id, necessity, serves: 'task', removal_impact: 'x', hunks }])).code, 0)
+  }
+  write(lines, 'base', 'base', 'required', ['h1'])
+  const guarded = lines.map((l, i) => (i === 9 ? 'guard()' : l))
+  write(guarded, 'guard', 'guard', 'defensive', ['h1'])
+  const reformatted = guarded.map((l, i) => (i === 0 || i === 19 ? l.toUpperCase() : l))
+  write(reformatted, 'reformat', 'reformat', 'mechanical', ['h1', 'h2'])
+
+  const json = JSON.parse(gloss(dir, ['why', 'f.js:1-20', '--json']).out)
+  const reformat = json.explanations.filter((e: { subject: string }) => e.subject === 'reformat')
+  assert.deepEqual(reformat.map((e: { lines: string }) => e.lines), ['1', '20'], 'one explanation per run')
+  for (const e of reformat) {
+    assert.deepEqual(e.before.map((s: { subject: string }) => s.subject), ['base'], `lines ${e.lines} come from base, not guard`)
+  }
+})
+
+test('why works in SHA-256 repositories and rejects line 0; ranges past the end say so', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
+  g('init', '-q', '--object-format=sha256', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
+  writeFileSync(join(dir, 'f.js'), 'a\nb\n'); g('add', '.'); g('commit', '-qm', 'add')
+  gloss(dir, ['add'], annotation([{ ...retryCore, hunks: ['h1'] }]))
+  let r = gloss(dir, ['why', 'f.js:1-2', '--json'])
+  assert.equal(JSON.parse(r.out).explanations.length, 1)
+  r = gloss(dir, ['why', 'f.js:0'])
+  assert.equal(r.code, 2)
+  r = gloss(dir, ['why', 'f.js:1-9'])
+  assert.match(r.out, /the file ends at line 2/)
 })

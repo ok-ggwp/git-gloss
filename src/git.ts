@@ -116,13 +116,15 @@ export type LineStep = { commit: string; file: string; lines: number[] }
 // The commits that changed lines start..end of `file`, newest first, starting
 // from `commit`, following them through edits, moves within the file and
 // renames. Each step gives the file's path in that commit and the lines' new
-// numbers in its diff. Uses git log -L, so it is approximate when lines are
-// heavily rewritten. Null if git can't trace them.
-export function lineHistory(file: string, start: number, end: number, commit: string): LineStep[] | null {
+// numbers in its diff. `max` stops after that many commits (to check whether
+// any older history exists without walking it). Uses git log -L, so it is
+// approximate when lines are heavily rewritten. Null if git can't trace them.
+export function lineHistory(file: string, start: number, end: number, commit: string, max?: number): LineStep[] | null {
   const out = gitTry([
     // showSignature would print signature checks between the commits.
     '-c', 'core.quotePath=false', '-c', 'log.showSignature=false', 'log', '--no-color', '--no-ext-diff',
-    '--src-prefix=a/', '--dst-prefix=b/', `-L${start},${end}:${file}`, '--format=%x00%H', commit,
+    '--src-prefix=a/', '--dst-prefix=b/', `-L${start},${end}:${file}`, '--format=%x00%H',
+    ...(max ? [`--max-count=${max}`] : []), commit,
   ])
   if (out === null) return null
   return out.split('\0').filter((chunk) => chunk.trim()).map((chunk) => {
@@ -156,7 +158,8 @@ export function blameRange(file: string, start: number, end: number, rev?: strin
   const out: BlameResult[] = []
   let cur: BlameResult | null = null
   for (const l of git(args).split('\n')) {
-    const head = /^([0-9a-f]{40}) (\d+) (\d+)/.exec(l)
+    // 40 hex digits for SHA-1 repositories, 64 for SHA-256.
+    const head = /^([0-9a-f]{40}(?:[0-9a-f]{24})?) (\d+) (\d+)/.exec(l)
     if (head) { cur = { commit: head[1], origLine: Number(head[2]), line: Number(head[3]), origFile: file }; out.push(cur); continue }
     // Porcelain C-quotes unusual file names, like diff headers do.
     if (cur && l.startsWith('filename ')) { const raw = l.slice(9); cur.origFile = raw.startsWith('"') ? unquote(raw) : raw }

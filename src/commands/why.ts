@@ -12,6 +12,8 @@ type Step = {
   commit: string
   subject: string
   file: string
+  // The lines' numbers in that commit's version of the file.
+  lines: number[]
   gloss: LoadedGloss | null
   groups: Group[]
 }
@@ -40,7 +42,7 @@ function groupsForLine(gloss: LoadedGloss | null, file: string, line: number): G
 function step(commit: string, file: string, lines: number[]): Step {
   const gloss = glossFor(commit)
   const groups = [...new Map(lines.flatMap((l) => groupsForLine(gloss, file, l)).map((g) => [g.id, g])).values()]
-  return { commit, subject: gloss?.subject ?? commitSubject(commit), file, gloss, groups }
+  return { commit, subject: gloss?.subject ?? commitSubject(commit), file, lines, gloss, groups }
 }
 
 // A change whose only explanation is mechanical (rename, reformat) says
@@ -64,20 +66,26 @@ function chain(gloss: LoadedGloss | null, g: Group): Group[] {
   return out
 }
 
-// The lines of the query one commit explains, plus what came before it: with
-// --history every older change, otherwise older changes only while the ones
-// shown are mechanical, stopping at the first real explanation.
-type Explanation = { lines: number[]; latest: Step; before: Step[]; note: string | null }
+// A contiguous run of the query's lines that one commit last changed, plus
+// what came before it: with --history every older change, otherwise older
+// changes only while the ones shown are mechanical, stopping at the first
+// real explanation. moreHistory: older changes exist that aren't shown.
+type Explanation = { lines: number[]; latest: Step; before: Step[]; moreHistory: boolean; note: string | null }
 
-function explain(blamed: BlameResult[], history: boolean): Explanation {
-  const { commit, origFile } = blamed[0]
-  const orig = blamed.map((b) => b.origLine)
+function explain(run: BlameResult[], history: boolean): Explanation {
+  const { commit, origFile } = run[0]
+  const orig = run.map((b) => b.origLine)
   const latest = step(commit, origFile, orig)
-  const lines = blamed.map((b) => b.line)
-  if (!history && !mechanicalOnly(latest)) return { lines, latest, before: [], note: null }
+  const lines = run.map((b) => b.line)
+  // The run is contiguous in the blamed commit, so git log -L tracks exactly
+  // these lines and not others between them.
+  const start = orig[0], end = orig[orig.length - 1]
+  if (!history && !mechanicalOnly(latest)) {
+    // Only whether older history exists, without walking it.
+    const more = (lineHistory(origFile, start, end, commit, 2)?.length ?? 0) > 1
+    return { lines, latest, before: [], moreHistory: more, note: null }
+  }
 
-  // git log -L walks back from this commit over the lines' span in it.
-  const start = Math.min(...orig), end = Math.max(...orig)
   const trail = lineHistory(origFile, start, end, commit) ?? []
   // Normally the trail starts at the blamed commit. If they disagree (blame
   // can skip commits, e.g. with blame.ignoreRevsFile), keep the trail's older
@@ -91,13 +99,14 @@ function explain(blamed: BlameResult[], history: boolean): Explanation {
     if (!history && !mechanicalOnly(before.at(-1) ?? latest)) break
     before.push(step(t.commit, t.file, t.lines))
   }
-  return { lines, latest, before, note }
+  return { lines, latest, before, moreHistory: older.length > before.length, note }
 }
 
 const stepJson = (s: Step) => ({
   commit: s.commit,
   subject: s.subject,
   file: s.file,
+  lines_in_commit: formatRanges(s.lines),
   glossed: s.gloss !== null,
   stale: s.gloss?.stale ?? false,
   task: s.gloss?.note.annotation.task ?? null,
@@ -112,20 +121,37 @@ export function run(argv: string[]): number {
     options: { rev: { type: 'string' }, json: { type: 'boolean' }, history: { type: 'boolean' } },
   })
   const m = /^(.+):(\d+)(?:-(\d+))?$/.exec(positionals[0] ?? '')
-  if (!m || (m[3] && Number(m[3]) < Number(m[2]))) {
+  if (!m || Number(m[2]) < 1 || (m[3] && Number(m[3]) < Number(m[2]))) {
     console.error('usage: git gloss ' + usage)
     return 2
   }
   const [, file, startStr, endStr] = m
   const start = Number(startStr), end = Number(endStr ?? startStr)
 
-  // One blame for the whole range, then one explanation per commit, in the
-  // order its lines first appear.
+  // One blame for the whole range, then one explanation per contiguous run of
+  // lines (in the blamed commit) that a commit last changed, in the order the
+  // runs appear. A commit's lines can be split by others' changes, and each
+  // run's history has to be traced separately.
   const blamed = blameRange(file, start, end, values.rev)
-  const uncommitted = blamed.filter((b) => /^0+$/.test(b.commit)).map((b) => b.line)
+  const uncommitted: number[] = []
   const byCommit = new Map<string, BlameResult[]>()
-  for (const b of blamed) if (!/^0+$/.test(b.commit)) byCommit.set(b.commit, [...(byCommit.get(b.commit) ?? []), b])
-  const explanations = [...byCommit.values()].map((group) => explain(group, !!values.history))
+  for (const b of blamed) {
+    if (/^0+$/.test(b.commit)) { uncommitted.push(b.line); continue }
+    if (!byCommit.has(b.commit)) byCommit.set(b.commit, [])
+    byCommit.get(b.commit)!.push(b)
+  }
+  const runs: BlameResult[][] = []
+  for (const group of byCommit.values()) {
+    group.sort((x, y) => x.origLine - y.origLine)
+    for (const b of group) {
+      const last = runs.at(-1)
+      if (last && last[0].commit === b.commit && b.origLine === last[last.length - 1].origLine + 1) last.push(b)
+      else runs.push([b])
+    }
+  }
+  runs.sort((x, y) => Math.min(...x.map((b) => b.line)) - Math.min(...y.map((b) => b.line)))
+  const explanations = runs.map((run) => explain(run, !!values.history))
+  const short = blamed.length < end - start + 1 ? `the file ends at line ${start + blamed.length - 1}` : null
 
   if (values.json) {
     console.log(JSON.stringify({
@@ -138,17 +164,22 @@ export function run(argv: string[]): number {
         // Older commits: mechanical changes looked through by default, every
         // change with --history.
         before: e.before.map(stepJson),
+        more_history: e.moreHistory,
         note: e.note,
       })),
       uncommitted: uncommitted.length ? formatRanges(uncommitted) : null,
+      note: short,
     }, null, 2))
     return 0
   }
 
   const out: string[] = []
   const span = start === end ? `${start}` : `${start}-${end}`
-  const renderStep = (s: Step, label: string) => {
-    out.push(`${label}${style('yellow', s.commit.slice(0, 10))} ${s.subject}`)
+  const renderStep = (s: Step, label: string, older: boolean) => {
+    // Where the lines were in an older commit: after edits or a file rename
+    // that differs from the query.
+    const then = older || s.file !== file ? style('dim', `  (${s.file}:${formatRanges(s.lines)} then)`) : ''
+    out.push(`${label}${style('yellow', s.commit.slice(0, 10))} ${s.subject}${then}`)
     if (!s.gloss) { out.push(style('dim', '  no gloss for this commit')); return }
     out.push(...field('task:', s.gloss.note.annotation.task))
     for (const w of s.gloss.warnings) out.push(style(['bold', 'red'], `  ⚠ ${w}`))
@@ -160,8 +191,10 @@ export function run(argv: string[]): number {
   }
   explanations.forEach((e, i) => {
     if (i > 0) out.push('')
-    const label = byCommit.size > 1 || start !== end ? style('bold', `lines ${formatRanges(e.lines)}  `) : ''
-    renderStep(e.latest, label)
+    const label = runs.length > 1 || start !== end
+      ? style('bold', `line${e.lines.length === 1 ? '' : 's'} ${formatRanges(e.lines)}  `)
+      : ''
+    renderStep(e.latest, label, false)
     // Risks and rejected alternatives cover the whole commit, not just these
     // lines, so text output points at them instead of printing them here.
     const a = e.latest.gloss?.note.annotation
@@ -171,15 +204,14 @@ export function run(argv: string[]): number {
     e.before.forEach((s, j) => {
       const prev = j === 0 ? e.latest : e.before[j - 1]
       out.push(style('dim', mechanicalOnly(prev) ? '  ↓ that change was mechanical; before it:' : '  ↓ before that:'))
-      renderStep(s, '  ')
+      renderStep(s, '  ', true)
     })
     if (e.note) out.push(style('dim', `  ${e.note}`))
   })
-  // Older history is only walked on request, so whether there is any isn't
-  // known here; point at it once.
-  if (!values.history && explanations.length) {
+  if (!values.history && explanations.some((e) => e.moreHistory)) {
     out.push('', style('dim', `Earlier changes to these lines: git gloss why ${file}:${span}${values.rev ? ` --rev ${values.rev}` : ''} --history`))
   }
+  if (short) out.push('', style('dim', short))
   if (uncommitted.length) out.push('', style('dim', `lines ${formatRanges(uncommitted)} are not committed yet`))
   console.log(out.join('\n'))
   return 0
