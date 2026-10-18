@@ -1,0 +1,41 @@
+{
+  "gloss": 1,
+  "commit": "0f7792568bbe604fadbd1c17c7776ef4d0065681",
+  "created_at": "2026-10-18T05:26:44.712Z",
+  "annotation": {
+    "version": 1,
+    "task": "Add skill guidance: take hunk references from `git gloss hunks`, never from memory (user approved after the 7b51d66 slip)",
+    "groups": [
+      {
+        "id": "hunks-not-memory",
+        "intent": "Tell authors to copy hunk ids and ranges from git gloss hunks",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Authors keep writing references from memory; in-range mistakes attach intents to the wrong code without any error",
+        "evidence": "two incidents in this trial: the first gloss of 5099f06 (wrong hunks, accepted) and 7b51d66 (out-of-range, rejected)",
+        "hunks": [
+          "h1"
+        ]
+      }
+    ],
+    "risks": [
+      "Guidance only: nothing in add can tell an in-range wrong reference from a right one"
+    ],
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-opus-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 12,
+      "oldLines": 6,
+      "newStart": 12,
+      "newLines": 7,
+      "hash": "e38d54311716c5c6"
+    }
+  ]
+}
