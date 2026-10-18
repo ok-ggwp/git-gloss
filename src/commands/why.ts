@@ -1,20 +1,27 @@
 import { parseArgs } from 'node:util'
-import { blameLine, commitSubject, lineHistory } from '../git.ts'
+import { blameRange, commitSubject, lineHistory, type BlameResult } from '../git.ts'
 import { loadGloss, type LoadedGloss } from '../loader.ts'
 import { servesOf, type Group } from '../schema.ts'
-import { groupHeader, style } from '../render.ts'
-import { bodyLines } from '../selection.ts'
+import { field, groupHeader, style } from '../render.ts'
+import { bodyLines, formatRanges } from '../selection.ts'
 
-export const usage = 'why <file>:<line> [--history] [--rev <commit>] [--json]   explain why a line exists'
+export const usage = 'why <file>:<line>[-<end>] [--history] [--rev <commit>] [--json]   explain why code exists'
 
-// One commit that changed the line, with the gloss groups that own it there.
+// One commit's explanation of some lines: its gloss and the groups that own them.
 type Step = {
   commit: string
   subject: string
   file: string
-  line: number | null
   gloss: LoadedGloss | null
   groups: Group[]
+}
+
+// Glosses are loaded at most once per commit, however many lines or steps
+// refer to it; each load diffs the commit.
+const glossCache = new Map<string, LoadedGloss | null>()
+function glossFor(commit: string): LoadedGloss | null {
+  if (!glossCache.has(commit)) glossCache.set(commit, loadGloss(commit))
+  return glossCache.get(commit)!
 }
 
 // Groups in a gloss that own `line` of `file` on the new side of the commit's
@@ -31,13 +38,13 @@ function groupsForLine(gloss: LoadedGloss | null, file: string, line: number): G
 }
 
 function step(commit: string, file: string, lines: number[]): Step {
-  const gloss = loadGloss(commit)
+  const gloss = glossFor(commit)
   const groups = [...new Map(lines.flatMap((l) => groupsForLine(gloss, file, l)).map((g) => [g.id, g])).values()]
-  return { commit, subject: gloss?.subject ?? commitSubject(commit), file, line: lines[0] ?? null, gloss, groups }
+  return { commit, subject: gloss?.subject ?? commitSubject(commit), file, gloss, groups }
 }
 
 // A change whose only explanation is mechanical (rename, reformat) says
-// nothing about why the line exists, so the default view looks past it.
+// nothing about why the code exists, so it is looked through.
 const mechanicalOnly = (s: Step) => s.groups.length > 0 && s.groups.every((g) => g.necessity === 'mechanical')
 
 // Every group a group serves, directly or through others, nearest first.
@@ -57,9 +64,46 @@ function chain(gloss: LoadedGloss | null, g: Group): Group[] {
   return out
 }
 
-const groupJson = (s: Step) => s.groups.map((g) => ({
-  ...g, serves: servesOf(g), serves_chain: chain(s.gloss, g).map((c) => c.id),
-}))
+// The lines of the query one commit explains, plus what came before it: with
+// --history every older change, otherwise older changes only while the ones
+// shown are mechanical, stopping at the first real explanation.
+type Explanation = { lines: number[]; latest: Step; before: Step[]; note: string | null }
+
+function explain(blamed: BlameResult[], history: boolean): Explanation {
+  const { commit, origFile } = blamed[0]
+  const orig = blamed.map((b) => b.origLine)
+  const latest = step(commit, origFile, orig)
+  const lines = blamed.map((b) => b.line)
+  if (!history && !mechanicalOnly(latest)) return { lines, latest, before: [], note: null }
+
+  // git log -L walks back from this commit over the lines' span in it.
+  const start = Math.min(...orig), end = Math.max(...orig)
+  const trail = lineHistory(origFile, start, end, commit) ?? []
+  // Normally the trail starts at the blamed commit. If they disagree (blame
+  // can skip commits, e.g. with blame.ignoreRevsFile), keep the trail's older
+  // commits anyway and say so rather than drop them.
+  const at = trail.findIndex((t) => t.commit === commit)
+  const older = at >= 0 ? trail.slice(at + 1) : trail
+  const note = trail.length && at !== 0 ? 'git log -L traced these lines from a different commit than blame named; the history may be incomplete' : null
+
+  const before: Step[] = []
+  for (const t of older) {
+    if (!history && !mechanicalOnly(before.at(-1) ?? latest)) break
+    before.push(step(t.commit, t.file, t.lines))
+  }
+  return { lines, latest, before, note }
+}
+
+const stepJson = (s: Step) => ({
+  commit: s.commit,
+  subject: s.subject,
+  file: s.file,
+  glossed: s.gloss !== null,
+  stale: s.gloss?.stale ?? false,
+  task: s.gloss?.note.annotation.task ?? null,
+  // serves is always a list here, whichever form the gloss used.
+  groups: s.groups.map((g) => ({ ...g, serves: servesOf(g), serves_chain: chain(s.gloss, g).map((c) => c.id) })),
+})
 
 export function run(argv: string[]): number {
   const { values, positionals } = parseArgs({
@@ -67,104 +111,76 @@ export function run(argv: string[]): number {
     allowPositionals: true,
     options: { rev: { type: 'string' }, json: { type: 'boolean' }, history: { type: 'boolean' } },
   })
-  const m = /^(.+):(\d+)$/.exec(positionals[0] ?? '')
-  if (!m) {
+  const m = /^(.+):(\d+)(?:-(\d+))?$/.exec(positionals[0] ?? '')
+  if (!m || (m[3] && Number(m[3]) < Number(m[2]))) {
     console.error('usage: git gloss ' + usage)
     return 2
   }
-  const [, file, lineStr] = m
-  const blame = blameLine(file, Number(lineStr), values.rev)
+  const [, file, startStr, endStr] = m
+  const start = Number(startStr), end = Number(endStr ?? startStr)
 
-  if (/^0+$/.test(blame.commit)) {
-    console.log(`${file}:${lineStr} is not committed yet`)
-    return 0
-  }
-
-  // Blame names the last commit that changed the line and its number there;
-  // the history continues back from that commit. If git can't trace it, the
-  // blamed commit alone is the history.
-  const trail = lineHistory(blame.origFile, blame.origLine, blame.commit) ?? []
-  // Normally the trail starts at blame's commit. If they disagree (blame can
-  // skip commits, e.g. with blame.ignoreRevsFile), keep the trail's older
-  // commits anyway and say so rather than drop the history.
-  const at = trail.findIndex((t) => t.commit === blame.commit)
-  const older = at >= 0 ? trail.slice(at + 1) : trail
-  const traceNote = trail.length && at !== 0
-    ? `git log -L traced this line from a different commit than blame named; the history may be incomplete`
-    : null
-  const total = 1 + older.length
-
-  // Steps are built on demand, since each loads a gloss and a diff. The
-  // latest comes from blame, which is exact; older ones from the trail.
-  const steps: Step[] = [step(blame.commit, blame.origFile, [blame.origLine])]
-  const build = (n: number) => {
-    while (steps.length < Math.min(n, total)) {
-      const t = older[steps.length - 1]
-      steps.push(step(t.commit, t.file, t.lines))
-    }
-  }
-  // Default view: the latest change, plus older ones while each shown change
-  // is only mechanical. --history and --json need every change.
-  if (values.history || values.json) build(total)
-  else while (steps.length < total && mechanicalOnly(steps[steps.length - 1])) build(steps.length + 1)
-  let shown = 1
-  while (shown < steps.length && mechanicalOnly(steps[shown - 1])) shown++
-  const visible = values.history ? steps : steps.slice(0, shown)
-  const latest = steps[0]
+  // One blame for the whole range, then one explanation per commit, in the
+  // order its lines first appear.
+  const blamed = blameRange(file, start, end, values.rev)
+  const uncommitted = blamed.filter((b) => /^0+$/.test(b.commit)).map((b) => b.line)
+  const byCommit = new Map<string, BlameResult[]>()
+  for (const b of blamed) if (!/^0+$/.test(b.commit)) byCommit.set(b.commit, [...(byCommit.get(b.commit) ?? []), b])
+  const explanations = [...byCommit.values()].map((group) => explain(group, !!values.history))
 
   if (values.json) {
     console.log(JSON.stringify({
-      file, line: Number(lineStr),
-      commit: latest.commit, subject: latest.subject,
-      origFile: blame.origFile, origLine: blame.origLine,
-      task: latest.gloss?.note.annotation.task ?? null,
-      stale: latest.gloss?.stale ?? false,
-      // serves is always a list here, whichever form the gloss used.
-      groups: groupJson(latest),
-      risks: latest.gloss?.note.annotation.risks ?? [],
-      // Every commit that changed the line, newest first; the default text
-      // view shows the first `shown` (it looks past mechanical-only changes).
-      history: steps.map((s) => ({
-        commit: s.commit, subject: s.subject, file: s.file, line: s.line,
-        glossed: s.gloss !== null,
-        task: s.gloss?.note.annotation.task ?? null,
-        stale: s.gloss?.stale ?? false,
-        groups: groupJson(s),
+      file, start, end,
+      explanations: explanations.map((e) => ({
+        lines: formatRanges(e.lines),
+        ...stepJson(e.latest),
+        risks: e.latest.gloss?.note.annotation.risks ?? [],
+        alternatives: e.latest.gloss?.note.annotation.alternatives ?? [],
+        // Older commits: mechanical changes looked through by default, every
+        // change with --history.
+        before: e.before.map(stepJson),
+        note: e.note,
       })),
-      shown,
-      trace_note: traceNote,
+      uncommitted: uncommitted.length ? formatRanges(uncommitted) : null,
     }, null, 2))
     return 0
   }
 
   const out: string[] = []
-  visible.forEach((s, i) => {
-    if (i > 0) {
-      out.push('', style('dim', mechanicalOnly(visible[i - 1])
-        ? '↓ that change was mechanical; before it, the line came from:'
-        : '↓ before that:'), '')
-    }
-    const where = i > 0 || s.file !== file ? style('dim', `  (${s.file}${s.line ? `:${s.line}` : ''} then)`) : ''
-    out.push(`${style('yellow', s.commit.slice(0, 10))} ${s.subject}${where}`)
-    if (!s.gloss) {
-      out.push(style('dim', 'no gloss for this commit'))
-      return
-    }
-    out.push(`${style('dim', 'task:')} ${s.gloss.note.annotation.task}`)
-    for (const w of s.gloss.warnings) out.push(style(['bold', 'red'], `⚠ ${w}`))
-    out.push('')
-    if (!s.groups.length) out.push(style('dim', `line ${s.line ?? '?'} of ${s.file} is not in an annotated hunk`))
+  const span = start === end ? `${start}` : `${start}-${end}`
+  const renderStep = (s: Step, label: string) => {
+    out.push(`${label}${style('yellow', s.commit.slice(0, 10))} ${s.subject}`)
+    if (!s.gloss) { out.push(style('dim', '  no gloss for this commit')); return }
+    out.push(...field('task:', s.gloss.note.annotation.task))
+    for (const w of s.gloss.warnings) out.push(style(['bold', 'red'], `  ⚠ ${w}`))
+    if (!s.groups.length) out.push(style('dim', '  these lines are not in an annotated hunk'))
     for (const g of s.groups) {
-      out.push(...groupHeader(g))
-      for (const parent of chain(s.gloss, g)) out.push(`  ${style('dim', '↳ which serves:')} ${parent.intent} ${style('dim', `(${parent.id})`)}`)
+      out.push(...groupHeader(g).map((l) => '  ' + l))
+      for (const parent of chain(s.gloss, g)) out.push(`    ${style('dim', '↳ which serves:')} ${parent.intent} ${style('dim', `(${parent.id})`)}`)
     }
-  })
-  const hidden = total - visible.length
-  if (hidden > 0) {
-    const rev = values.rev ? ` --rev ${values.rev}` : ''
-    out.push('', style('dim', `${hidden} earlier commit${hidden === 1 ? '' : 's'} changed this line: git gloss why ${file}:${lineStr}${rev} --history`))
   }
-  if (traceNote) out.push(style('dim', traceNote))
+  explanations.forEach((e, i) => {
+    if (i > 0) out.push('')
+    const label = byCommit.size > 1 || start !== end ? style('bold', `lines ${formatRanges(e.lines)}  `) : ''
+    renderStep(e.latest, label)
+    // Risks and rejected alternatives cover the whole commit, not just these
+    // lines, so text output points at them instead of printing them here.
+    const a = e.latest.gloss?.note.annotation
+    const extras = [a?.risks?.length && `${a.risks.length} risk${a.risks.length === 1 ? '' : 's'}`,
+      a?.alternatives?.length && `${a.alternatives.length} rejected alternative${a.alternatives.length === 1 ? '' : 's'}`].filter(Boolean)
+    if (extras.length) out.push(style('dim', `  the commit also lists ${extras.join(' and ')}: git gloss show ${e.latest.commit.slice(0, 7)} --full`))
+    e.before.forEach((s, j) => {
+      const prev = j === 0 ? e.latest : e.before[j - 1]
+      out.push(style('dim', mechanicalOnly(prev) ? '  ↓ that change was mechanical; before it:' : '  ↓ before that:'))
+      renderStep(s, '  ')
+    })
+    if (e.note) out.push(style('dim', `  ${e.note}`))
+  })
+  // Older history is only walked on request, so whether there is any isn't
+  // known here; point at it once.
+  if (!values.history && explanations.length) {
+    out.push('', style('dim', `Earlier changes to these lines: git gloss why ${file}:${span}${values.rev ? ` --rev ${values.rev}` : ''} --history`))
+  }
+  if (uncommitted.length) out.push('', style('dim', `lines ${formatRanges(uncommitted)} are not committed yet`))
   console.log(out.join('\n'))
   return 0
 }

@@ -93,7 +93,7 @@ test('add, show and why round-trip through git notes', () => {
 
   r = gloss(dir, ['why', 'config.js:1', '--json'])
   assert.equal(r.code, 0, r.err)
-  const why = JSON.parse(r.out)
+  const why = JSON.parse(r.out).explanations[0]
   assert.equal(why.task, 'Retry uploads on failure')
   assert.deepEqual(why.groups.map((g: { id: string; serves_chain: string[] }) => [g.id, g.serves_chain]), [['config', ['retry-core']]])
 
@@ -514,7 +514,7 @@ test('split hunks show only their lines, count only their lines, and answer why 
   assert.match(r.out, /fix +Capitalise a +1 hunk +\+1 -1/)
   assert.match(r.out, /tail +Rework the end +1 hunk +\+2 -1/)
 
-  const why = (line: number) => JSON.parse(gloss(dir, ['why', `f.js:${line}`, '--json']).out).groups.map((g: { id: string }) => g.id)
+  const why = (line: number) => JSON.parse(gloss(dir, ['why', `f.js:${line}`, '--json']).out).explanations[0].groups.map((g: { id: string }) => g.id)
   assert.deepEqual(why(1), ['fix'])
   assert.deepEqual(why(6), ['tail'])
 
@@ -589,7 +589,7 @@ test('serves can list several groups; cycles through lists are rejected', () => 
   const note = JSON.parse(execFileSync('git', ['notes', '--ref', 'refs/notes/gloss', 'show'], { cwd: dir, encoding: 'utf8' }))
   assert.equal(note.gloss, 3, 'serves lists are format 3')
 
-  const why = JSON.parse(gloss(dir, ['why', 'f.js:6', '--json']).out)
+  const why = JSON.parse(gloss(dir, ['why', 'f.js:6', '--json']).out).explanations[0]
   assert.deepEqual(why.groups.map((g: { id: string; serves_chain: string[] }) => [g.id, g.serves_chain]), [['tests', ['fix', 'tail']]])
   r = gloss(dir, ['show', '-g', 'tests'])
   assert.match(r.out, /serves: fix, tail/)
@@ -603,7 +603,7 @@ test('one-item serves lists keep the lowest note format; why --json always gives
   const note = JSON.parse(execFileSync('git', ['notes', '--ref', 'refs/notes/gloss', 'show'], { cwd: dir, encoding: 'utf8' }))
   assert.equal(note.gloss, 1)
   assert.equal(note.annotation.groups[0].serves, 'task', 'stored as a plain string')
-  const why = JSON.parse(gloss(dir, ['why', 'f.js:1', '--json']).out)
+  const why = JSON.parse(gloss(dir, ['why', 'f.js:1', '--json']).out).explanations[0]
   assert.deepEqual(why.groups[0].serves, ['task'])
 })
 
@@ -852,7 +852,6 @@ test('why looks past mechanical changes to the line by default', () => {
   assert.equal(r.code, 0, r.err)
   assert.match(r.out, /rename send[\s\S]*Rename send to sendFile[\s\S]*that change was mechanical[\s\S]*add retry[\s\S]*Retry sends/)
   assert.doesNotMatch(r.out, /Shout the end/, 'commits that did not touch the line are not shown')
-  assert.doesNotMatch(r.out, /earlier commit/, 'nothing older is hidden')
 })
 
 test('why shows only the latest real change by default, the rest with --history', () => {
@@ -863,15 +862,16 @@ test('why shows only the latest real change by default, the rest with --history'
   let r = gloss(dir, ['why', 'f.js:2'])
   assert.match(r.out, /Back off between retries/)
   assert.doesNotMatch(r.out, /Rename send/)
-  assert.match(r.out, /2 earlier commits changed this line: git gloss why f\.js:2 --history/)
+  assert.match(r.out, /Earlier changes to these lines: git gloss why f\.js:2 --history/)
 
   r = gloss(dir, ['why', 'f.js:2', '--history'])
   assert.match(r.out, /Back off between retries[\s\S]*Rename send to sendFile[\s\S]*Retry sends/)
 
-  const json = JSON.parse(gloss(dir, ['why', 'f.js:2', '--json']).out)
-  assert.deepEqual(json.history.map((s: { subject: string }) => s.subject), ['add backoff', 'rename send', 'add retry'])
-  assert.equal(json.shown, 1)
-  assert.deepEqual(json.groups.map((g: { id: string }) => g.id), ['backoff'], 'top-level fields still describe the latest change')
+  let json = JSON.parse(gloss(dir, ['why', 'f.js:2', '--json']).out).explanations[0]
+  assert.equal(json.subject, 'add backoff')
+  assert.deepEqual(json.before, [], 'the default JSON does not walk history behind a real change')
+  json = JSON.parse(gloss(dir, ['why', 'f.js:2', '--json', '--history']).out).explanations[0]
+  assert.deepEqual(json.before.map((s: { subject: string }) => s.subject), ['rename send', 'add retry'])
 })
 
 test('why follows a line across a file rename and an unglossed commit stops the look-through', () => {
@@ -880,10 +880,12 @@ test('why follows a line across a file rename and an unglossed commit stops the 
   execFileSync('git', ['rm', '-q', 'f.js'], { cwd: dir }); execFileSync('git', ['commit', '-q', '--amend', '--no-edit'], { cwd: dir })
   commit('tweak, unglossed', ['const a = 1', 'retry(sendFile) // tweak', 'END'], [], 'g.js')
 
-  const json = JSON.parse(gloss(dir, ['why', 'g.js:2', '--json']).out)
-  assert.deepEqual(json.history.map((s: { subject: string; file: string }) => [s.subject, s.file]),
-    [['tweak, unglossed', 'g.js'], ['rename send', 'f.js'], ['add retry', 'f.js']])
-  assert.equal(json.shown, 1, 'an unglossed change is not looked past')
+  let json = JSON.parse(gloss(dir, ['why', 'g.js:2', '--json']).out).explanations[0]
+  assert.equal(json.subject, 'tweak, unglossed')
+  assert.deepEqual(json.before, [], 'an unglossed change is not looked past')
+  json = JSON.parse(gloss(dir, ['why', 'g.js:2', '--json', '--history']).out).explanations[0]
+  assert.deepEqual(json.before.map((s: { subject: string; file: string }) => [s.subject, s.file]),
+    [['rename send', 'f.js'], ['add retry', 'f.js']])
 })
 
 test('why history handles added lines that look like diff headers', () => {
@@ -892,10 +894,9 @@ test('why history handles added lines that look like diff headers', () => {
     [{ id: 'plus', intent: 'Add a ++ line', necessity: 'required', serves: 'task', removal_impact: 'x', hunks: ['h1'] }])
   commit('edit plus', ['const a = 1', '++ y', 'retry(sendFile)', 'END'],
     [{ id: 'plus2', intent: 'Edit the ++ line', necessity: 'mechanical', serves: 'task', removal_impact: 'x', hunks: ['h1'] }])
-  const json = JSON.parse(gloss(dir, ['why', 'f.js:2', '--json']).out)
-  assert.deepEqual(json.history.map((s: { subject: string; line: number; groups: { id: string }[] }) => [s.subject, s.line, s.groups.map((g) => g.id)]),
-    [['edit plus', 2, ['plus2']], ['plus lines', 2, ['plus']]])
-  assert.equal(json.shown, 2)
+  const json = JSON.parse(gloss(dir, ['why', 'f.js:2', '--json']).out).explanations[0]
+  const steps = [json, ...json.before].map((s: { subject: string; groups: { id: string }[] }) => [s.subject, s.groups.map((g) => g.id)])
+  assert.deepEqual(steps, [['edit plus', ['plus2']], ['plus lines', ['plus']]])
 })
 
 test('why history works for paths with spaces and quotes, and the hint keeps --rev', () => {
@@ -909,13 +910,35 @@ test('why history works for paths with spaces and quotes, and the hint keeps --r
     writeFileSync(join(dir, name), 'a\nretry(sendFile)\n'); g('commit', '-qam', 'rename')
     assert.equal(gloss(dir, ['add'], annotation([whole('renamed', 'mechanical')])).code, 0)
 
-    const json = JSON.parse(gloss(dir, ['why', `${name}:2`, '--json']).out)
-    assert.deepEqual(json.history.map((s: { file: string; groups: { id: string }[] }) => [s.file, s.groups.map((x) => x.id)]),
+    const json = JSON.parse(gloss(dir, ['why', `${name}:2`, '--json']).out).explanations[0]
+    assert.deepEqual([json, ...json.before].map((s: { file: string; groups: { id: string }[] }) => [s.file, s.groups.map((x) => x.id)]),
       [[name, ['renamed']], [name, ['original']]], name)
 
     writeFileSync(join(dir, name), 'a\nretry(sendAll)\n'); g('commit', '-qam', 'real change')
     assert.equal(gloss(dir, ['add'], annotation([whole('real', 'required')])).code, 0)
     const r = gloss(dir, ['why', `${name}:2`, '--rev', 'HEAD'])
-    assert.match(r.out, /2 earlier commits changed this line: git gloss why .*:2 --rev HEAD --history/)
+    assert.match(r.out, /Earlier changes to these lines: git gloss why .*:2 --rev HEAD --history/)
   }
+})
+
+test('why explains a range with one explanation per commit, and lists uncommitted lines', () => {
+  const { dir, commit } = historyRepo()
+  commit('add tail', ['const a = 1', 'retry(sendFile)', 'END', 'tail()'],
+    [{ id: 'tail', intent: 'Call tail', necessity: 'required', serves: 'task', removal_impact: 'x', hunks: ['h1'] }])
+  writeFileSync(join(dir, 'f.js'), ['const a = 1', 'retry(sendFile)', 'END', 'tail()', 'wip()'].join('\n') + '\n')
+  const json = JSON.parse(gloss(dir, ['why', 'f.js:2-5', '--json']).out)
+  assert.deepEqual(json.explanations.map((e: { lines: string; subject: string }) => [e.lines, e.subject]),
+    [['2', 'rename send'], ['3', 'touch end'], ['4', 'add tail']])
+  assert.deepEqual(json.explanations[0].before.map((s: { subject: string }) => s.subject), ['add retry'], 'looked past the rename')
+  assert.equal(json.uncommitted, '5')
+  assert.ok(Array.isArray(json.explanations[0].alternatives), 'alternatives are included for agents')
+})
+
+test('why looks back through every mechanical change to the first real explanation', () => {
+  const { dir, commit } = historyRepo()
+  const mech = (n: number) => ({ id: `m${n}`, intent: `Reformat ${n}`, necessity: 'mechanical', serves: 'task', removal_impact: 'x', hunks: ['h1'] })
+  for (let n = 1; n <= 4; n++) commit(`reformat ${n}`, ['const a = 1', `retry(sendFile)${' '.repeat(n)}`, 'END'], [mech(n)])
+  const e = JSON.parse(gloss(dir, ['why', 'f.js:2', '--json']).out).explanations[0]
+  assert.equal(e.subject, 'reformat 4')
+  assert.deepEqual(e.before.map((s: { subject: string }) => s.subject), ['reformat 3', 'reformat 2', 'reformat 1', 'rename send', 'add retry'])
 })

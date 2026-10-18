@@ -113,16 +113,16 @@ export function writeNote(sha: string, note: GlossNote): void {
 
 export type LineStep = { commit: string; file: string; lines: number[] }
 
-// Every commit that changed a line, newest first, starting from `commit` (the
-// one blame names), following it through edits and moves within the file and
-// renames. Each step gives the file's path in that commit and the line's
-// number(s) on the new side of that commit's diff. Uses git log -L, so it is
-// approximate when a line is heavily rewritten. Null if git can't trace it.
-export function lineHistory(file: string, line: number, commit: string): LineStep[] | null {
+// The commits that changed lines start..end of `file`, newest first, starting
+// from `commit`, following them through edits, moves within the file and
+// renames. Each step gives the file's path in that commit and the lines' new
+// numbers in its diff. Uses git log -L, so it is approximate when lines are
+// heavily rewritten. Null if git can't trace them.
+export function lineHistory(file: string, start: number, end: number, commit: string): LineStep[] | null {
   const out = gitTry([
     // showSignature would print signature checks between the commits.
     '-c', 'core.quotePath=false', '-c', 'log.showSignature=false', 'log', '--no-color', '--no-ext-diff',
-    '--src-prefix=a/', '--dst-prefix=b/', `-L${line},${line}:${file}`, '--format=%x00%H', commit,
+    '--src-prefix=a/', '--dst-prefix=b/', `-L${start},${end}:${file}`, '--format=%x00%H', commit,
   ])
   if (out === null) return null
   return out.split('\0').filter((chunk) => chunk.trim()).map((chunk) => {
@@ -144,16 +144,22 @@ export function lineHistory(file: string, line: number, commit: string): LineSte
   })
 }
 
-export type BlameResult = { commit: string; origLine: number; origFile: string }
+// For one line: the commit that last changed it, and the line's number and
+// file in that commit. An all-zero commit means the line isn't committed.
+export type BlameResult = { commit: string; line: number; origLine: number; origFile: string }
 
-export function blameLine(file: string, line: number, rev?: string): BlameResult {
-  const args = ['blame', '--porcelain', '-L', `${line},${line}`]
+// Blame lines start..end in one call (one record per line).
+export function blameRange(file: string, start: number, end: number, rev?: string): BlameResult[] {
+  const args = ['blame', '--line-porcelain', '-L', `${start},${end}`]
   if (rev) args.push(rev)
   args.push('--', file)
-  const out = git(args).split('\n')
-  const [commit, origLine] = out[0].split(' ')
-  // Porcelain C-quotes unusual file names, like diff headers do.
-  const raw = out.find((l) => l.startsWith('filename '))?.slice(9)
-  const origFile = !raw ? file : raw.startsWith('"') ? unquote(raw) : raw
-  return { commit, origLine: Number(origLine), origFile }
+  const out: BlameResult[] = []
+  let cur: BlameResult | null = null
+  for (const l of git(args).split('\n')) {
+    const head = /^([0-9a-f]{40}) (\d+) (\d+)/.exec(l)
+    if (head) { cur = { commit: head[1], origLine: Number(head[2]), line: Number(head[3]), origFile: file }; out.push(cur); continue }
+    // Porcelain C-quotes unusual file names, like diff headers do.
+    if (cur && l.startsWith('filename ')) { const raw = l.slice(9); cur.origFile = raw.startsWith('"') ? unquote(raw) : raw }
+  }
+  return out
 }

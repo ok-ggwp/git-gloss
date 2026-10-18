@@ -17,8 +17,9 @@ git gloss show [<commit>]             summary: one line per group, risks
       --diff                          ...every group's details and code
       --only speculative,incidental   ...just the parts you might cut
 git gloss html [<commit>|<range>]     self-contained HTML view, of one commit or a branch (--open, -o <file>)
-git gloss why <file>:<line> [--json]  explain why a line exists (via blame), looking past mechanical edits
-      --history                       ...every commit that changed the line, newest first
+git gloss why <file>:<line>[-<end>]   explain why code exists (via blame), looking past mechanical edits
+      --history                       ...every commit that changed the lines, newest first
+      --json                          ...for agents, with risks and rejected alternatives
 git gloss review [<commit>|<range>]   print a review prompt: git gloss review main..feature | claude -p
 git gloss schema                      print the annotation JSON Schema
 ```
