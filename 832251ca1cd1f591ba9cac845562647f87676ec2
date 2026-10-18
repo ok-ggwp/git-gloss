@@ -1,0 +1,225 @@
+{
+  "gloss": 3,
+  "commit": "832251ca1cd1f591ba9cac845562647f87676ec2",
+  "created_at": "2026-10-18T04:19:00.487Z",
+  "annotation": {
+    "version": 1,
+    "task": "Make sharing glosses one step: a `git gloss sync` command, plus an optional pre-push hook so a normal `git push` shares them too (the user found the three manual commands too much work)",
+    "summary": "sync fetches the remote's glosses into a tracking ref, merges them with newer-wins for commits glossed on both sides, and pushes, retrying if it loses a race. init --hooks installs a pre-push hook that runs sync and never blocks the push.",
+    "groups": [
+      {
+        "id": "sync-core",
+        "intent": "Fetch into a tracking ref, merge, and push glosses in one command",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Sharing stays three commands and a merge strategy to remember",
+        "evidence": "test 'sync shares glosses between teammates, including to a remote with none yet'",
+        "hunks": [
+          "h6:1-16",
+          "h6:29-40",
+          "h6:54-75",
+          "h6:80-85",
+          "h6:92-104",
+          "h6:107",
+          "h3"
+        ],
+        "notes": "Merges with `git notes merge -s ours` so the remote's history is an ancestor of ours and the push fast-forwards; a first sync to a remote without glosses just pushes"
+      },
+      {
+        "id": "newer-wins",
+        "intent": "When both sides glossed a commit, keep the newer gloss and report it",
+        "necessity": "required",
+        "serves": "sync-core",
+        "removal_impact": "Plain -s ours would always keep the local gloss, silently discarding a teammate's correction",
+        "evidence": "tests 'when both sides glossed a commit…' and 'sync passes through notes it cannot read…'",
+        "hunks": [
+          "h6:17-28",
+          "h6:41-53",
+          "h6:96-103"
+        ],
+        "notes": "Bug found by review, fixed in the next commit: decisions compare the two current glosses with no common base, but git notes merge uses one. A gloss changed on one side only is taken from that side whatever its date, and sync reports the opposite ('kept yours'), counts it as fetched 0, and tells the re-glosser about a conflict. Its report lines (h6:96-103) are also claimed by sync-core"
+      },
+      {
+        "id": "retry",
+        "intent": "Retry up to 3 times when someone pushes glosses mid-sync",
+        "necessity": "defensive",
+        "serves": "sync-core",
+        "removal_impact": "Two teammates syncing at once would make one fail with a non-fast-forward error",
+        "evidence": "test 'sync retries when someone else pushes…' (uses a git wrapper to push from another clone at the right moment; fails if the retry is removed)",
+        "hunks": [
+          "h6:6",
+          "h6:76-79",
+          "h6:93-95",
+          "h6:105-106"
+        ]
+      },
+      {
+        "id": "named-remotes",
+        "intent": "Accept only configured remotes",
+        "necessity": "required",
+        "serves": "sync-core",
+        "removal_impact": "A URL or an option-like name would end up inside a ref name and a git argument",
+        "evidence": "test 'sync rejects unknown remotes'",
+        "hunks": [
+          "h6:86-91"
+        ],
+        "notes": "The tracking ref only makes sense for a named remote, and the hook relies on the same rule"
+      },
+      {
+        "id": "pre-push-hook",
+        "intent": "init --hooks: sync on every push, never block it or clobber a hook",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Users would have to remember to run sync",
+        "evidence": "test 'init --hooks syncs glosses on git push without recursing or replacing other hooks'",
+        "hunks": [
+          "h4:1-2",
+          "h4:7-38",
+          "h5:7"
+        ],
+        "notes": "The notes push inside sync uses --no-verify so the hook doesn't run recursively. Pushes to a URL rather than a named remote are skipped. The reviewer confirmed --git-path follows core.hooksPath. The line suggested for an existing hook lacks the named-remote check and warning"
+      },
+      {
+        "id": "init-options",
+        "intent": "Add --hooks to init and point it at sync instead of manual commands",
+        "necessity": "supporting",
+        "serves": "pre-push-hook",
+        "removal_impact": "init would keep printing the old three-step instructions",
+        "hunks": [
+          "h4:3-6",
+          "h4:39-41",
+          "h5:1-6"
+        ]
+      },
+      {
+        "id": "docs",
+        "intent": "Document sync, the hook and the merge rule",
+        "necessity": "supporting",
+        "serves": [
+          "sync-core",
+          "pre-push-hook"
+        ],
+        "removal_impact": "Users wouldn't know how conflicts are decided",
+        "hunks": [
+          "h1",
+          "h2"
+        ],
+        "notes": "Repeats newer-wins' overstated rule ('the newer gloss wins'); corrected in the next commit"
+      },
+      {
+        "id": "tests",
+        "intent": "Two-teammate tests against a bare origin, including a push race",
+        "necessity": "supporting",
+        "serves": [
+          "sync-core",
+          "newer-wins",
+          "retry",
+          "named-remotes",
+          "pre-push-hook"
+        ],
+        "removal_impact": "Unverified",
+        "hunks": [
+          "h7"
+        ],
+        "notes": "The hook test gives the hook this checkout's CLI on PATH; my first version only passed because git-gloss is installed globally on this machine"
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "A remote.<name>.push refspec for the notes ref",
+        "rejected_because": "Configuring any push refspec changes what a plain `git push` pushes for branches"
+      },
+      {
+        "option": "git notes merge -s ours/theirs alone",
+        "rejected_because": "Picks a side regardless of which gloss is newer"
+      },
+      {
+        "option": "Merge by hand from NOTES_MERGE_WORKTREE with -s manual",
+        "rejected_because": "Decisions per commit are simpler to make before the merge and apply on top"
+      }
+    ],
+    "risks": [
+      "Found by review, fixed in the next commit: one-sided gloss changes are mis-reported and not decided by date (see newer-wins)",
+      "The hook syncs before the branch push, so glosses reach the remote even if the branch push is then rejected",
+      "The hook does its own ls-remote, fetch and push, so a slow remote or a credential prompt stalls every push",
+      "created_at comes from the author's clock; a wrong clock can make an older gloss look newer",
+      "Squash merges still drop glosses (the planned `carry` command)"
+    ],
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-opus-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 2,
+      "oldLines": 12,
+      "newStart": 2,
+      "newLines": 13,
+      "hash": "a1bc8fbcd722d966"
+    },
+    {
+      "id": "h2",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 35,
+      "oldLines": 7,
+      "newStart": 36,
+      "newLines": 9,
+      "hash": "d3152facddc35731"
+    },
+    {
+      "id": "h3",
+      "file": "src/cli.ts",
+      "oldFile": "src/cli.ts",
+      "oldStart": 6,
+      "oldLines": 10,
+      "newStart": 6,
+      "newLines": 11,
+      "hash": "0576e53394353e57"
+    },
+    {
+      "id": "h4",
+      "file": "src/commands/init.ts",
+      "oldFile": "src/commands/init.ts",
+      "oldStart": 1,
+      "oldLines": 8,
+      "newStart": 1,
+      "newLines": 45,
+      "hash": "ed48c32535c0c3a4"
+    },
+    {
+      "id": "h5",
+      "file": "src/commands/init.ts",
+      "oldFile": "src/commands/init.ts",
+      "oldStart": 21,
+      "oldLines": 14,
+      "newStart": 58,
+      "newLines": 11,
+      "hash": "85a12c90b383573b"
+    },
+    {
+      "id": "h6",
+      "file": "src/commands/sync.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 107,
+      "hash": "3dc782b8d886bbce"
+    },
+    {
+      "id": "h7",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 668,
+      "oldLines": 3,
+      "newStart": 668,
+      "newLines": 119,
+      "hash": "b4a7126b2f558f69"
+    }
+  ]
+}
