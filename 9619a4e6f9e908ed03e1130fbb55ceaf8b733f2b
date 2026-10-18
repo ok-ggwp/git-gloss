@@ -1,0 +1,598 @@
+{
+  "gloss": 3,
+  "commit": "9619a4e6f9e908ed03e1130fbb55ceaf8b733f2b",
+  "created_at": "2026-10-18T14:01:39.476Z",
+  "annotation": {
+    "version": 1,
+    "task": "Fix the bugs from the with/without-gloss experiment that still applied to HEAD, each re-verified first (user request)",
+    "summary": "sync no longer publishes glosses of private commits and the hook skips dry runs; init leaves a shared hooksPath alone; a new snapshot keeps the gloss of unchanged groups and names the rest; split hunks warn; snapshots work without a git identity and are per worktree; adopt rejects wip; clearer messages for backwards ranges and gaps.",
+    "groups": [
+      {
+        "id": "share-filter",
+        "intent": "Push only glosses of commits the remote has or is receiving",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "git push publishes glosses (intent text) of private, unpushed commits",
+        "evidence": "test 'pushing shares only glosses of commits the remote has or receives; dry runs share nothing'",
+        "hunks": [
+          "h18",
+          "h19",
+          "h20",
+          "h21",
+          "h22",
+          "h23",
+          "h24",
+          "h14:5-10",
+          "h14:16-17",
+          "h1"
+        ],
+        "notes": "Builds the pushed commit on the remote's notes history in a scratch ref, so local history never leaves the machine; the hook passes the pushed refs via --pushing. Local deletions of glosses are no longer propagated to the remote. `sync --pushing` from a terminal ignores the flag instead of waiting for input (review finding)"
+      },
+      {
+        "id": "dry-run",
+        "intent": "Skip syncing in the hook for git push --dry-run",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A dry run writes glosses to the remote",
+        "evidence": "same test, with --dry-run and -nq",
+        "hunks": [
+          "h14:11-15"
+        ],
+        "notes": "git doesn't tell pre-push hooks about --dry-run, so the hook reads its parent's command line with ps and exits on --dry-run or any short-flag cluster containing n (-n, -nq); if ps is missing the guard does nothing"
+      },
+      {
+        "id": "hooks-path",
+        "intent": "Don't install hooks into a hooksPath shared outside the repo",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The hooks run in every repository that shares the directory",
+        "evidence": "test 'init --hooks leaves a shared core.hooksPath alone' (also checks .githooks is accepted)",
+        "hunks": [
+          "h15:3-16",
+          "h14:1-2",
+          "h16"
+        ],
+        "notes": "A hooks directory in .git or in the working tree (e.g. .githooks) counts as this repository's; the first version refused the working-tree case (review finding). h16 also updates the lines printed for existing hooks to match the new hook bodies"
+      },
+      {
+        "id": "carry-on-resnapshot",
+        "intent": "Keep the gloss of unchanged groups when re-snapshotting",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "After committing part of the work, re-snapshotting loses the gloss of the rest",
+        "evidence": "tests 'after a partial adopt, a new snapshot keeps the rest…' and 'a new snapshot keeps the gloss of unchanged groups…'",
+        "hunks": [
+          "h6",
+          "h12",
+          "h13",
+          "h26",
+          "h27:1-4",
+          "h27:13-14",
+          "h28",
+          "h7",
+          "h2",
+          "h5"
+        ],
+        "notes": "The carried gloss is marked carried_from so a fresh `add wip` replaces it without --force. Groups whose changes were edited or committed are not carried; hunks wip names them, since their text is discarded (narrows, but doesn't remove, the old risk of losing glossed text)"
+      },
+      {
+        "id": "split-warning",
+        "intent": "Warn when a glossed hunk was split across commits",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The gloss silently never reaches any commit, with a false 'none of its changes are in the wip gloss' message",
+        "evidence": "test 'a hunk split across commits gets a warning, even from the hook'; test 'changes shifted by an earlier commit are not mistaken for a split hunk'",
+        "hunks": [
+          "h10:35-43",
+          "h10:57-58"
+        ],
+        "notes": "Detected by an unmatched new hunk sharing changed lines (by content) with an unmatched glossed hunk; the first version compared line numbers from two different bases, which an earlier commit could shift into a false warning (review finding)"
+      },
+      {
+        "id": "adopt-refactor",
+        "intent": "Move adopt's matching into carryGloss, shared with re-snapshotting",
+        "necessity": "supporting",
+        "serves": [
+          "carry-on-resnapshot",
+          "split-warning"
+        ],
+        "removal_impact": "The matching, serves re-pointing and gap logic would be duplicated in hunks.ts",
+        "hunks": [
+          "h8",
+          "h10:1-34",
+          "h10:44-56",
+          "h10:59",
+          "h11"
+        ]
+      },
+      {
+        "id": "identity",
+        "intent": "Use a placeholder identity for snapshots when git has none",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "hunks wip fails with 'Author identity unknown' on fresh machines and in CI",
+        "evidence": "test 'snapshots work without a git identity…'",
+        "hunks": [
+          "h27:5-12"
+        ]
+      },
+      {
+        "id": "adopt-wip",
+        "intent": "Reject wip as adopt's target",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "adopt wip --force writes the adopted gloss onto the snapshot itself",
+        "evidence": "same test",
+        "hunks": [
+          "h9"
+        ]
+      },
+      {
+        "id": "worktree-ref",
+        "intent": "Keep one snapshot per linked worktree",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A snapshot taken in one worktree replaces another worktree's, gloss and all",
+        "evidence": "test 'each linked worktree has its own snapshot'",
+        "hunks": [
+          "h25",
+          "h3",
+          "h4"
+        ],
+        "notes": "Moves the ref to refs/worktree/gloss/wip; a snapshot under the old refs/gloss/wip is ignored. The review script now pushes the snapshot into its clone by sha, since a clone can't fetch per-worktree refs (not run end to end since this change)"
+      },
+      {
+        "id": "backwards-range",
+        "intent": "Report a backwards range (h1:5-3) as backwards, not out of range",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A misleading error message",
+        "evidence": "test 'a backwards range gets its own error'",
+        "hunks": [
+          "h30"
+        ]
+      },
+      {
+        "id": "gap-text",
+        "intent": "Say 'not in this group' for omitted lines",
+        "necessity": "incidental",
+        "serves": "task",
+        "removal_impact": "Under --partial, lines in no group are labelled as belonging to other groups",
+        "hunks": [
+          "h29",
+          "h17"
+        ]
+      },
+      {
+        "id": "hook-precheck",
+        "intent": "Skip starting git-gloss after commits when there's no snapshot",
+        "necessity": "incidental",
+        "serves": "task",
+        "removal_impact": "Every commit in a hooked repo starts a Node process for nothing",
+        "hunks": [
+          "h15:1-2",
+          "h14:3-4"
+        ]
+      },
+      {
+        "id": "tests",
+        "intent": "Regression tests for each fix; update tests for carried glosses and wording",
+        "necessity": "supporting",
+        "serves": [
+          "share-filter",
+          "dry-run",
+          "hooks-path",
+          "carry-on-resnapshot",
+          "split-warning",
+          "identity",
+          "adopt-wip",
+          "worktree-ref",
+          "backwards-range"
+        ],
+        "removal_impact": "The new tests all fail on the previous commit, so these fixes would be unguarded",
+        "hunks": [
+          "h31",
+          "h32",
+          "h33",
+          "h34",
+          "h35",
+          "h36",
+          "h37"
+        ]
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Keep publishing all glosses and document it",
+        "rejected_because": "Glosses of private work carry its intent; sharing should follow what's pushed"
+      },
+      {
+        "option": "Move the notes push out of pre-push to avoid dry runs",
+        "rejected_because": "git has no post-push hook; reading the parent command line is the practical check"
+      }
+    ],
+    "risks": [
+      "Dry-run detection depends on ps and on the push command's own arguments",
+      "Shareability is computed from remote-tracking branches, which can be stale until fetched; it runs rev-list over their history on every push (not measured on large repos)",
+      "Local deletions of glosses no longer reach the remote",
+      "Existing snapshots under refs/gloss/wip (from before this change) are ignored",
+      "Groups whose code changes after glossing still lose their text on re-snapshot (now named)"
+    ],
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-opus-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 59,
+      "oldLines": 7,
+      "newStart": 59,
+      "newLines": 7,
+      "hash": "fcf8caaf2e3599fb"
+    },
+    {
+      "id": "h2",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 73,
+      "oldLines": 7,
+      "newStart": 73,
+      "newLines": 7,
+      "hash": "a815dbc305077376"
+    },
+    {
+      "id": "h3",
+      "file": "scripts/agent-review.sh",
+      "oldFile": "scripts/agent-review.sh",
+      "oldStart": 22,
+      "oldLines": 7,
+      "newStart": 22,
+      "newLines": 7,
+      "hash": "ef74709a0c435b90"
+    },
+    {
+      "id": "h4",
+      "file": "scripts/agent-review.sh",
+      "oldFile": "scripts/agent-review.sh",
+      "oldStart": 36,
+      "oldLines": 11,
+      "newStart": 36,
+      "newLines": 13,
+      "hash": "ead9899051c76eab"
+    },
+    {
+      "id": "h5",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 14,
+      "oldLines": 7,
+      "newStart": 14,
+      "newLines": 7,
+      "hash": "d5df970abb3ba100"
+    },
+    {
+      "id": "h6",
+      "file": "src/carry.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 71,
+      "hash": "70d9586f00f003d9"
+    },
+    {
+      "id": "h7",
+      "file": "src/commands/add.ts",
+      "oldFile": "src/commands/add.ts",
+      "oldStart": 59,
+      "oldLines": 7,
+      "newStart": 59,
+      "newLines": 10,
+      "hash": "7a417e6eddab3d95"
+    },
+    {
+      "id": "h8",
+      "file": "src/commands/adopt.ts",
+      "oldFile": "src/commands/adopt.ts",
+      "oldStart": 1,
+      "oldLines": 18,
+      "newStart": 1,
+      "newLines": 18,
+      "hash": "fc756c4319328689"
+    },
+    {
+      "id": "h9",
+      "file": "src/commands/adopt.ts",
+      "oldFile": "src/commands/adopt.ts",
+      "oldStart": 25,
+      "oldLines": 6,
+      "newStart": 25,
+      "newLines": 9,
+      "hash": "f4a4f8ad5e7cf848"
+    },
+    {
+      "id": "h10",
+      "file": "src/commands/adopt.ts",
+      "oldFile": "src/commands/adopt.ts",
+      "oldStart": 44,
+      "oldLines": 54,
+      "newStart": 47,
+      "newLines": 19,
+      "hash": "b1a5992ae5e5aeaa"
+    },
+    {
+      "id": "h11",
+      "file": "src/commands/adopt.ts",
+      "oldFile": "src/commands/adopt.ts",
+      "oldStart": 108,
+      "oldLines": 8,
+      "newStart": 76,
+      "newLines": 8,
+      "hash": "9436e4243fb42dc9"
+    },
+    {
+      "id": "h12",
+      "file": "src/commands/hunks.ts",
+      "oldFile": "src/commands/hunks.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 8,
+      "hash": "e2719907553c8f9c"
+    },
+    {
+      "id": "h13",
+      "file": "src/commands/hunks.ts",
+      "oldFile": "src/commands/hunks.ts",
+      "oldStart": 14,
+      "oldLines": 18,
+      "newStart": 16,
+      "newLines": 34,
+      "hash": "687d16509bac1933"
+    },
+    {
+      "id": "h14",
+      "file": "src/commands/init.ts",
+      "oldFile": "src/commands/init.ts",
+      "oldStart": 1,
+      "oldLines": 23,
+      "newStart": 1,
+      "newLines": 30,
+      "hash": "adcf559f05e6056c"
+    },
+    {
+      "id": "h15",
+      "file": "src/commands/init.ts",
+      "oldFile": "src/commands/init.ts",
+      "oldStart": 25,
+      "oldLines": 14,
+      "newStart": 32,
+      "newLines": 28,
+      "hash": "0f7ef2e4eb6330ff"
+    },
+    {
+      "id": "h16",
+      "file": "src/commands/init.ts",
+      "oldFile": "src/commands/init.ts",
+      "oldStart": 80,
+      "oldLines": 11,
+      "newStart": 101,
+      "newLines": 11,
+      "hash": "128df6f29a85fbcc"
+    },
+    {
+      "id": "h17",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 62,
+      "oldLines": 7,
+      "newStart": 62,
+      "newLines": 7,
+      "hash": "1d8bb4bdff48ff81"
+    },
+    {
+      "id": "h18",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 1,
+      "oldLines": 3,
+      "newStart": 1,
+      "newLines": 4,
+      "hash": "b54839f82bfec061"
+    },
+    {
+      "id": "h19",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 36,
+      "oldLines": 11,
+      "newStart": 37,
+      "newLines": 24,
+      "hash": "3b144af6c849def2"
+    },
+    {
+      "id": "h20",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 54,
+      "oldLines": 14,
+      "newStart": 68,
+      "newLines": 14,
+      "hash": "7f17f45088cac163"
+    },
+    {
+      "id": "h21",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 70,
+      "oldLines": 7,
+      "newStart": 84,
+      "newLines": 6,
+      "hash": "7f8ac7ad8a68a11a"
+    },
+    {
+      "id": "h22",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 78,
+      "oldLines": 7,
+      "newStart": 91,
+      "newLines": 7,
+      "hash": "6a2f575b74c4c58d"
+    },
+    {
+      "id": "h23",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 94,
+      "oldLines": 23,
+      "newStart": 107,
+      "newLines": 44,
+      "hash": "f709a66429967f1f"
+    },
+    {
+      "id": "h24",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 120,
+      "oldLines": 16,
+      "newStart": 154,
+      "newLines": 19,
+      "hash": "d9b620a179859d15"
+    },
+    {
+      "id": "h25",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 8,
+      "oldLines": 9,
+      "newStart": 8,
+      "newLines": 10,
+      "hash": "6337856ada4f0848"
+    },
+    {
+      "id": "h26",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 88,
+      "oldLines": 7,
+      "newStart": 89,
+      "newLines": 9,
+      "hash": "f28ebe182ee5d6ca"
+    },
+    {
+      "id": "h27",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 97,
+      "oldLines": 13,
+      "newStart": 100,
+      "newLines": 17,
+      "hash": "b64173f1dc86c76b"
+    },
+    {
+      "id": "h28",
+      "file": "src/schema.ts",
+      "oldFile": "src/schema.ts",
+      "oldStart": 107,
+      "oldLines": 4,
+      "newStart": 107,
+      "newLines": 7,
+      "hash": "a4d59a031d3a02ba"
+    },
+    {
+      "id": "h29",
+      "file": "src/selection.ts",
+      "oldFile": "src/selection.ts",
+      "oldStart": 95,
+      "oldLines": 7,
+      "newStart": 95,
+      "newLines": 8,
+      "hash": "62c84657c207cab5"
+    },
+    {
+      "id": "h30",
+      "file": "src/validate.ts",
+      "oldFile": "src/validate.ts",
+      "oldStart": 22,
+      "oldLines": 7,
+      "newStart": 22,
+      "newLines": 9,
+      "hash": "cf6bd29d12cd5cb2"
+    },
+    {
+      "id": "h31",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 1,
+      "oldLines": 7,
+      "newStart": 1,
+      "newLines": 7,
+      "hash": "86f886014fadee11"
+    },
+    {
+      "id": "h32",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 509,
+      "oldLines": 7,
+      "newStart": 509,
+      "newLines": 7,
+      "hash": "dddf08ba93842267"
+    },
+    {
+      "id": "h33",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 521,
+      "oldLines": 7,
+      "newStart": 521,
+      "newLines": 7,
+      "hash": "dddf08ba93842267"
+    },
+    {
+      "id": "h34",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 1070,
+      "oldLines": 7,
+      "newStart": 1070,
+      "newLines": 7,
+      "hash": "5e21e5c00e6ce066"
+    },
+    {
+      "id": "h35",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 1102,
+      "oldLines": 15,
+      "newStart": 1102,
+      "newLines": 20,
+      "hash": "a9f42cf4d134d21a"
+    },
+    {
+      "id": "h36",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 1138,
+      "oldLines": 7,
+      "newStart": 1143,
+      "newLines": 7,
+      "hash": "20ea2bf485ed6dbd"
+    },
+    {
+      "id": "h37",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 1179,
+      "oldLines": 3,
+      "newStart": 1184,
+      "newLines": 133,
+      "hash": "b3ba57338fb3208c"
+    }
+  ]
+}
