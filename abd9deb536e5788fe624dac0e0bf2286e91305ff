@@ -1,0 +1,165 @@
+{
+  "gloss": 3,
+  "commit": "abd9deb536e5788fe624dac0e0bf2286e91305ff",
+  "created_at": "2026-10-18T04:19:00.734Z",
+  "annotation": {
+    "version": 1,
+    "task": "Address the review of 832251c: sync decided conflicts without a merge base, so one-sided changes were mis-decided and mis-reported; the hook could stall pushes; README overstated the rule",
+    "groups": [
+      {
+        "id": "three-way",
+        "intent": "Decide each gloss against the merge base of the two notes histories",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A teammate's re-gloss is reported as 'kept yours' and 'fetched 0' while actually being taken, and the re-glosser sees a false conflict",
+        "evidence": "test 'a one-sided change to a gloss is taken whatever its date…' (fails on the previous sync.ts)",
+        "hunks": [
+          "h4",
+          "h5:1-20",
+          "h5:33-41"
+        ]
+      },
+      {
+        "id": "keep-over-delete",
+        "intent": "Keep a gloss changed on one side and deleted on the other",
+        "necessity": "required",
+        "serves": "three-way",
+        "removal_impact": "A local deletion silently discards a teammate's correction",
+        "evidence": "checked git: -s ours keeps a local deletion over a remote change; test 'a gloss changed on one side and deleted on the other is kept'",
+        "hunks": [
+          "h5:21-32"
+        ],
+        "notes": "Not raised by the reviewer. My first version of this fix had a comment claiming the merge keeps the change; checking it showed the opposite"
+      },
+      {
+        "id": "no-prompt",
+        "intent": "Disable credential prompts in the hook so a sync fails fast",
+        "necessity": "defensive",
+        "serves": "task",
+        "removal_impact": "A remote needing credentials stalls every push on a prompt",
+        "hunks": [
+          "h2"
+        ],
+        "notes": "SSH passphrase prompts aren't covered by GIT_TERMINAL_PROMPT"
+      },
+      {
+        "id": "existing-hook-line",
+        "intent": "Suggest the same named-remote check and warning for existing hooks",
+        "necessity": "defensive",
+        "serves": "task",
+        "removal_impact": "Pushes to a URL print a confusing 'no remote named' error from the suggested line",
+        "hunks": [
+          "h3"
+        ]
+      },
+      {
+        "id": "docs",
+        "intent": "State the real merge rule and the hook's ordering and prompts",
+        "necessity": "supporting",
+        "serves": [
+          "three-way",
+          "no-prompt"
+        ],
+        "removal_impact": "The README keeps claiming the newer gloss always wins",
+        "hunks": [
+          "h1"
+        ]
+      },
+      {
+        "id": "tests",
+        "intent": "Tests for one-sided changes, base-aware conflicts and delete-vs-change",
+        "necessity": "supporting",
+        "serves": [
+          "three-way",
+          "keep-over-delete"
+        ],
+        "removal_impact": "Unverified",
+        "hunks": [
+          "h6",
+          "h7"
+        ],
+        "notes": "Rewrites the earlier conflict test, which encoded the wrong semantics"
+      }
+    ],
+    "risks": [
+      "This commit was not reviewed again",
+      "The hook still pushes glosses before the branch"
+    ],
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-opus-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 38,
+      "oldLines": 7,
+      "newStart": 38,
+      "newLines": 7,
+      "hash": "b064deea1f6082f0"
+    },
+    {
+      "id": "h2",
+      "file": "src/commands/init.ts",
+      "oldFile": "src/commands/init.ts",
+      "oldStart": 15,
+      "oldLines": 7,
+      "newStart": 15,
+      "newLines": 8,
+      "hash": "31ede2859d9ee3be"
+    },
+    {
+      "id": "h3",
+      "file": "src/commands/init.ts",
+      "oldFile": "src/commands/init.ts",
+      "oldStart": 27,
+      "oldLines": 7,
+      "newStart": 28,
+      "newLines": 9,
+      "hash": "072ce6f69957a2e7"
+    },
+    {
+      "id": "h4",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 26,
+      "oldLines": 6,
+      "newStart": 26,
+      "newLines": 16,
+      "hash": "fdfac911dd899791"
+    },
+    {
+      "id": "h5",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 37,
+      "oldLines": 25,
+      "newStart": 47,
+      "newLines": 44,
+      "hash": "6112dee00fbd63c0"
+    },
+    {
+      "id": "h6",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 716,
+      "oldLines": 10,
+      "newStart": 716,
+      "newLines": 37,
+      "hash": "a77ba53261ff2853"
+    },
+    {
+      "id": "h7",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 784,
+      "oldLines": 3,
+      "newStart": 811,
+      "newLines": 15,
+      "hash": "21d02eea3bcf2c6c"
+    }
+  ]
+}
