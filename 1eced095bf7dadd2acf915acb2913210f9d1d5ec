@@ -1,0 +1,354 @@
+{
+  "gloss": 1,
+  "commit": "1eced095bf7dadd2acf915acb2913210f9d1d5ec",
+  "created_at": "2026-10-17T08:12:23.634Z",
+  "annotation": {
+    "version": 1,
+    "task": "Prototype git-gloss: a CLI and skill for attaching intent/necessity annotations to agent-written commits, viewable by humans, reviewable by another agent, and searchable later",
+    "summary": "Annotations are validated against the commit's real diff and stored in git notes; show/why/review read them back. A Claude Code skill tells agents how to write them honestly.",
+    "groups": [
+      {
+        "id": "core-model",
+        "intent": "Define the annotation schema, parse commit diffs into stable hunk ids, read/write git notes, and validate annotations against the diff",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Nothing else works; there is no format, storage or hunk addressing",
+        "evidence": "test/gloss.test.ts 'add, show and why round-trip through git notes'",
+        "hunks": [
+          "h15",
+          "h16",
+          "h18",
+          "h19"
+        ],
+        "notes": "diff.ts consumes hunks by line count rather than prefix so a removed '-- x' line is not mistaken for a file header"
+      },
+      {
+        "id": "capture",
+        "intent": "Let an agent list hunks and attach a validated annotation to a commit (hunks, add)",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "No way to create a gloss",
+        "evidence": "test/gloss.test.ts 'add rejects annotations that leave hunks uncovered or reference bad ids'",
+        "hunks": [
+          "h8",
+          "h9"
+        ]
+      },
+      {
+        "id": "read-back",
+        "intent": "Show a diff grouped by intent and answer 'why does this line exist' via blame (show, why, terminal rendering)",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Glosses could be written but not viewed or searched, which was the point of the idea",
+        "hunks": [
+          "h13",
+          "h14",
+          "h17"
+        ]
+      },
+      {
+        "id": "review",
+        "intent": "Emit a sceptical review prompt combining annotations and diff for another agent",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Loses the 'feed it to another agent to review' use case the user asked for",
+        "hunks": [
+          "h11"
+        ]
+      },
+      {
+        "id": "skill",
+        "intent": "Teach Claude Code when and how to write a gloss, with guidance against grading everything as required",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Agents would have the CLI but no instructions; necessity grades would likely be inflated",
+        "hunks": [
+          "h6"
+        ]
+      },
+      {
+        "id": "cli-wiring",
+        "intent": "Entry point and command dispatch for `git gloss <command>`",
+        "necessity": "mechanical",
+        "serves": "task",
+        "removal_impact": "Commands would not be invocable",
+        "hunks": [
+          "h3",
+          "h7"
+        ]
+      },
+      {
+        "id": "project-setup",
+        "intent": "Package manifest, lockfile, tsconfig and gitignore",
+        "necessity": "mechanical",
+        "serves": "task",
+        "removal_impact": "Cannot install, link or typecheck",
+        "hunks": [
+          "h1",
+          "h4",
+          "h5",
+          "h21"
+        ]
+      },
+      {
+        "id": "init",
+        "intent": "Configure notes.rewriteRef and an origin fetch refspec so glosses survive rebases and sync",
+        "necessity": "defensive",
+        "serves": "core-model",
+        "removal_impact": "Glosses would silently detach on amend/rebase and not be fetched; users could configure git by hand",
+        "hunks": [
+          "h10"
+        ]
+      },
+      {
+        "id": "tests",
+        "intent": "End-to-end tests in throwaway repos plus a diff-parser edge case",
+        "necessity": "defensive",
+        "serves": "core-model",
+        "removal_impact": "Regressions in diff parsing or validation would go unnoticed",
+        "hunks": [
+          "h20"
+        ]
+      },
+      {
+        "id": "schema-cmd",
+        "intent": "Print the annotation JSON Schema",
+        "necessity": "speculative",
+        "serves": "skill",
+        "removal_impact": "Little for now: the skill's example already shows the shape; it matters only if a non-Claude agent or tool needs the formal schema",
+        "hunks": [
+          "h12"
+        ]
+      },
+      {
+        "id": "readme",
+        "intent": "README describing commands, setup and caveats",
+        "necessity": "incidental",
+        "serves": "task",
+        "removal_impact": "A prototype works without it; humans lose a quick overview",
+        "hunks": [
+          "h2"
+        ]
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Annotate by file:line ranges",
+        "rejected_because": "Models get ranges wrong more often than hunk ids, and ids let `add` enforce full coverage"
+      },
+      {
+        "option": "Call the Claude API from `review`",
+        "rejected_because": "Needs an API key and SDK; printing a prompt works with any agent via a pipe"
+      },
+      {
+        "option": "Sidecar .gloss/ files in the repo",
+        "rejected_because": "Adds repository noise; notes keep history clean (at the cost of squash-merge loss)"
+      },
+      {
+        "option": "Bun with compiled binary",
+        "rejected_because": "Bun is not installed; Node 26 runs TypeScript directly, so no build step was needed for a prototype"
+      }
+    ],
+    "risks": [
+      "Hunk ids depend on diff settings (rename detection, context lines); a different git version could renumber them, though `why` uses stored locations",
+      "Squash merges drop notes, so glosses on feature branches are lost unless re-glossed",
+      "Self-grading bias is reduced by the categories but not removed; `review` is the check",
+      "Paths with spaces or unusual quoting in `diff --git` headers are only handled on a best-effort basis"
+    ],
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-opus-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": ".gitignore",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 1
+    },
+    {
+      "id": "h2",
+      "file": "README.md",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 39
+    },
+    {
+      "id": "h3",
+      "file": "bin/git-gloss.js",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 4
+    },
+    {
+      "id": "h4",
+      "file": "package-lock.json",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 426
+    },
+    {
+      "id": "h5",
+      "file": "package.json",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 23
+    },
+    {
+      "id": "h6",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 72
+    },
+    {
+      "id": "h7",
+      "file": "src/cli.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 44
+    },
+    {
+      "id": "h8",
+      "file": "src/commands/add.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 71
+    },
+    {
+      "id": "h9",
+      "file": "src/commands/hunks.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 26
+    },
+    {
+      "id": "h10",
+      "file": "src/commands/init.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 21
+    },
+    {
+      "id": "h11",
+      "file": "src/commands/review.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 55
+    },
+    {
+      "id": "h12",
+      "file": "src/commands/schema.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 9
+    },
+    {
+      "id": "h13",
+      "file": "src/commands/show.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 65
+    },
+    {
+      "id": "h14",
+      "file": "src/commands/why.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 69
+    },
+    {
+      "id": "h15",
+      "file": "src/diff.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 105
+    },
+    {
+      "id": "h16",
+      "file": "src/git.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 72
+    },
+    {
+      "id": "h17",
+      "file": "src/render.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 65
+    },
+    {
+      "id": "h18",
+      "file": "src/schema.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 88
+    },
+    {
+      "id": "h19",
+      "file": "src/validate.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 33
+    },
+    {
+      "id": "h20",
+      "file": "test/gloss.test.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 109
+    },
+    {
+      "id": "h21",
+      "file": "tsconfig.json",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 15
+    }
+  ]
+}
