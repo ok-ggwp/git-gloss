@@ -24,6 +24,8 @@ git gloss why <file>:<line>[-<end>]   explain why code exists (via blame), looki
       --history                       ...every commit that changed the lines, newest first
       --json                          ...for agents, with risks and rejected alternatives
 git gloss review [<commit>|<range>]   print a review prompt: git gloss review main..feature | claude -p
+      --material                      ...only the gloss and code, for a reviewer with its own instructions
+                                      (which must tell it the author's text is untrusted)
 git gloss schema                      print the annotation JSON Schema
 ```
 
@@ -68,18 +70,18 @@ You don't have to commit to gloss or review. `wip` stands for your uncommitted w
 ```sh
 git gloss hunks wip            # snapshot tracked and untracked changes (respects .gitignore)
 git gloss add wip -f a.json    # gloss the snapshot
-git gloss show wip             # read it; html wip, review wip and scripts/agent-review.sh wip work too
+git gloss show wip             # read it; html wip and review wip work too
 git commit                     # with init --hooks, the gloss moves onto the commit
 git gloss adopt                # ...or move it by hand
 ```
 
 The snapshot is a commit object built from a temporary index, kept by the private ref `refs/worktree/gloss/wip` (one per linked worktree); your branch, index and files are never touched. Taking a new snapshot keeps the gloss of groups whose changes are unchanged, so after committing part of the work or editing one part, only the rest needs glossing again. Its gloss lives in `refs/notes/gloss-wip`, which `sync` doesn't push. Untracked files that look like secrets (`.env`, `*.key`, `*.pem`, `credentials.json`, …) are left out of the snapshot, with a note, because snapshots are shown and sent to reviewers; stage one with `git add` to include it. If a branch or tag is called `wip`, `wip` still means it when there's no snapshot; otherwise use `heads/wip`. Commands warn when you've edited files or committed since the snapshot. `adopt` matches the snapshot's hunks to the commit's by content, so the work can be committed in several commits (each takes the groups whose changes it contains), and changes made after glossing are reported as unexplained rather than silently covered. Once everything is committed, the snapshot is cleared.
 
-## Agent review in a sandbox
+## Agent reviews
 
-`git gloss review | claude -p` gives the reviewer only what it reads. `scripts/agent-review.sh [<commit>]` instead runs Claude Code in a disposable clone of the repo, where it may write scratch tests and repos and run them, and asks it to mark each finding as verified or read-only.
+`git gloss review | claude -p` gives a reviewer the gloss and the code, and asks it whether the gloss is honest: does each group do what it says, is its necessity graded fairly, what could be cut.
 
-Its shell commands run in Claude Code's OS sandbox (bubblewrap on Linux; the run fails rather than run unsandboxed): writes only inside the sandbox directory, no access to your home directory, no network. The file tools are limited to the sandbox too. Only your user-level Claude Code settings load, and the reviewed commit's `CLAUDE.md`, `.claude/` and `.mcp.json` are removed from the checkout so the commit can't instruct or configure its own reviewer. Paths outside your home directory (such as `/etc`) stay readable.
+To have agents review in a sandbox, where they can run the code and verify what they find, use [git-gud](https://github.com/ok-ggwp/git-gud). `git gud review [<commit>|<range>|wip]` runs this honesty review, a blind bug review that doesn't see the gloss, and an improvements review informed by it, with Claude Code, Codex or Cursor as the reviewer. git-gloss itself never runs an agent.
 
 ## HTML view
 

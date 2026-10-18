@@ -474,6 +474,18 @@ test('review prints a prompt containing the annotated diff', () => {
   assert.match(r.out, /\+export const MAX_RETRIES = 3/)
 })
 
+test('review --material prints the gloss and code without the honesty instructions', () => {
+  const dir = repo()
+  gloss(dir, ['add'], annotation([retryCore, config]))
+  const full = gloss(dir, ['review']).out
+  const r = gloss(dir, ['review', '--material'])
+  assert.equal(r.code, 0, r.err)
+  assert.match(r.out, /^## Commit [0-9a-f]{10}/)
+  assert.match(r.out, /### Group `config` \[speculative\]/)
+  assert.doesNotMatch(r.out, /Misgraded necessity|Material under review/)
+  assert.ok(full.endsWith(r.out), 'the material is the same as in the full prompt')
+})
+
 // A hunk with two separate changes, so groups can split it by line.
 function splitRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))

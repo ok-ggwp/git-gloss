@@ -5,7 +5,7 @@ import { refLabel, sliceText } from '../selection.ts'
 import { loadGloss, type LoadedGloss } from '../loader.ts'
 import { NECESSITY_HELP, servesOf } from '../schema.ts'
 
-export const usage = 'review [<commit> | <range>]   print a review prompt for a commit or a branch (pipe it to an agent, e.g. `| claude -p`)'
+export const usage = 'review [<commit> | <range>] [--material]   print a review prompt for a commit or a branch (pipe it to an agent, e.g. `| claude -p`); --material prints only the gloss and code, for other review prompts'
 
 // A fence longer than any backtick run in the content, so a markdown file in
 // the diff can't close the block early.
@@ -80,12 +80,28 @@ function commitMaterial(sha: string, gloss: LoadedGloss | null): string[] {
 }
 
 export function run(argv: string[]): number {
-  const { positionals } = parseArgs({ args: argv, allowPositionals: true })
+  const { values, positionals } = parseArgs({ args: argv, allowPositionals: true, options: { material: { type: 'boolean' } } })
   const { shas, merges, range } = resolveCommits(positionals[0] ?? 'HEAD')
   const glosses = shas.map((sha) => loadGloss(sha))
   if (!range && !glosses[0]) {
     console.error(`${shas[0].slice(0, 10)} has no gloss to review`)
     return 1
+  }
+
+  const material: string[] = []
+  if (range) {
+    const list = (ids: string[]) => ids.map((sha) => `- ${sha.slice(0, 10)} ${q(commitSubject(sha))}`).join('\n')
+    material.push(`## Branch ${range}\n\n${list(shas)}` +
+      (merges.length
+        ? `\n\nMerge commits in the range are not included below. A merge can still carry conflict resolutions or edits of its own; check them with \`git show <sha>\`:\n\n${list(merges)}`
+        : ''))
+  }
+  shas.forEach((sha, i) => material.push(...commitMaterial(sha, glosses[i])))
+  // Just the material, for a reviewer that brings its own instructions. Its
+  // author text is quoted but not framed as untrusted; the caller must say so.
+  if (values.material) {
+    console.log(material.join('\n\n'))
+    return 0
   }
 
   const intro = range
@@ -110,15 +126,8 @@ Report, most important first:
 
 For each finding, cite the ${range ? 'commit and ' : ''}group id and explain briefly. If the annotation is accurate and the change is lean, say so.`,
     '---\n\n# Material under review',
+    ...material,
   ]
-  if (range) {
-    sections.push(`## Branch ${range}\n\n${shas.map((sha) => `- ${sha.slice(0, 10)} ${q(commitSubject(sha))}`).join('\n')}` +
-      (merges.length
-        ? `\n\nMerge commits in the range are not included below. A merge can still carry conflict resolutions or edits of its own; check them with \`git show <sha>\`:\n\n${merges.map((sha) => `- ${sha.slice(0, 10)} ${q(commitSubject(sha))}`).join('\n')}`
-        : ''))
-  }
-  shas.forEach((sha, i) => sections.push(...commitMaterial(sha, glosses[i])))
-
   console.log(sections.join('\n\n'))
   return 0
 }

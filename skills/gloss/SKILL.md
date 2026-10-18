@@ -35,7 +35,7 @@ To gloss a commit instead, use its revision (default `HEAD`) wherever these step
    Fix any validation errors it reports and rerun. Use `--force` only to replace your own earlier gloss.
 4. Run `git gloss show wip` (the summary) and `git gloss show wip --full` (every group's details) and check that they read well to someone who was not in the session. Then spot-check the code under a few groups with `git gloss show wip -g <group>`. Validation checks that every line is covered, not that each line is under the right intent.
 
-If you edit files after glossing, `show wip` warns that the working tree has changed: run `git gloss hunks wip` again and re-gloss with `--force`. If you amend or rebase a glossed commit, `show` reports the gloss as stale; re-gloss it with `--force`. For a review of the uncommitted work, the user can run `git gloss review wip` or `scripts/agent-review.sh wip`.
+If you edit files after glossing, `show wip` warns that the working tree has changed: run `git gloss hunks wip` again and re-gloss with `--force`. If you amend or rebase a glossed commit, `show` reports the gloss as stale; re-gloss it with `--force`. For a review of the uncommitted work, the user can run `git gloss review wip`, or `git gud review wip` to have agents review it in a sandbox.
 
 ## Writing intents
 
