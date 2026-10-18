@@ -1,0 +1,554 @@
+{
+  "gloss": 3,
+  "commit": "3082500d222e2b418794d8f7b1f9d31fd5e35559",
+  "created_at": "2026-10-18T16:47:53.716Z",
+  "annotation": {
+    "version": 1,
+    "task": "Make sure glosses are never lost: carry them onto commits made by squashes, cherry-picks and rebases (locally and on GitHub), and keep every replaced or dropped gloss recoverable",
+    "summary": "A line-level merge (merge.ts) builds a commit's gloss from the glosses of the commits its changes came from; `git gloss carry` exposes it. Hooks use it: post-rewrite combines glosses on squash/fixup and re-glosses rewrites that changed a diff; post-commit carries cherry-picks and default-message squash merges. `sync` (so every push) finds unglossed commits made by server-side squash or rebase merges and carries onto them. `git gloss versions` lists and restores every past gloss from the notes history, and glossed wip snapshots are archived so git gc keeps their diffs.",
+    "groups": [
+      {
+        "id": "merge",
+        "intent": "Build one gloss for a commit from several source glosses, line by line",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "nothing could move a gloss onto a squash, cherry-pick or changed rewrite; every other group depends on it",
+        "evidence": "test/carry.test.ts: squash of three commits, gaps, cherry-pick onto a moved base, repeated lines, renames, a stale source note",
+        "hunks": [
+          "h26"
+        ],
+        "notes": "Source hunks are resolved by content with matchHunks; a hunk whose changes differ from what was glossed is skipped and reported (git-gud's review found that reading ids by position credited the wrong file). Added lines go to the latest source with that text, removed lines to the earliest; a line several groups wrote takes its nearest uniquely matched neighbour's group. Source lines follow later renames, including header-only (binary) hunks. Clashing ids get the source's position appended. Unmatched lines are gaps, never guessed."
+      },
+      {
+        "id": "carry-cmd",
+        "intent": "`git gloss carry <source>... [--to <commit>] [--force]`",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "a missing gloss after a squash or cherry-pick could only be fixed by re-glossing by hand",
+        "hunks": [
+          "h14:1,3,6-76,111-117,122-123,148-158"
+        ],
+        "notes": "Replaces an unreadable note (the joined notes a local squash leaves) and an earlier carried gloss, as add does; a hand-written gloss needs --force. Names sources whose gloss can't be read and hunks skipped as stale, so their lines aren't reported as never glossed."
+      },
+      {
+        "id": "find-origins",
+        "intent": "Work out which glossed commits a commit's changes came from",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "the hooks and sync couldn't carry glosses without being told the sources, so cherry-picks and GitHub merges would stay unglossed",
+        "evidence": "Tests: cherry-pick with and without -x, a default-message squash merge, a squash with its own message (--squash), a server-style rebase (new committer, same author date)",
+        "hunks": [
+          "h27:2-118",
+          "h23",
+          "h25"
+        ],
+        "notes": "Three tiers, cheapest first: the commit message (cherry-pick -x trailer, git's 'Squashed commit of the following' list); a glossed commit with the same author, author date and patch-id; with --squash, the unmerged branch whose combined diff shares at least 80% of changed lines with the commit, measured against the larger of the two. git-gud's review showed the first version (branch glosses explain half the commit's lines) glossing an unrelated three-line commit; the symmetric measure rejects it (tested). diffBetween and the EMPTY_TREE export in git.ts serve it. Glossed commits not present locally are ignored."
+      },
+      {
+        "id": "hook-modes",
+        "intent": "carry --rewritten (post-rewrite) and --find (post-commit), quiet for hooks",
+        "necessity": "required",
+        "serves": "hooks",
+        "removal_impact": "the hooks would have no entry point to call",
+        "hunks": [
+          "h14:2,4-5,77-110,118-121,124-147"
+        ],
+        "notes": "--rewritten groups git's old->new list by new commit: several olds are always combined; a single old is re-carried only if the new commit has no gloss, an unreadable one, or one whose hunks no longer match. Amend reports during a rebase are ignored; the rebase's own report covers them (observed: git reports temporary amends for each squash step)."
+      },
+      {
+        "id": "hooks",
+        "intent": "Install post-rewrite; post-commit also carries cherry-picks and squash merges",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "local squashes would leave joined, unreadable notes and cherry-picks would lose their gloss unless the user ran carry by hand",
+        "evidence": "Hook tests: rebase with fixup and squash, amend changing the diff, message-only amend, cherry-pick; existing hook tests updated for the new post-rewrite hook",
+        "hunks": [
+          "h15",
+          "h16"
+        ],
+        "notes": "post-commit only starts git-gloss when a wip snapshot exists or the reflog says cherry-pick / default squash message, so ordinary commits stay cheap. Repos need `git gloss init --hooks` re-run to get them. init's closing note now explains server-side squashes instead of saying they drop notes."
+      },
+      {
+        "id": "sync-discovery",
+        "intent": "sync (and every push) carries glosses onto squash and rebase merges",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "GitHub's 'Squash and merge' and 'Rebase and merge' commits would have no gloss on main",
+        "evidence": "Test: a branch squashed and deleted on the server is glossed by the next sync and pushed; a second sync carries nothing",
+        "hunks": [
+          "h27:1,119-148",
+          "h17",
+          "h18",
+          "h19",
+          "h20",
+          "h21"
+        ],
+        "notes": "Checks unglossed non-merge commits on the remote's branches and those being pushed, newer than the oldest glossed commit. Each check is remembered in .git/gloss-checked with the number of glossed commits at the time, and repeated once more glosses exist, since a commit's origins may be glossed later (tested). Carried glosses are then pushed like any other."
+      },
+      {
+        "id": "versions",
+        "intent": "`git gloss versions <commit>|wip` lists, shows and restores past glosses",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "replaced glosses, dropped wip groups and sync-conflict losers would exist in the notes history but nothing would surface them",
+        "evidence": "Tests: two versions of a commit's gloss, restore; a sync conflict's losing gloss is listed",
+        "hunks": [
+          "h22"
+        ],
+        "notes": "Reads the notes ref's history (merges skipped; each side's commits carry their versions). A remove and an add of the same note in one notes commit is git reorganising the notes tree into fan-out directories, not a change, and is folded (git-gud's review found phantom 'removed' entries past ~256 notes; tested with 300). Restoring a wip version carries it line by line onto the current snapshot, or copies it as is with a warning if its snapshot is gone."
+      },
+      {
+        "id": "archive",
+        "intent": "Keep glossed wip snapshots reachable so git gc can't delete them",
+        "necessity": "supporting",
+        "serves": "versions",
+        "removal_impact": "after git gc, a dropped wip gloss could only be restored as a copy whose hunk references point at a snapshot that no longer exists, rather than carried line by line onto the current work",
+        "evidence": "The wip restore test runs reflog expire and gc --prune=now; it fails with archiving disabled",
+        "hunks": [
+          "h24:4,18-29",
+          "h11:1-2",
+          "h13"
+        ],
+        "notes": "A chain of empty commits in refs/worktree/gloss/archive, each with the previous entry and the snapshot as parents. Only snapshots that had a gloss are archived. It grows by one commit per replaced glossed snapshot and is never pruned automatically; the README says how to drop it."
+      },
+      {
+        "id": "identity-refactor",
+        "intent": "Move the placeholder commit identity into a helper",
+        "necessity": "mechanical",
+        "serves": "archive",
+        "removal_impact": "archive entries would fail where git has no identity configured, or the identity logic would be duplicated",
+        "hunks": [
+          "h24:1-3,5-17"
+        ]
+      },
+      {
+        "id": "shared-validation",
+        "intent": "One check for carried glosses, used by adopt and carry",
+        "necessity": "supporting",
+        "serves": "carry-cmd",
+        "removal_impact": "carry and adopt would keep separate copies of the rule, and both would accept a 'supporting serves task' error on any group, not just re-pointed ones",
+        "hunks": [
+          "h29",
+          "h11:3-4",
+          "h12",
+          "h6",
+          "h7"
+        ],
+        "notes": "Narrower than adopt's old filter: only groups whose notes carry the '(also served …)' marker are excused. The marker is now built by one helper (alsoServed) used by both carry paths, next to the check that reads it."
+      },
+      {
+        "id": "sources-field",
+        "intent": "Record a carried gloss's sources; a fresh gloss replaces it without --force",
+        "necessity": "supporting",
+        "serves": "carry-cmd",
+        "removal_impact": "a carried gloss couldn't be told from a hand-written one, and re-glossing it would need --force",
+        "hunks": [
+          "h28",
+          "h10"
+        ]
+      },
+      {
+        "id": "cli",
+        "intent": "Register carry and versions",
+        "necessity": "mechanical",
+        "serves": [
+          "carry-cmd",
+          "versions"
+        ],
+        "removal_impact": "the commands wouldn't exist",
+        "hunks": [
+          "h8",
+          "h9"
+        ]
+      },
+      {
+        "id": "tests",
+        "intent": "Tests for merging, carry, hooks, sync discovery, versions and the archive",
+        "necessity": "supporting",
+        "serves": [
+          "merge",
+          "carry-cmd",
+          "find-origins",
+          "hooks",
+          "sync-discovery",
+          "versions",
+          "archive"
+        ],
+        "removal_impact": "none of the loss paths found at the start would have a guard",
+        "hunks": [
+          "h30",
+          "h31",
+          "h32"
+        ],
+        "notes": "Two existing tests changed: the post-commit test now expects the archive ref to remain, and the hooksPath test expects post-rewrite. The stale-source, repeated-lines and gc tests were checked to fail without their fix."
+      },
+      {
+        "id": "docs",
+        "intent": "README section on how glosses follow history; skill points agents at carry",
+        "necessity": "supporting",
+        "serves": [
+          "hooks",
+          "sync-discovery",
+          "versions"
+        ],
+        "removal_impact": "users wouldn't know which history operations keep glosses, how to recover one, or that init --hooks must be re-run; agents would re-gloss by hand",
+        "hunks": [
+          "h1",
+          "h2",
+          "h3",
+          "h4",
+          "h5"
+        ],
+        "notes": "The table says which operations are covered and how: local squashes other than rebase or default-message merges, and server merges, are carried by sync or push only if you have the original commits."
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Attribute squashed lines with git blame over the branch",
+        "rejected_because": "blame misses removed lines and needs the branch shape; matching diff lines also covers cherry-picks and rebases"
+      },
+      {
+        "option": "Set notes.rewriteMode=ignore and do all rewriting in the hook",
+        "rejected_because": "the built-in copy is right for the common 1:1 case and keeps working when git-gloss isn't on PATH"
+      },
+      {
+        "option": "Fetch GitHub's refs/pull/*/head to find squashed branches",
+        "rejected_because": "it fetches every PR; the author's local commits and remote branches are enough in the usual case"
+      },
+      {
+        "option": "Keep old snapshots alive with a reflog",
+        "rejected_because": "deleting the ref when work is committed deletes its reflog too"
+      }
+    ],
+    "risks": [
+      "Squash detection takes a branch whose combined diff shares 80% of changed lines with a commit; a commit that nearly duplicates an unmerged glossed branch would be glossed from it (the note records its sources)",
+      "Server-side squashes are carried only by someone who has the original commits locally, usually the author",
+      "A squash merge that resolved conflicts or changed much of the code may fall below 80% and need `carry` by hand",
+      "Existing repos keep their old hooks until `git gloss init --hooks` is re-run",
+      "sync's first run checks the unglossed commits on the remote's branches newer than the oldest glossed commit, which can take a while in a large repo",
+      "The archive keeps glossed wip snapshots' files, including anything later removed from them such as a pasted secret, until refs/worktree/gloss/archive is deleted"
+    ]
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 14,
+      "oldLines": 6,
+      "newStart": 14,
+      "newLines": 9,
+      "hash": "7b44cb394ffb89bc"
+    },
+    {
+      "id": "h2",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 26,
+      "oldLines": 6,
+      "newStart": 29,
+      "newLines": 7,
+      "hash": "9f3ff95fa1b54b2d"
+    },
+    {
+      "id": "h3",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 77,
+      "oldLines": 6,
+      "newStart": 81,
+      "newLines": 23,
+      "hash": "45dc92f412b92301"
+    },
+    {
+      "id": "h4",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 93,
+      "oldLines": 7,
+      "newStart": 114,
+      "newLines": 7,
+      "hash": "240ef74532e21f46"
+    },
+    {
+      "id": "h5",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 35,
+      "oldLines": 7,
+      "newStart": 35,
+      "newLines": 7,
+      "hash": "b40a5a43ffd44a60"
+    },
+    {
+      "id": "h6",
+      "file": "src/carry.ts",
+      "oldFile": "src/carry.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 7,
+      "hash": "61a68d46ab13d2e8"
+    },
+    {
+      "id": "h7",
+      "file": "src/carry.ts",
+      "oldFile": "src/carry.ts",
+      "oldStart": 59,
+      "oldLines": 7,
+      "newStart": 60,
+      "newLines": 7,
+      "hash": "f0aabfad21f7f89d"
+    },
+    {
+      "id": "h8",
+      "file": "src/cli.ts",
+      "oldFile": "src/cli.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 7,
+      "hash": "4600680a1c4d8948"
+    },
+    {
+      "id": "h9",
+      "file": "src/cli.ts",
+      "oldFile": "src/cli.ts",
+      "oldStart": 8,
+      "oldLines": 10,
+      "newStart": 9,
+      "newLines": 11,
+      "hash": "b7267a6c28608497"
+    },
+    {
+      "id": "h10",
+      "file": "src/commands/add.ts",
+      "oldFile": "src/commands/add.ts",
+      "oldStart": 59,
+      "oldLines": 10,
+      "newStart": 59,
+      "newLines": 11,
+      "hash": "8650e398a6c49fcc"
+    },
+    {
+      "id": "h11",
+      "file": "src/commands/adopt.ts",
+      "oldFile": "src/commands/adopt.ts",
+      "oldStart": 1,
+      "oldLines": 11,
+      "newStart": 1,
+      "newLines": 11,
+      "hash": "0e972e3e3e6ab4d8"
+    },
+    {
+      "id": "h12",
+      "file": "src/commands/adopt.ts",
+      "oldFile": "src/commands/adopt.ts",
+      "oldStart": 60,
+      "oldLines": 10,
+      "newStart": 60,
+      "newLines": 7,
+      "hash": "fb477b68e6ae99c1"
+    },
+    {
+      "id": "h13",
+      "file": "src/commands/adopt.ts",
+      "oldFile": "src/commands/adopt.ts",
+      "oldStart": 84,
+      "oldLines": 6,
+      "newStart": 81,
+      "newLines": 7,
+      "hash": "d3c0f959b5598146"
+    },
+    {
+      "id": "h14",
+      "file": "src/commands/carry.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 158,
+      "hash": "9283675827398263"
+    },
+    {
+      "id": "h15",
+      "file": "src/commands/init.ts",
+      "oldFile": "src/commands/init.ts",
+      "oldStart": 29,
+      "oldLines": 12,
+      "newStart": 29,
+      "newLines": 30,
+      "hash": "31d663954c0ba764"
+    },
+    {
+      "id": "h16",
+      "file": "src/commands/init.ts",
+      "oldFile": "src/commands/init.ts",
+      "oldStart": 104,
+      "oldLines": 10,
+      "newStart": 122,
+      "newLines": 15,
+      "hash": "c8a326ed1f218a07"
+    },
+    {
+      "id": "h17",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 8,
+      "hash": "9b150ef4c93c9311"
+    },
+    {
+      "id": "h18",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 54,
+      "oldLines": 7,
+      "newStart": 56,
+      "newLines": 7,
+      "hash": "939d95ffd6b938a5"
+    },
+    {
+      "id": "h19",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 107,
+      "oldLines": 6,
+      "newStart": 109,
+      "newLines": 12,
+      "hash": "75421ddae51d5223"
+    },
+    {
+      "id": "h20",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 153,
+      "oldLines": 8,
+      "newStart": 161,
+      "newLines": 9,
+      "hash": "ef415a14098e1afd"
+    },
+    {
+      "id": "h21",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 164,
+      "oldLines": 6,
+      "newStart": 173,
+      "newLines": 7,
+      "hash": "5e91d803770cc37f"
+    },
+    {
+      "id": "h22",
+      "file": "src/commands/versions.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 123,
+      "hash": "4a3874d88d9d17ca"
+    },
+    {
+      "id": "h23",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 14,
+      "oldLines": 7,
+      "newStart": 14,
+      "newLines": 7,
+      "hash": "b6209359b1f4fd91"
+    },
+    {
+      "id": "h24",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 102,
+      "oldLines": 15,
+      "newStart": 102,
+      "newLines": 34,
+      "hash": "51e608e458e6c803"
+    },
+    {
+      "id": "h25",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 171,
+      "oldLines": 14,
+      "newStart": 190,
+      "newLines": 18,
+      "hash": "0982879da66c1dd1"
+    },
+    {
+      "id": "h26",
+      "file": "src/merge.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 194,
+      "hash": "e28db28fac3debe0"
+    },
+    {
+      "id": "h27",
+      "file": "src/origins.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 148,
+      "hash": "0f53eae4c944224d"
+    },
+    {
+      "id": "h28",
+      "file": "src/schema.ts",
+      "oldFile": "src/schema.ts",
+      "oldStart": 110,
+      "oldLines": 4,
+      "newStart": 110,
+      "newLines": 8,
+      "hash": "6a6b26097657c5e8"
+    },
+    {
+      "id": "h29",
+      "file": "src/validate.ts",
+      "oldFile": "src/validate.ts",
+      "oldStart": 62,
+      "oldLines": 3,
+      "newStart": 62,
+      "newLines": 20,
+      "hash": "ff00d0c007e45ade"
+    },
+    {
+      "id": "h30",
+      "file": "test/carry.test.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 476,
+      "hash": "c8ff87bdec425fde"
+    },
+    {
+      "id": "h31",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 1082,
+      "oldLines": 7,
+      "newStart": 1082,
+      "newLines": 8,
+      "hash": "b87e84b65c02798f"
+    },
+    {
+      "id": "h32",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 1240,
+      "oldLines": 7,
+      "newStart": 1241,
+      "newLines": 7,
+      "hash": "38bf79631b98b015"
+    }
+  ]
+}
