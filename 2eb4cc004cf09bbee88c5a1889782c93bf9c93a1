@@ -1,0 +1,376 @@
+{
+  "gloss": 3,
+  "commit": "2eb4cc004cf09bbee88c5a1889782c93bf9c93a1",
+  "created_at": "2026-10-17T09:49:02.815Z",
+  "annotation": {
+    "version": 1,
+    "task": "Let `serves` name several groups: tests and shared helpers support more than one, and three reviews flagged the single-target limit",
+    "summary": "serves accepts a string or a list. The CLI reads it through servesOf() (the HTML client gets a list already normalised by data.ts), validation walks lists for unknown targets and cycles, and notes that use lists are written as format 3.",
+    "groups": [
+      {
+        "id": "schema",
+        "intent": "Accept a list in serves; read every form through servesOf()",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Tests and shared helpers can still only name one of the groups they support",
+        "hunks": [
+          "h17",
+          "h18",
+          "h19:1-3"
+        ]
+      },
+      {
+        "id": "validation",
+        "intent": "Check each target, reject task mixed with groups, find cycles through lists",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A list could name unknown groups or hide a cycle that the old single-path walk missed",
+        "evidence": "test 'serves can list several groups; cycles through lists are rejected'",
+        "hunks": [
+          "h21",
+          "h22"
+        ],
+        "notes": "Mixed grades inside: per-target checks and cycle-walking through lists are required; rejecting task mixed with groups is defensive; rejecting duplicate targets is incidental"
+      },
+      {
+        "id": "why-chain",
+        "intent": "Make `why` walk every serves path, nearest first",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "why would silently show no chain for a group whose serves is a list (byId.get(array) is undefined)",
+        "evidence": "same test: tests → [fix, tail]",
+        "hunks": [
+          "h7",
+          "h8"
+        ]
+      },
+      {
+        "id": "views",
+        "intent": "List all targets in show, review and the HTML page",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Views would print the array oddly or link only one target",
+        "evidence": "same test checks show, review and the HTML data; the HTML links were not checked in a browser",
+        "hunks": [
+          "h5",
+          "h6",
+          "h15",
+          "h16",
+          "h11",
+          "h12",
+          "h13",
+          "h14"
+        ]
+      },
+      {
+        "id": "note-format",
+        "intent": "Write the lowest note format that holds the gloss: 1, 2 or 3",
+        "necessity": "defensive",
+        "serves": "task",
+        "removal_impact": "Versions from step 5 would call a list-using note malformed and tell the user to --force over it",
+        "evidence": "same test (format 3); 'notes without ranges stay format 1'",
+        "hunks": [
+          "h19:4-13",
+          "h20",
+          "h9",
+          "h10",
+          "h3",
+          "h4"
+        ],
+        "notes": "Also moves the format-2 rule from add.ts into noteFormat() (incidental). Bug found by review, fixed in the next commit: it checks Array.isArray, so a one-item list such as [\"task\"] writes format 3 and older versions refuse a note they could read"
+      },
+      {
+        "id": "docs",
+        "intent": "Tell agents to list every group that tests or helpers support",
+        "necessity": "supporting",
+        "serves": [
+          "schema",
+          "validation"
+        ],
+        "removal_impact": "Agents would keep naming one group for tests, as every earlier gloss did",
+        "hunks": [
+          "h1",
+          "h2"
+        ]
+      },
+      {
+        "id": "tests",
+        "intent": "Tests for lists, mixed task targets, cycles, why chains, views, format",
+        "necessity": "supporting",
+        "serves": [
+          "schema",
+          "validation",
+          "why-chain",
+          "views",
+          "note-format"
+        ],
+        "removal_impact": "None of it would be verified",
+        "hunks": [
+          "h23",
+          "h24"
+        ]
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Always store serves as a list",
+        "rejected_because": "Every existing gloss uses a string; accepting both keeps them valid and keeps them at format 1"
+      },
+      {
+        "option": "A separate `verifies` field for tests",
+        "rejected_because": "Tests are one case of supporting several groups; a list in serves covers helpers too"
+      }
+    ],
+    "risks": [
+      "A group serving several groups shows up under each in why's chain, but the summary and HTML don't show the reverse (what serves this group)",
+      "Notes written by this version that use lists can't be read by any earlier version (they report a newer note)",
+      "Found by review, fixed in the next commit: why --json copies serves as written, so its shape changed from string to string-or-list for scripts reading it"
+    ],
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-opus-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 28,
+      "oldLines": 7,
+      "newStart": 28,
+      "newLines": 7,
+      "hash": "a8aac937f5057a6d"
+    },
+    {
+      "id": "h2",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 36,
+      "oldLines": 7,
+      "newStart": 36,
+      "newLines": 7,
+      "hash": "60f8b7e7199ab366"
+    },
+    {
+      "id": "h3",
+      "file": "src/commands/add.ts",
+      "oldFile": "src/commands/add.ts",
+      "oldStart": 3,
+      "oldLines": 7,
+      "newStart": 3,
+      "newLines": 7,
+      "hash": "6c50a73075eb02ab"
+    },
+    {
+      "id": "h4",
+      "file": "src/commands/add.ts",
+      "oldFile": "src/commands/add.ts",
+      "oldStart": 65,
+      "oldLines": 7,
+      "newStart": 65,
+      "newLines": 7,
+      "hash": "6165d955668e4586"
+    },
+    {
+      "id": "h5",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 3,
+      "oldLines": 7,
+      "newStart": 3,
+      "newLines": 7,
+      "hash": "e9c5d02dce5eff18"
+    },
+    {
+      "id": "h6",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 36,
+      "oldLines": 7,
+      "newStart": 36,
+      "newLines": 7,
+      "hash": "cfb0a8d50eda520e"
+    },
+    {
+      "id": "h7",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 1,
+      "oldLines": 7,
+      "newStart": 1,
+      "newLines": 7,
+      "hash": "c087e5dadd33661a"
+    },
+    {
+      "id": "h8",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 41,
+      "oldLines": 14,
+      "newStart": 41,
+      "newLines": 21,
+      "hash": "6241efa12fd5b288"
+    },
+    {
+      "id": "h9",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 1,
+      "oldLines": 5,
+      "newStart": 1,
+      "newLines": 5,
+      "hash": "bd1b9691f884a43b"
+    },
+    {
+      "id": "h10",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 78,
+      "oldLines": 11,
+      "newStart": 78,
+      "newLines": 11,
+      "hash": "0ec2ecaef5a5bddc"
+    },
+    {
+      "id": "h11",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 87,
+      "oldLines": 7,
+      "newStart": 87,
+      "newLines": 11,
+      "hash": "e1ec277dd79327f8"
+    },
+    {
+      "id": "h12",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 2,
+      "oldLines": 7,
+      "newStart": 2,
+      "newLines": 7,
+      "hash": "d090ea97317f4454"
+    },
+    {
+      "id": "h13",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 27,
+      "oldLines": 7,
+      "newStart": 27,
+      "newLines": 7,
+      "hash": "13aa7221b25c71e4"
+    },
+    {
+      "id": "h14",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 131,
+      "oldLines": 7,
+      "newStart": 131,
+      "newLines": 7,
+      "hash": "b29f48412e8d3742"
+    },
+    {
+      "id": "h15",
+      "file": "src/render.ts",
+      "oldFile": "src/render.ts",
+      "oldStart": 3,
+      "oldLines": 7,
+      "newStart": 3,
+      "newLines": 7,
+      "hash": "b45bcb3dff146278"
+    },
+    {
+      "id": "h16",
+      "file": "src/render.ts",
+      "oldFile": "src/render.ts",
+      "oldStart": 76,
+      "oldLines": 7,
+      "newStart": 76,
+      "newLines": 7,
+      "hash": "342947c54cbe46fe"
+    },
+    {
+      "id": "h17",
+      "file": "src/schema.ts",
+      "oldFile": "src/schema.ts",
+      "oldStart": 16,
+      "oldLines": 7,
+      "newStart": 16,
+      "newLines": 7,
+      "hash": "42ffe88a1709b09e"
+    },
+    {
+      "id": "h18",
+      "file": "src/schema.ts",
+      "oldFile": "src/schema.ts",
+      "oldStart": 31,
+      "oldLines": 8,
+      "newStart": 31,
+      "newLines": 8,
+      "hash": "c89dcec52d2d3902"
+    },
+    {
+      "id": "h19",
+      "file": "src/schema.ts",
+      "oldFile": "src/schema.ts",
+      "oldStart": 68,
+      "oldLines": 6,
+      "newStart": 68,
+      "newLines": 19,
+      "hash": "04b28503af6bb7dc"
+    },
+    {
+      "id": "h20",
+      "file": "src/schema.ts",
+      "oldFile": "src/schema.ts",
+      "oldStart": 86,
+      "oldLines": 11,
+      "newStart": 99,
+      "newLines": 10,
+      "hash": "79003247c4a152f4"
+    },
+    {
+      "id": "h21",
+      "file": "src/validate.ts",
+      "oldFile": "src/validate.ts",
+      "oldStart": 1,
+      "oldLines": 4,
+      "newStart": 1,
+      "newLines": 4,
+      "hash": "b09df9216b82ec60"
+    },
+    {
+      "id": "h22",
+      "file": "src/validate.ts",
+      "oldFile": "src/validate.ts",
+      "oldStart": 30,
+      "oldLines": 21,
+      "newStart": 30,
+      "newLines": 32,
+      "hash": "bc63605be57c13a2"
+    },
+    {
+      "id": "h23",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 219,
+      "oldLines": 7,
+      "newStart": 219,
+      "newLines": 7,
+      "hash": "6bacf2b16378ffc9"
+    },
+    {
+      "id": "h24",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 571,
+      "oldLines": 3,
+      "newStart": 571,
+      "newLines": 27,
+      "hash": "a640fe67e83c39aa"
+    }
+  ]
+}
