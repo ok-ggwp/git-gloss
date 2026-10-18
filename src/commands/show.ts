@@ -4,6 +4,7 @@ import type { Hunk } from '../diff.ts'
 import { refLabel, sliceStats, sliceText } from '../selection.ts'
 import { loadGloss, type LoadedGloss, type LoadedGroup } from '../loader.ts'
 import { NECESSITY, type Necessity } from '../schema.ts'
+import { current, reviewStatus, statusPhrase, verdict, type StageStatus } from '../reviews.ts'
 import {
   colorDiff, field, groupHeader, hunkLabel, necessityWord, noteFooter, page, style, termWidth, wrap,
 } from '../render.ts'
@@ -86,8 +87,15 @@ export function run(argv: string[]): number {
   const glosses = shas.map((sha) => loadGloss(sha))
   const glossed = glosses.filter(Boolean).length
   const stale = glosses.filter((g) => g?.stale).length
+  // How many glossed commits had their gloss checked: an honesty review that
+  // saw this code and this gloss.
+  const honesty = shas.map((sha, i) => (glosses[i] ? reviewStatus(sha).find((r) => r.stage === 'honesty' && current(r)) : undefined))
+  const vetted = honesty.filter(Boolean).length
+  const flagged = honesty.filter((r) => r && verdict(r) === 'issues').length
   const out: string[] = [
     style('bold', `${range}: ${shas.length} commit${shas.length === 1 ? '' : 's'}, ${glossed} glossed`) +
+      (glossed ? style(vetted === glossed ? 'green' : 'yellow', `, ${vetted} honesty-reviewed`) : '') +
+      (flagged ? style('yellow', ` (${flagged} with issues)`) : '') +
       (stale ? style('red', ` (${stale} stale)`) : '') +
       (merges.length ? style('dim', `  (${merges.length} merge${merges.length === 1 ? '' : 's'} not shown)`) : ''),
   ]
@@ -109,6 +117,15 @@ export function run(argv: string[]): number {
 
 type ShowOptions = { group?: string[]; full?: boolean; diff?: boolean }
 
+// One line on whether the commit as it is now was reviewed, per stage.
+function reviewsLine(sha: string): string {
+  const statuses = reviewStatus(sha)
+  if (!statuses.length) return style('dim', 'reviews: none recorded')
+  const color = (s: StageStatus) => (!current(s) || verdict(s) === 'issues' ? 'yellow' : verdict(s) === 'clean' ? 'green' : 'dim')
+  return `reviews: ${statuses.map((s) => style(color(s), statusPhrase(s))).join(style('dim', ' · '))}` +
+    style('dim', `   (findings: git gloss reviews ${sha.slice(0, 7)})`)
+}
+
 // One commit's view, or null if no group matches -g/--only. `hints` adds the
 // footer on how to expand, which a range prints once instead.
 function renderCommit(sha: string, gloss: LoadedGloss, values: ShowOptions, only: Necessity[] | undefined, hints: boolean): string[] | null {
@@ -119,6 +136,7 @@ function renderCommit(sha: string, gloss: LoadedGloss, values: ShowOptions, only
   out.push(...field('task:', a.task, 0))
   if (a.summary) out.push(...field('summary:', a.summary, 0))
   for (const w of gloss.warnings) out.push(...field('⚠', w, 0).map((l) => style('red', l)))
+  out.push(reviewsLine(sha))
 
   const groups = gloss.groups
     .filter((g) => !only || only.includes(g.group.necessity))

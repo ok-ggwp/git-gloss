@@ -8,6 +8,7 @@ import { mergeGlosses, type Source } from '../merge.ts'
 import { noteFormat } from '../schema.ts'
 import { refLabel } from '../selection.ts'
 import { carriedErrors } from '../validate.ts'
+import { copyReviews } from '../reviews.ts'
 
 export const usage = 'carry <source>... [--to <commit>] [--force] | carry --find [--squash] [<commit>...]   gloss a commit from the glosses of the commits its changes came from (a squash, cherry-pick or rebase); --find works out which commits those are'
 
@@ -63,6 +64,8 @@ export function carry(sourceShas: string[], target: string): CarryResult {
     hunks: current.map(location),
     sources: merged.used,
   })
+  // The sources' reviews come along; their keys decide what of this commit they cover.
+  copyReviews(merged.used, target)
   const lines = [`carried ${merged.annotation.groups.length} group${merged.annotation.groups.length === 1 ? '' : 's'} from ` +
     `${merged.used.map((s) => s.slice(0, 7)).join(', ')} onto ${short}`]
   if (merged.dropped.length) lines.push(`  groups with no change left in ${short}: ${merged.dropped.join(', ')}`)

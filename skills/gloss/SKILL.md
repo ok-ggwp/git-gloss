@@ -100,3 +100,7 @@ Where you can, set `evidence` to a test that exercises the change or the line of
 You don't need to look up intent before ordinary edits. Use `git gloss why` when you are genuinely unsure why existing code is the way it is, especially before removing or rewriting something that looks unnecessary, defensive or wrong. That is when an unexplained check gets deleted and a fixed bug comes back.
 
 Ask about the block you're changing, not each line: `git gloss why <file>:<start>-<end> --json`. You get one explanation per commit that last changed those lines: the group's intent, `removal_impact`, `notes`, and the commit's `risks` and rejected `alternatives`. Check the alternatives before proposing an approach someone already tried and turned down. If the latest change to the lines was only `mechanical` (a rename, a reformat), `why` looks back past it to the real explanation; `--history` shows every change.
+
+## Reading someone else's branch
+
+When the user asks you to help review a branch or pull request, start from its glosses: `git fetch` (or `git gloss sync`), then `git gloss show <base>..<branch>`. You get each commit's task, groups and grades, and whether its gloss was honesty-reviewed. Lead with what the glosses grade `speculative`, `incidental` or `defensive`, and with commits that have no gloss or whose review found issues. `git gloss reviews <base>..<branch>` prints the recorded findings. A review vouches only for the gloss and code it saw: "changed since review" means it no longer does.

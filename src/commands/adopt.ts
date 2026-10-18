@@ -6,6 +6,7 @@ import { location, parseDiff } from '../diff.ts'
 import { noteFormat } from '../schema.ts'
 import { refLabel } from '../selection.ts'
 import { carriedErrors } from '../validate.ts'
+import { copyReviews } from '../reviews.ts'
 
 export const usage = 'adopt [<commit>] [--force]   move the gloss of uncommitted work (wip) onto a commit made from it'
 
@@ -70,6 +71,8 @@ export function run(argv: string[]): number {
     annotation,
     hunks: current.map(location),
   })
+  // Reviews of the uncommitted work cover the parts of it this commit holds.
+  copyReviews([wip], sha)
   // Once nothing uncommitted is left, the snapshot has served its purpose.
   const head = gitTry(['rev-parse', '--verify', '--quiet', 'HEAD'])?.trim()
   const done = head === sha && git(['status', '--porcelain']).trim() === ''

@@ -3,6 +3,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'n
 import { join, resolve, sep } from 'node:path'
 import { parseArgs } from 'node:util'
 import { git, gitTry, NOTES_REF, REMOTE_NOTES_REF, WIP_REF } from '../git.ts'
+import { REVIEWS_REF } from '../reviews.ts'
 
 export const usage = 'init [--hooks]   set up glosses to follow amends/rebases and fetch from origin; --hooks: sync on push, adopt wip glosses on commit'
 
@@ -90,23 +91,29 @@ function installHook(name: string, body: string, done: string, manual: string[])
 export function run(argv: string[] = []): number {
   const { values } = parseArgs({ args: argv, options: { hooks: { type: 'boolean' } } })
 
+  // Reviews follow commits too; a squash joins their lines, which is what they need.
   const rewriteRefs = gitTry(['config', '--get-all', 'notes.rewriteRef'])?.split('\n') ?? []
-  if (!rewriteRefs.includes(NOTES_REF)) git(['config', '--add', 'notes.rewriteRef', NOTES_REF])
+  for (const ref of [NOTES_REF, REVIEWS_REF]) if (!rewriteRefs.includes(ref)) git(['config', '--add', 'notes.rewriteRef', ref])
   console.log(`✓ glosses follow commits through amend and rebase (notes.rewriteRef=${NOTES_REF})`)
   console.log('  if the commit\'s diff changes, `show` and `review` will flag the gloss as stale')
 
   if (gitTry(['remote', 'get-url', 'origin'])) {
     // Fetch into a separate ref and merge explicitly. Fetching straight into
     // NOTES_REF with a forced refspec would overwrite unpushed local glosses.
-    const refspec = `+${NOTES_REF}:${REMOTE_NOTES_REF}`
-    // Earlier versions of init added exactly that destructive refspec.
+    // One glob for the glosses and their reviews: a glob doesn't make
+    // `git fetch` fail while origin has none yet, as a plain refspec does.
+    const refspec = `+${NOTES_REF}*:${REMOTE_NOTES_REF}*`
+    const fetches = () => gitTry(['config', '--get-all', 'remote.origin.fetch'])?.split('\n') ?? []
+    // Earlier versions of init added exactly that destructive refspec, and
+    // later ones a plain one that the glob replaces.
     const legacy = `+${NOTES_REF}:${NOTES_REF}`
-    if (gitTry(['config', '--get-all', 'remote.origin.fetch'])?.split('\n').includes(legacy)) {
+    if (fetches().includes(legacy)) {
       git(['config', '--unset-all', '--fixed-value', 'remote.origin.fetch', legacy])
       console.log(`✓ removed the old refspec ${legacy}, which overwrote local glosses on fetch`)
     }
-    const fetches = gitTry(['config', '--get-all', 'remote.origin.fetch'])?.split('\n') ?? []
-    if (!fetches.includes(refspec)) git(['config', '--add', 'remote.origin.fetch', refspec])
+    const plain = `+${NOTES_REF}:${REMOTE_NOTES_REF}`
+    if (fetches().includes(plain)) git(['config', '--unset-all', '--fixed-value', 'remote.origin.fetch', plain])
+    if (!fetches().includes(refspec)) git(['config', '--add', 'remote.origin.fetch', refspec])
     console.log(`✓ \`git fetch\` stores origin's glosses in ${REMOTE_NOTES_REF}`)
     if (!values.hooks) console.log('  share glosses with: git gloss sync   (or run init --hooks to do it on every push)')
   } else {

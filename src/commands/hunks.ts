@@ -1,6 +1,7 @@
 import { parseArgs } from 'node:util'
 import { commitDiff, dropWipNote, readNote, resolveCommit, snapshotWorkingTree, WIP_NOTES_REF, writeNote } from '../git.ts'
 import { carryGloss } from '../carry.ts'
+import { copyReviews } from '../reviews.ts'
 import { location, parseDiff } from '../diff.ts'
 import { noteFormat } from '../schema.ts'
 import { colorDiff, hunkLabel, page, style } from '../render.ts'
@@ -41,6 +42,9 @@ export function run(argv: string[]): number {
       // Groups whose changes were edited or committed don't carry over; name
       // them, since their text is discarded with the old snapshot's gloss.
       if (carried.dropped.length) console.error(`note: not kept (their changes were edited or committed): ${carried.dropped.join(', ')}`)
+      // Reviews of the old snapshot come along; their fingerprints say what
+      // of the new one they still cover.
+      copyReviews([snap.replaced], sha)
       dropWipNote(snap.replaced)
     }
   }

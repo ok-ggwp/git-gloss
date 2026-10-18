@@ -188,11 +188,31 @@
     var allGroups = []
     data.commits.forEach(function (c) { allGroups = allGroups.concat(c.groups) })
 
+    // Whether each commit as it is now was reviewed, per stage; each stage's
+    // reports open on demand. Findings are shown as text.
+    function reviewsBlock(c, target) {
+      var box = el('div', 'reviews')
+      if (!c.reviews.length) { add(target, add(box, el('span', 'review-none', 'No reviews recorded'))); return }
+      c.reviews.forEach(function (r) {
+        var d = el('details', 'review')
+        add(d, add(el('summary'), el('span', r.state === 'seen' && r.verdict !== 'issues' ? (r.verdict === 'clean' ? 'review-ok' : 'review-none') : 'stale', r.phrase)))
+        r.entries.forEach(function (e) {
+          add(d, el('div', 'note', r.stage + ' by ' + e.agent + (e.model ? ':' + e.model : '') + (e.mode ? ' (' + e.mode + ')' : '') +
+            ', ' + e.at.slice(0, 16).replace('T', ' ') + ', of ' + e.target), el('pre', 'findings', e.findings))
+        })
+        add(box, d)
+      })
+      add(target, box)
+    }
+
     // Header: the commit itself, or the range and its commits.
     if (multi) {
       var glossed = data.commits.filter(function (c) { return c.glossed }).length
+      var vetted = data.commits.filter(function (c) {
+        return c.glossed && c.reviews.some(function (r) { return r.stage === 'honesty' && r.state === 'seen' })
+      }).length
       add(main, add(el('div', 'commit'), el('span', 'sha', data.range),
-        el('span', null, plural(data.commits.length, 'commit') + ', ' + glossed + ' glossed')))
+        el('span', null, plural(data.commits.length, 'commit') + ', ' + glossed + ' glossed' + (glossed ? ', ' + vetted + ' honesty-reviewed' : ''))))
       add(main, el('h1', null, 'Branch ' + data.range))
       var list = el('ol', 'commit-list')
       data.commits.forEach(function (c) {
@@ -201,6 +221,13 @@
         var li = add(el('li'), a)
         if (!c.glossed) add(li, el('span', 'stale', 'no gloss'))
         else if (c.warnings.length) add(li, el('span', 'stale', 'stale gloss'))
+        if (c.glossed) {
+          var honesty = c.reviews.filter(function (r) { return r.stage === 'honesty' })[0]
+          add(li, !honesty ? el('span', 'stale', 'not reviewed')
+            : honesty.state !== 'seen' ? el('span', 'stale', 'changed since review')
+            : honesty.verdict === 'issues' ? el('span', 'stale', 'honesty: issues found')
+            : el('span', 'review-ok', honesty.verdict === 'clean' ? 'honesty: no issues' : 'honesty-reviewed'))
+        }
         list.appendChild(li)
       })
       data.merges.forEach(function (m) {
@@ -214,6 +241,7 @@
       statement(main, 'Task', only.task)
       statement(main, 'Summary', only.summary)
       only.warnings.forEach(function (w) { add(main, el('div', 'warning', '⚠ ' + w)) })
+      reviewsBlock(only, main)
     }
 
     // Necessity overview across every commit: bar weighted by changed lines,
@@ -266,6 +294,7 @@
         statement(target, 'Task', c.task)
         statement(target, 'Summary', c.summary)
         c.warnings.forEach(function (w) { add(target, el('div', 'warning', '⚠ ' + w)) })
+        reviewsBlock(c, target)
         add(main, target)
       }
       var tocList = commitBody(c, target)

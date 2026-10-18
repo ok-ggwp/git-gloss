@@ -124,7 +124,9 @@ Report, most important first:
 5. **Missing risks**: risks the author did not list.${range ? `
 6. **Across the branch**: later commits that undo, fix or rework earlier ones; the same intent spread over several commits; unglossed commits; whether the branch as a whole is lean for what it sets out to do.` : ''}
 
-For each finding, cite the ${range ? 'commit and ' : ''}group id and explain briefly. If the annotation is accurate and the change is lean, say so.`,
+For each finding, cite the ${range ? 'commit and ' : ''}group id and explain briefly. If the annotation is accurate and the change is lean, say so.
+
+End your report with one line on its own: \`VERDICT: CLEAN\` if you found no mismatches, misgrading or missing risks worth acting on, otherwise \`VERDICT: ISSUES\`. Tools record this line with the review.`,
     '---\n\n# Material under review',
     ...material,
   ]

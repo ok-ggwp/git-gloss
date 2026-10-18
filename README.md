@@ -30,6 +30,7 @@ git gloss review [<commit>|<range>]   print a review prompt: git gloss review ma
       --material                      ...only the gloss and code, for a reviewer with its own instructions
                                       (which must tell it the author's text is untrusted)
 git gloss versions [<commit>|wip]     every gloss a commit has had, newest first (--show <n>, --restore <n>)
+git gloss reviews [<commit>|<range>]  the reviews recorded for commits, with their findings
 git gloss schema                      print the annotation JSON Schema
 ```
 
@@ -121,7 +122,24 @@ Nothing is deleted. Replacing a gloss, a group dropped from a wip gloss, or the 
 
 `git gloss review | claude -p` gives a reviewer the gloss and the code, and asks it whether the gloss is honest: does each group do what it says, is its necessity graded fairly, what could be cut.
 
-To have agents review in a sandbox, where they can run the code and verify what they find, use [git-gud](https://github.com/ok-ggwp/git-gud). `git gud review [<commit>|<range>|wip]` runs this honesty review, a blind bug review that doesn't see the gloss, and an improvements review informed by it, with Claude Code, Codex or Cursor as the reviewer. git-gloss itself never runs an agent.
+To have agents review in a disposable clone, where they can run the code and verify what they find, use [git-gud](https://github.com/ok-ggwp/git-gud). `git gud review [<commit>|<range>|wip]` runs this honesty review, a blind bug review that doesn't see the gloss, and an improvements review informed by it, with Claude Code, Codex or Cursor as the reviewer. git-gloss itself never runs an agent.
+
+### Recorded reviews
+
+git-gud records each review beside the glosses (`refs/notes/gloss-reviews`), so whoever reads a branch later can see whether its glosses were checked and what the checks found:
+
+```
+$ git gloss show main..feature
+main..feature: 4 commits, 4 glossed, 3 honesty-reviewed (1 with issues)
+...
+reviews: honesty: no issues (claude, 2026-10-18) · bugs: defects found (claude, 2026-10-18)
+```
+
+`git gloss reviews <commit>` prints the findings, and the HTML view shows each commit's reviews, with their reports a click away. A review records what it saw: a fingerprint of each changed line and of each gloss group. So it keeps counting through rebases, squashes and a wip gloss moved onto commits. If the code or the gloss changed after the review, the line says so ("gloss changed since review") instead of vouching for it.
+
+A review says that something was checked, not that it passed. Each review ends with a verdict (`VERDICT: CLEAN` or `VERDICT: ISSUES`). For each part of the commit, the latest review that saw it decides, and a clean result that followed one with issues says so.
+
+Like glosses, reviews follow rebased commits in repos set up with `git gloss init`. Reviews are shared by `git gloss sync` (and so by every push with the hooks) like glosses, for commits the remote has. They never conflict: everyone's reviews are kept. Other tools can record reviews too: `git gloss reviews --stamp <rev>` before the review, then `git gloss reviews --record` with the stamp and the report as JSON on stdin.
 
 ## HTML view
 

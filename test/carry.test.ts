@@ -385,8 +385,10 @@ test('a wip group dropped by a new snapshot can be restored, even after git gc',
   // Rewrite extra.js: its group can't carry over to the new snapshot.
   write('extra.js', ['export const extra = 2'])
   assert.match(gloss(dir, ['hunks', 'wip']).err, /not kept[^\n]*extra/)
-  // Put it back, take a new snapshot, and collect garbage hard.
+  // Put it back (with another change, so this snapshot can't be identical to
+  // the first), take a new snapshot, and collect garbage hard.
   write('extra.js', ['export const extra = 1'])
+  write('other.js', ['export const other = 1'])
   gloss(dir, ['hunks', 'wip'])
   g('reflog', 'expire', '--expire=now', '--all')
   g('gc', '-q', '--prune=now')

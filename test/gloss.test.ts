@@ -255,7 +255,7 @@ test('init migrates the old refspec, and fetching keeps unpushed local glosses',
   assert.match(r.out, /removed the old refspec/)
   const fetches = execFileSync('git', ['config', '--get-all', 'remote.origin.fetch'], { cwd: a, encoding: 'utf8' })
   assert.doesNotMatch(fetches, /refs\/notes\/gloss:refs\/notes\/gloss/)
-  assert.match(fetches, /refs\/notes\/gloss:refs\/notes\/remotes\/origin\/gloss/)
+  assert.match(fetches, /\+refs\/notes\/gloss\*:refs\/notes\/remotes\/origin\/gloss\*/)
 
   // Origin has a gloss on HEAD; a's own gloss on HEAD~1 must survive a fetch.
   execFileSync('git', ['push', '-q', 'origin', 'main'], { cwd: a })
@@ -1195,7 +1195,7 @@ test('a range header counts stale glosses', () => {
   writeFileSync(join(dir, 'config.js'), 'export const MAX_RETRIES = 5\n')
   execFileSync('git', ['commit', '-qa', '--amend', '--no-edit'], { cwd: dir })
   const r = gloss(dir, ['show', 'HEAD~1..HEAD'])
-  assert.match(r.out, /1 commit, 1 glossed \(1 stale\)/)
+  assert.match(r.out, /1 commit, 1 glossed, 0 honesty-reviewed \(1 stale\)/)
 })
 
 // A git-gloss on PATH for hooks: this checkout's CLI.

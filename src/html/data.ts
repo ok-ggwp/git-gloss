@@ -1,4 +1,5 @@
 import { commitDiff, commitSubject, git } from '../git.ts'
+import { reviewStatus, statusPhrase, verdict } from '../reviews.ts'
 import { parseDiff } from '../diff.ts'
 import { loadGloss } from '../loader.ts'
 import type { Hunk } from '../diff.ts'
@@ -59,6 +60,28 @@ export type CommitData = {
   unannotated: PageHunk[]
   alternatives: { option: string; rejected_because: string }[]
   risks: string[]
+  // Per review stage: whether the commit as it is now was reviewed, and the
+  // reviews' reports (shown as text).
+  reviews: PageReview[]
+}
+
+export type PageReview = {
+  stage: string
+  state: 'seen' | 'code-changed' | 'gloss-changed'
+  verdict: 'clean' | 'issues' | 'unknown'
+  phrase: string
+  entries: { agent: string; model?: string; mode?: string; at: string; target: string; findings: string }[]
+}
+
+function pageReviews(sha: string): PageReview[] {
+  return reviewStatus(sha).map((s) => ({
+    stage: s.stage,
+    state: s.code === 'changed' ? 'code-changed'
+      : (s.stage === 'honesty' || s.stage === 'improve') && s.gloss === 'changed' ? 'gloss-changed' : 'seen',
+    verdict: verdict(s),
+    phrase: statusPhrase(s),
+    entries: s.reviews.map((r) => ({ agent: r.agent, model: r.model, mode: r.mode, at: r.at, target: r.target, findings: r.findings })),
+  }))
 }
 
 export type PageData = {
@@ -174,6 +197,7 @@ export function commitData(gloss: LoadedGloss): CommitData {
     unannotated: gloss.unannotated.map((u) => pageHunk(u.hunk, u.lines, 'unannotated', [])),
     alternatives: a.alternatives ?? [],
     risks: a.risks ?? [],
+    reviews: pageReviews(gloss.sha),
   }
 }
 
@@ -191,6 +215,7 @@ function unglossedData(sha: string): CommitData {
     unannotated: parseDiff(commitDiff(sha)).map((h) => pageHunk(h, null, 'unannotated', [])),
     alternatives: [],
     risks: [],
+    reviews: pageReviews(sha),
   }
 }
 

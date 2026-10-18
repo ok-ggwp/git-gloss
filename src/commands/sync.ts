@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { git, gitTry, GitError, NOTES_REF } from '../git.ts'
 import { carryNew } from '../origins.ts'
+import { REVIEWS_REF } from '../reviews.ts'
 import { carry } from './carry.ts'
 
 export const usage = 'sync [<remote>]   fetch, merge and push glosses (default remote: origin)'
@@ -145,6 +146,43 @@ function round(remote: string, pushing: string[], carried: string[]): Outcome | 
   return { fetched, pushed: toPush.length, withheld, conflicts }
 }
 
+const REVIEWS_PUSH_REF = 'refs/notes/gloss-reviews-sync-tmp'
+
+// Reviews are shared like glosses, but never conflict: each review is a line,
+// and both sides' lines are kept (git's cat_sort_uniq). Only reviews of
+// commits the remote may see are sent. Returns null if the push lost a race.
+function syncReviews(remote: string, pushing: string[]): { fetched: number; pushed: number } | null {
+  const tracking = `refs/notes/remotes/${remote}/gloss-reviews`
+  const remoteHas = gitTry(['ls-remote', '--exit-code', remote, REVIEWS_REF]) !== null
+  if (remoteHas) git(['fetch', '-q', remote, `+${REVIEWS_REF}:${tracking}`])
+  const before = noteList(REVIEWS_REF)
+  const theirs = remoteHas ? noteList(tracking) : new Map<string, string>()
+  if (remoteHas) {
+    if (gitTry(['rev-parse', '-q', '--verify', REVIEWS_REF]) === null) git(['update-ref', REVIEWS_REF, tracking])
+    else git(['notes', '--ref', REVIEWS_REF, 'merge', '-q', '-s', 'cat_sort_uniq', tracking])
+  }
+  const merged = noteList(REVIEWS_REF)
+  const fetched = [...merged].filter(([object, blob]) => before.get(object) !== blob).length
+  const allowed = shareable(remote, pushing)
+  const toPush = [...merged].filter(([object, blob]) => allowed.has(object) && theirs.get(object) !== blob)
+  if (!toPush.length) return { fetched, pushed: 0 }
+  try {
+    if (remoteHas) git(['update-ref', REVIEWS_PUSH_REF, tracking])
+    else gitTry(['update-ref', '-d', REVIEWS_PUSH_REF])
+    for (const [object, blob] of toPush) git(['notes', '--ref', REVIEWS_PUSH_REF, 'add', '-f', '-C', blob, object])
+    try {
+      git(['push', '-q', '--no-verify', remote, `${REVIEWS_PUSH_REF}:${REVIEWS_REF}`])
+    } catch (err) {
+      if (/\(fetch first\)|non-fast-forward/.test((err as Error).message)) return null
+      throw err
+    }
+    git(['notes', '--ref', REVIEWS_REF, 'merge', '-q', '-s', 'cat_sort_uniq', REVIEWS_PUSH_REF])
+  } finally {
+    gitTry(['update-ref', '-d', REVIEWS_PUSH_REF])
+  }
+  return { fetched, pushed: toPush.length }
+}
+
 export function run(argv: string[]): number {
   // --pushing (from the pre-push hook): read the refs being pushed from stdin,
   // as git gives them to the hook, so glosses of those commits go too.
@@ -174,6 +212,10 @@ export function run(argv: string[]): number {
       for (const c of outcome.conflicts) console.log(`  ${c}`)
     }
     for (const c of carried) console.log(c)
+    let reviews: ReturnType<typeof syncReviews> = null
+    for (let tries = 0; tries < MAX_ATTEMPTS && !reviews; tries++) reviews = syncReviews(remote, pushing)
+    if (!reviews) console.log(`  reviews not synced: others kept pushing reviews to ${remote}; run git gloss sync again`)
+    else if (reviews.fetched || reviews.pushed) console.log(`  reviews: fetched ${reviews.fetched}, pushed ${reviews.pushed}`)
     if (outcome.withheld) {
       console.log(`  kept ${outcome.withheld} gloss${outcome.withheld === 1 ? '' : 'es'} local: their commits aren't on ${remote} yet`)
     }
