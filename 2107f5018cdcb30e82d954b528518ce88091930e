@@ -1,0 +1,347 @@
+{
+  "gloss": 2,
+  "commit": "2107f5018cdcb30e82d954b528518ce88091930e",
+  "created_at": "2026-10-19T21:10:57.547Z",
+  "annotation": {
+    "version": 1,
+    "task": "Add `git gloss ary`: a local web UI for browsing glosses by branch, commit and range, so the HTML view needs no CLI work to find commits and write ranges.",
+    "summary": "A new read-only server (127.0.0.1 only) lists branches, a compare-with base, commits with gloss/review status and the wip snapshot; each selection renders the existing `git gloss html` page in a frame, regenerated per load.",
+    "groups": [
+      {
+        "id": "ary-server",
+        "intent": "Serve a read-only API (refs, commit log) and the existing HTML view over loopback",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "There would be no server: nothing to list branches or commits and nothing to render a page on demand.",
+        "evidence": "Ran the command, curled /api/refs, /api/log and /view, and loaded the shell in headless Chromium; test/ary.test.ts runs the real command.",
+        "hunks": [
+          "h5:1-72,74-77,91-108",
+          "h8:1-9,48-57,61-81,88-104",
+          "h12"
+        ],
+        "notes": "Browsing writes nothing: `wip` is read from the snapshot ref, never taken. Git runs synchronously per request. The --port argument is validated as digits only (Number('') would quietly mean any port). Known quirk: `wip` is special-cased, so a branch named wip can't be opened by that name (use heads/wip; the README says so). Commit search runs git log twice (--grep and --author, which git ANDs together), merges the shas, and pages by hand: this git ignores --no-walk when -n is given, so -n/--skip can't be used for it."
+      },
+      {
+        "id": "ary-host-check",
+        "intent": "Answer only requests addressed to this server's own host names, and say which",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Any web page open in your browser could make requests to the local server, and with DNS rebinding read the answers: your branches, commit messages and the code of every commit.",
+        "evidence": "test/ary.test.ts sends a request with a foreign Host header, expects 403, and checks that the message names the allowed addresses.",
+        "hunks": [
+          "h8:82-86"
+        ],
+        "notes": "Graded required rather than defensive: a server on your machine that serves your source is unsafe without it. It is a few lines, so it is split out to be seen on its own. Only 127.0.0.1:<port> and localhost:<port> are allowed (the server doesn't listen on IPv6, so [::1] would be dead code). The refusal names the allowed addresses; the port is part of the check, so an SSH tunnel must use the same port number. It is required by a safety bar (a local server that serves your source must not answer other sites), not by anything the task asked for. Host names are matched case-insensitively."
+      },
+      {
+        "id": "ary-guards",
+        "intent": "Validate requests, cap their size, refuse non-GET, and set safe headers",
+        "necessity": "defensive",
+        "serves": "ary-server",
+        "removal_impact": "Malformed or hostile parameters would reach git instead of a clean 400 (the single-commit path is already safe from flags, see git-end-of-options, so this is a second layer there and mainly gives a clear error); a 200+ commit range would hang the browser; a huge limit or a bad number would be passed through (limit=0 once gave an empty page that claimed there was more); a POST would get an answer; pages would be cached and sniffed.",
+        "evidence": "test/ary.test.ts checks the 400, 405 and 422 responses and the cap.",
+        "hunks": [
+          "h8:10-47,58-60,87"
+        ],
+        "notes": "The 200-commit cap is a product judgment: the API would work without it. Ranges are also protected by --end-of-options in git.ts; the leading-'-' check is a second layer, and the single-commit path in git.ts also has --end-of-options (see git-end-of-options), so the leading-'-' check is a second layer there as well. This group mixes kinds of change: validation and the limit clamps (one of which fixed a real bug), the cap (a product judgment), and headers and the 405 (defense in depth). This group also holds the CSP and no-store/nosniff headers and the limit/skip clamps. The 200-character cap on a search term is also a guard, but it sits on the /api/log route line, which is in ary-server's range. Search text goes to git as --grep=<text> with fixed-string matching, so it can't be read as an option or a pattern. The Host check, which protects something real, is in ary-host-check. Why the CSP and nosniff headers are graded defensive, not required: the pages already put all repo text through textContent or escaping, and the view page carries its own nonce CSP, so these headers are a second layer behind that. A review argued they are as essential as the Host check; the difference is that without the Host check nothing else stops a foreign page reading the server, while without these headers the escaping still holds. Numbers in limit/skip that are out of range are ignored in favour of the defaults; limit=0 used to produce an empty page that claimed there was more."
+      },
+      {
+        "id": "ary-ui",
+        "intent": "Browser shell: commit list with Load more, revision box, framed view, URL-kept selection",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The server would have no interface; users would still have to build URLs by hand.",
+        "evidence": "Driven in headless Chromium over CDP against a repo with 300 branches: search narrows the list, Enter picks, 'no match' shows, the base picker offers 'none'; plus screenshots of the shell and framed page. Rows and search checked in screenshots: a search for 'gloss' narrows the list and drops the 'Whole branch' row; 'zzzz' shows an empty message.",
+        "hunks": [
+          "h6:1-50,171-302,326-338,343-364,380-401",
+          "h7",
+          "h9:1-54,75-102,105-115"
+        ],
+        "notes": "Choosing a branch defaults the base to main/master, so the list is the branch's own commits plus a 'Whole branch' row (hidden when there are none, or while searching). The list gives each subject two lines and moves the gloss/review marks to the detail line as small text, because pills left the subject too little room to tell commits apart. The selection lives in the URL hash. The frame is not sandboxed: sandbox=allow-scripts rendered a blank frame, and the view page has its own nonce CSP. Starts on wip when a snapshot exists. Commit search needs a few lines outside the search group (the q parameter in loadLog, the empty-result message), which are counted here. Load more is here because without it a branch with no base (such as main) can't be browsed past its newest 100 commits; Refresh and the deleted-branch fallback are in ary-conveniences, and the 'none' base option is in the picker (ary-search)."
+      },
+      {
+        "id": "ary-search",
+        "intent": "Searchable branch pickers and commit search (box, and the server's search query)",
+        "necessity": "supporting",
+        "serves": "ary-ui",
+        "removal_impact": "Picking a branch would mean scanning a native select with hundreds of entries, and finding a commit would mean scrolling the list. Note the code is not separable: ary-ui calls picker(), branchGroups() and the search input unconditionally, so removing this group would mean rewriting those calls (back to selects and no search), not just deleting hunks.",
+        "evidence": "Driven in headless Chromium over CDP against a repo with 300 branches: search narrows, Enter picks, 'no match' shows; a commit search for 'gloss' narrowed the list and 'zzzz' showed the empty message. test/ary.test.ts covers the server side.",
+        "hunks": [
+          "h6:51-170,365-379",
+          "h9:55-74,103-104",
+          "h5:73,78-90"
+        ],
+        "notes": "Added at the user's request after the first version, so it is part of the task now; graded supporting because the browser can browse without it. The picker is a combobox of about 110 lines plus its styles, since a native select can't be searched. Pickers match all space-separated words and show 200 at a time; commit search is debounced and runs on the server so it covers the whole branch. Search results are ordered by commit date (--no-walk=sorted), which can differ from an unfiltered log's order when dates are skewed. The server half is the query branch of listLog in browse.ts: two git log passes (--grep and --author), merged and paged by hand. It exists only for search."
+      },
+      {
+        "id": "ary-register",
+        "intent": "Register the ary command in the CLI",
+        "necessity": "mechanical",
+        "serves": "ary-server",
+        "removal_impact": "`git gloss ary` would be an unknown command.",
+        "hunks": [
+          "h10",
+          "h11"
+        ]
+      },
+      {
+        "id": "reuse-exports",
+        "intent": "Export openInBrowser and escapeHtml for the new command and server",
+        "necessity": "mechanical",
+        "serves": "ary-server",
+        "removal_impact": "ary would have to duplicate the browser launcher and the HTML escaper.",
+        "hunks": [
+          "h13",
+          "h15"
+        ]
+      },
+      {
+        "id": "ary-build",
+        "intent": "Copy the ary assets into dist/ when building",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The published package (and Node < 22.18, which runs dist/) would fail to serve the page: the server reads its HTML, JS and CSS from beside itself. Running from a checkout on Node 22.18+ would still work, which is why it was first graded supporting.",
+        "evidence": "Broke the destination path and an asset name in turn; the built-package test failed each time.",
+        "hunks": [
+          "h3",
+          "h4"
+        ],
+        "notes": "A test builds a copy of the project and serves the page from the built dist/, so a wrong asset name or destination path fails it. package.json 'files' lists dist as a whole, and npm pack --dry-run shows dist/ary/* in the tarball. Graded required because the published package can't serve the page without it; a checkout on Node 22.18+ runs from src/ and would not notice. One review graded this supporting and an earlier one required; this is the stricter reading."
+      },
+      {
+        "id": "ary-tests",
+        "intent": "Test the server end to end through the real command",
+        "necessity": "supporting",
+        "serves": "ary-server",
+        "removal_impact": "Nothing would check the API, commit search (message, author, range, paging, literal text), the 400/403/405/422 refusals, the commit cap, wip handling, bad ports, that the page's assets are served and the shell's script parses, that the BUILT package serves the page, or that option-like revisions are refused by resolveCommit.",
+        "evidence": "Ran npm test. The built-package test builds a copy of the project in a temp dir and serves from its dist/; it was checked by breaking the destination path and an asset name in scripts/build.mjs, and both made it fail.",
+        "hunks": [
+          "h16"
+        ],
+        "notes": "The shell's behavior (pickers, search, list, deleted-branch fallback) is not covered by tests: it was driven by hand in a browser. The test only checks that its script parses. The resolveCommit test passes with or without the --end-of-options change (the appended ^{commit} already made rev-parse reject dash revisions), so it guards against regressions rather than proving the fix."
+      },
+      {
+        "id": "ary-docs",
+        "intent": "Document the command and the Browsing section",
+        "necessity": "supporting",
+        "serves": "ary-server",
+        "removal_impact": "Users wouldn't know `git gloss ary` exists, that the pickers and the commit list search, that it is loopback-only and read-only, or that a branch named wip needs heads/wip.",
+        "hunks": [
+          "h1",
+          "h2"
+        ]
+      },
+      {
+        "id": "git-end-of-options",
+        "intent": "Pass --end-of-options when resolving a typed revision",
+        "necessity": "defensive",
+        "serves": "ary-guards",
+        "removal_impact": "Nothing visible today: a revision starting with '-' is already rejected, because the appended ^{commit} stops rev-parse reading it as a flag (checked with --abbrev-ref and --short=4). The change makes that explicit, so it no longer depends on the suffix.",
+        "evidence": "test/ary.test.ts: option-like revisions throw a GitError from resolveCommit; commits and branches still resolve.",
+        "hunks": [
+          "h14"
+        ],
+        "notes": "Touches shared code outside the feature: resolveCommit serves every command, not just ary. Needs a git whose rev-parse knows --end-of-options (the code already uses it with rev-list). A review asked for it to be dropped as a no-op that raises the minimum git version; it was kept because it was asked for as hardening and makes the safety explicit rather than dependent on a suffix. It is the easiest group to remove."
+      },
+      {
+        "id": "ary-conveniences",
+        "intent": "Refresh, and a fallback with a notice for links to deleted branches",
+        "necessity": "incidental",
+        "serves": "ary-ui",
+        "removal_impact": "Nothing the task needs: the sidebar couldn't be re-read without reloading the page, and a link to a deleted branch would show an error in the commit list instead of falling back to the current branch.",
+        "evidence": "The fallback was checked in Chromium with links to a deleted branch, a deleted base, a valid pair and no hash. Refresh was checked there too: after picking a commit and typing a search, clicking Refresh kept the selection, the frame, the branch and the search text.",
+        "hunks": [
+          "h6:303-325,339-342"
+        ],
+        "notes": "Added without being asked, so graded incidental (Load more was too, but it is needed to browse past 100 commits, so it moved to ary-ui); the user was told and asked that no polish be dropped. They are kept. The fallback block's range includes a few lines of branch bookkeeping that the shell needs either way (the 'known' lookup), so the line counts are approximate. A hash naming a deleted branch falls back to the current branch (or the default base, when it is the base that is gone) and says so in a notice above the pickers."
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Generate a static index page of branches and commits (like `html`)",
+        "rejected_because": "It can't render a chosen range on demand, which is the whole difficulty; a stale snapshot would also be the main complaint."
+      },
+      {
+        "option": "Add a dependency-free TUI instead of a web page",
+        "rejected_because": "The HTML view is already the reading experience; a server reuses it unchanged."
+      }
+    ],
+    "risks": [
+      "The shell's JavaScript has no automated tests; only the server is tested, and the shell only for parsing.",
+      "The view page is framed unsandboxed and is same-origin with the API: if hostile commit text ever got past its escaping and nonce CSP, a script could read the repo through the read-only API.",
+      "Git commands run synchronously, so a slow /view stalls the sidebar too (single-user local tool).",
+      "A branch named wip can't be opened by name in the revision box; heads/wip works.",
+      "Every /api/log call reads the notes lists for two refs, and a broad search runs two full git log passes, so large repos will feel it (and 'Load more' repeats it).",
+      "Remote HEAD pointers are hidden by name (endsWith('/HEAD')), so a branch literally named .../HEAD would also be hidden.",
+      "Search results are ordered by commit date, which can differ from the unfiltered log order on histories with skewed dates; the tests only use linear histories.",
+      "A random port means browser bookmarks don't survive a restart unless --port is given.",
+      "The Host check includes the port, so reaching the server through an SSH tunnel on a different local port is refused (the message says to use the same port).",
+      "An error from git (a bad range, a malformed base) is returned as text, which can include local paths. It is shown as text and the server is local only.",
+      "resolveCommit now needs a git whose rev-parse accepts --end-of-options; older gits would fail every command that resolves a revision.",
+      "Another site's page can still fire simple GET requests at the server if it guesses the port (the Host check stops reads, not requests); each triggers synchronous git work. Low impact; a --port with a well-known value makes guessing easier.",
+      "A broad search on a big repo runs two full git log passes plus a --stdin pass with every matching sha, on the one thread, so it can freeze /view and the sidebar until it finishes."
+    ]
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 23,
+      "oldLines": 6,
+      "newStart": 23,
+      "newLines": 7,
+      "hash": "c8c962758bfb5734"
+    },
+    {
+      "id": "h2",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 164,
+      "oldLines": 6,
+      "newStart": 165,
+      "newLines": 12,
+      "hash": "65fc9442c44fb444"
+    },
+    {
+      "id": "h3",
+      "file": "scripts/build.mjs",
+      "oldFile": "scripts/build.mjs",
+      "oldStart": 1,
+      "oldLines": 4,
+      "newStart": 1,
+      "newLines": 4,
+      "hash": "2db1d9f75d9859b7"
+    },
+    {
+      "id": "h4",
+      "file": "scripts/build.mjs",
+      "oldFile": "scripts/build.mjs",
+      "oldStart": 10,
+      "oldLines": 4,
+      "newStart": 10,
+      "newLines": 4,
+      "hash": "d2434e086ee7ac53"
+    },
+    {
+      "id": "h5",
+      "file": "src/ary/browse.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 108,
+      "hash": "e63589661a05c35c"
+    },
+    {
+      "id": "h6",
+      "file": "src/ary/client.js",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 401,
+      "hash": "95991825190d7e12"
+    },
+    {
+      "id": "h7",
+      "file": "src/ary/index.html",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 13,
+      "hash": "f0578210f9523d32"
+    },
+    {
+      "id": "h8",
+      "file": "src/ary/server.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 104,
+      "hash": "b635781d603461ec"
+    },
+    {
+      "id": "h9",
+      "file": "src/ary/style.css",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 115,
+      "hash": "5ea43c473721879c"
+    },
+    {
+      "id": "h10",
+      "file": "src/cli.ts",
+      "oldFile": "src/cli.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 7,
+      "hash": "f5a195f66a1d374a"
+    },
+    {
+      "id": "h11",
+      "file": "src/cli.ts",
+      "oldFile": "src/cli.ts",
+      "oldStart": 14,
+      "oldLines": 7,
+      "newStart": 15,
+      "newLines": 7,
+      "hash": "245829b3d1fd0a59"
+    },
+    {
+      "id": "h12",
+      "file": "src/commands/ary.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 36,
+      "hash": "cfa9fbad8713e3e8"
+    },
+    {
+      "id": "h13",
+      "file": "src/commands/html.ts",
+      "oldFile": "src/commands/html.ts",
+      "oldStart": 9,
+      "oldLines": 7,
+      "newStart": 9,
+      "newLines": 7,
+      "hash": "5f49b8c3143a8fc2"
+    },
+    {
+      "id": "h14",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 148,
+      "oldLines": 7,
+      "newStart": 148,
+      "newLines": 8,
+      "hash": "fb3ba8e456da3ff7"
+    },
+    {
+      "id": "h15",
+      "file": "src/html/page.ts",
+      "oldFile": "src/html/page.ts",
+      "oldStart": 10,
+      "oldLines": 7,
+      "newStart": 10,
+      "newLines": 7,
+      "hash": "8e5e7e122193f1b2"
+    },
+    {
+      "id": "h16",
+      "file": "test/ary.test.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 250,
+      "hash": "bf1dab905635e6c0"
+    }
+  ]
+}
