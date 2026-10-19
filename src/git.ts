@@ -148,7 +148,8 @@ export function resolveCommit(rev: string): string {
   // "wip": the latest snapshot of uncommitted work (made by `hunks wip`). A
   // branch or tag named wip still works when there is no snapshot, and can be
   // reached as heads/wip or tags/wip when there is.
-  const named = gitTry(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`])?.trim()
+  // --end-of-options: the revision is whatever the user typed, never a flag.
+  const named = gitTry(['rev-parse', '--verify', '--quiet', '--end-of-options', `${rev}^{commit}`])?.trim()
   if (rev === 'wip') {
     const sha = gitTry(['rev-parse', '--verify', '--quiet', WIP_REF])?.trim()
     if (sha) {

@@ -23,6 +23,7 @@ git gloss show [<commit>|<range>]     summary: one line per group, alternatives,
       --diff                          ...every group's details and code
       --only speculative,incidental   ...just the parts you might cut
 git gloss html [<commit>|<range>]     self-contained HTML view, of one commit or a branch (--open, -o <file>)
+git gloss ary [--port <n>] [--no-open] browse branches, commits and wip in a local web page (see "Browsing")
 git gloss why <file>:<line>[-<end>]   explain why code exists (via blame), looking past mechanical edits
       --history                       ...every commit that changed the lines, newest first
       --json                          ...for agents, with risks and rejected alternatives
@@ -163,6 +164,12 @@ Like glosses, reviews follow rebased commits in repos set up with `git gloss ini
 Give a range (`git gloss html main..feature --open`) for a branch or PR view: every non-merge commit in order (merges are listed as not reviewed; `A...B` is rejected), a necessity bar across the whole branch, and the sidebar grouped by commit. Commits without a gloss appear with their whole diff marked as unexplained. On range pages a group's link is `#g-<commit>-<group>`. `git gloss review main..feature` likewise covers every commit and adds branch-level questions, such as later commits that undo earlier ones.
 
 All gloss and diff text is rendered as text, and a Content-Security-Policy with a per-page nonce blocks any script the page didn't generate.
+
+## Browsing
+
+`git gloss ary` starts a small web server and opens it in your browser, so you can explore glosses without working out commits, branches and ranges on the command line. Pick a branch and a branch to compare it with (the repo's `main` or `master` by default); each picker has a search box, for repos with many branches. Then click a commit, or "Whole branch" for the range view. Each commit shows its subject (up to two lines) and whether it has a gloss and a review, and a search box above the list finds commits by message or author (case-insensitive, plain text). Searching covers the whole selected branch, not only the commits loaded so far. Your uncommitted work appears at the top once it has been snapshotted (`git gloss hunks wip`). To look at anything else, such as `HEAD~3` or `release..main`, type it into the revision box. As everywhere in git-gloss, `wip` there means the snapshot of uncommitted work, so to view a branch or tag called `wip`, type `heads/wip` or `tags/wip`. Each selection is the page `git gloss html` writes, regenerated on every load, so Reload picks up new glosses and reviews. The address bar keeps the selection, so a reload returns to it (with a random port, a bookmark lasts only until you stop the server; pass `--port` for a stable address).
+
+It serves one repository, the one you run it in, until you press Ctrl-C. It listens on 127.0.0.1 only, on a free port (or `--port`), only answers requests addressed to that host name, and never writes anything: it doesn't take snapshots or change notes. A page shows at most 200 commits; pick a narrower range for more. `--no-open` doesn't launch a browser.
 
 ## Caveats
 

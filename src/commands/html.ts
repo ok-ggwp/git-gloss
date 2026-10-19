@@ -9,7 +9,7 @@ import { renderPage } from '../html/page.ts'
 
 export const usage = 'html [<commit> | <range>] [-o <file>] [--open]   write a self-contained HTML view of a gloss, or of every commit in a range'
 
-function openInBrowser(file: string): void {
+export function openInBrowser(file: string): void {
   const [cmd, args] = process.platform === 'darwin' ? ['open', [file]]
     : process.platform === 'win32' ? ['cmd', ['/c', 'start', '', file]]
     : ['xdg-open', [file]]

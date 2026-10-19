@@ -10,7 +10,7 @@ export function embedJson(data: unknown): string {
   return JSON.stringify(data).replace(/</g, '\\u003c')
 }
 
-const escapeHtml = (s: string) =>
+export const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 
 export function renderPage(data: PageData): string {
