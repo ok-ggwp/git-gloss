@@ -25,6 +25,10 @@ Gloss changes **before they are committed**, unless the user asks you to commit 
 
 To gloss a commit instead, use its revision (default `HEAD`) wherever these steps say `wip`.
 
+## Calling git-gloss
+
+The commands below are written as `git gloss …`. That works only where git-gloss is on PATH. Check first with `command -v git-gloss`. If it isn't, look for a project install (`node_modules/.bin/git-gloss`, or a `package.json` that lists `@ok-ggwp/git-gloss`) and run the same commands as `pnpm exec git-gloss …`, `npx git-gloss …` or `node_modules/.bin/git-gloss …`. Use the package manager the repo uses. In a monorepo the install may sit in a subdirectory: run the commands from there, and give file paths to `why` relative to that directory. Don't install it globally just to run the skill.
+
 ## Steps
 
 1. Run `git gloss hunks wip` to snapshot the uncommitted work and see it split into hunks with ids `h1`, `h2`, …, with each hunk's changed (`+`/`-`) lines numbered from 1. If you change files afterwards, run it again: that takes a new snapshot, and a gloss must match the snapshot it was written for.

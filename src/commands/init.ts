@@ -123,7 +123,12 @@ export function run(argv: string[] = []): number {
     // The hooks run `git gloss`; a git without it on PATH (a GUI client, a
     // different shell) would print an error after every commit and push.
     if (spawnSync('sh', ['-c', 'command -v git-gloss'], { stdio: 'ignore' }).status !== 0) {
-      console.log('! git-gloss is not on PATH here; the hooks need it wherever git runs (see README: npm link)')
+      // Without it, every commit and push prints an error and the gloss isn't
+      // moved, synced or carried, so say that plainly.
+      console.log('! git-gloss is not on PATH in this shell, so the hooks will fail on every commit and push.')
+      console.log('  Their errors are only warnings, and glosses are not adopted, carried or synced until it is fixed.')
+      console.log('  Either install it globally (npm install -g @ok-ggwp/git-gloss), or, for a project install,')
+      console.log('  put its node_modules/.bin first on PATH in each hook (see README: "Project installs").')
     }
     installHook('pre-push', HOOK, '`git push` now syncs glosses with the remote it pushes to', [
       'git remote | grep -qxF -- "$1" && { GIT_TERMINAL_PROMPT=0 git gloss sync "$1" --pushing >&2 ||',

@@ -63,9 +63,24 @@ npm install -D @ok-ggwp/git-gloss
 npx git-gloss init --hooks
 ```
 
-The hooks run `git gloss`, so it must be on PATH wherever git runs; with a project install, that means running git from a shell where `node_modules/.bin` is on PATH, or installing it globally as well.
+The hooks run `git gloss`, so it must be on PATH wherever git runs. A project install isn't, by default: a GUI git client, or a shell that didn't run `pnpm`/`npm` scripts, won't find it. See [Project installs](#project-installs) for how to keep the team on one version anyway.
 
 To work on git-gloss itself: clone it, `npm install`, `npm link`, `npm test`. From a checkout, on Node 22.18+, the TypeScript source runs directly; on older versions the launcher runs `dist/`, which `npm install` builds (and `npm run build` rebuilds after changes). The tests need Node 23.6+.
+
+### Project installs
+
+A project install (`npm install -D`) keeps every teammate on the same version, which matters because glosses and reviews are shared git notes that each copy reads and writes. The cost is that `git gloss` is then on PATH only inside a shell that has `node_modules/.bin` on it. Two ways to deal with that:
+
+- **Put it on PATH in the hooks.** Add one line near the top of each hook that calls `git gloss` (`pre-push`, `post-commit`, `post-rewrite`), with the hooks kept in a tracked folder (for example, `.githooks/`, set with `git config core.hooksPath .githooks`):
+
+  ```sh
+  PATH="$PWD/node_modules/.bin:$PATH"
+  ```
+
+  Git runs hooks from the top of the working tree, so `$PWD` is that directory. In a monorepo where the install lives in a subfolder (`web/node_modules/.bin`), use that path instead. On Windows, use `$PWD` rather than `git rev-parse --show-toplevel`, which returns a `C:/…` path that Git for Windows' shell can't put on PATH.
+- **Run the setup from `prepare`.** A `prepare` script in the package that owns `node_modules` can set `core.hooksPath` and run `git gloss init --hooks` on every install, so nobody has to remember it in each clone. Skip it in CI, and make it never fail the install. Note that pnpm doesn't run `prepare` when `node_modules` is already up to date, so an existing clone needs `pnpm run prepare` once.
+
+Either way, the hooks never block a commit or push. Without `git gloss` on PATH they print an error and glosses aren't adopted, carried or synced, so check that `git gloss init` prints no warning after changing it. The Claude Code skill can run the tool through the project install too; see "Calling git-gloss" in the skill.
 
 ### Setting up a repo
 
