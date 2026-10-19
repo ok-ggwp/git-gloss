@@ -1,0 +1,89 @@
+{
+  "gloss": 1,
+  "commit": "929c1d2ba4e40a77e73ee0bbe33ca2a76787184e",
+  "created_at": "2026-10-19T19:49:03.120Z",
+  "annotation": {
+    "version": 1,
+    "task": "Address the git-gloss-side suggestions from a team's setup feedback (project installs, PATH, skill fallback)",
+    "summary": "Adds project-install guidance to the README, a louder init warning when git-gloss is off PATH, and a skill section on invoking the tool through a project install.",
+    "groups": [
+      {
+        "id": "readme-project-installs",
+        "intent": "Document project installs: PATH in hooks, monorepos, Windows, prepare",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Teams with a project install have no written way to put git-gloss on PATH for hooks, and the README's only advice is a global install they rejected",
+        "evidence": "README.md 'Project installs' section; the PATH line was verified in a scratch repo with the team's layout",
+        "hunks": [
+          "h1"
+        ]
+      },
+      {
+        "id": "init-path-warning",
+        "intent": "Make init's off-PATH warning say hooks fail on every commit and push",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A project-install user sees one vague line from init and the hooks keep failing with only warnings, unnoticed",
+        "evidence": "Ran init --hooks in a scratch repo with git-gloss off PATH; the new warning prints with both fixes",
+        "hunks": [
+          "h3"
+        ]
+      },
+      {
+        "id": "skill-invocation-fallback",
+        "intent": "Tell the gloss skill how to run the tool via a project install",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Agents in repos without a global install run `git gloss` and fail, so each repo would need its own CLAUDE.md note",
+        "hunks": [
+          "h2"
+        ]
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Have init --hooks write hooks that call node_modules/.bin automatically",
+        "rejected_because": "Needs a design decision about which copy to call (monorepo subfolders, Windows paths), so it is left for a follow-up; this change documents the PATH line that was verified"
+      }
+    ],
+    "risks": [
+      "The skill now tells agents to fall back to a project install; in a repo with no install they still need the global one"
+    ],
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-haiku-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 63,
+      "oldLines": 10,
+      "newStart": 63,
+      "newLines": 25,
+      "hash": "e066b005db4e1dc6"
+    },
+    {
+      "id": "h2",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 25,
+      "oldLines": 6,
+      "newStart": 25,
+      "newLines": 10,
+      "hash": "b33b2cb0b549532d"
+    },
+    {
+      "id": "h3",
+      "file": "src/commands/init.ts",
+      "oldFile": "src/commands/init.ts",
+      "oldStart": 123,
+      "oldLines": 7,
+      "newStart": 123,
+      "newLines": 12,
+      "hash": "4488cab660ac0043"
+    }
+  ]
+}
