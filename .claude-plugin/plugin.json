@@ -1,6 +1,6 @@
 {
   "name": "git-gloss",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Teaches Claude Code to gloss its changes with git-gloss: intent and necessity for each part of a diff, written before you commit",
   "author": {
     "name": "ok-ggwp"
