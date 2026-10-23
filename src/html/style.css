@@ -24,6 +24,16 @@
   --n-speculative: #9c36b5;
   --n-mechanical: #868e96;
 
+  --impact-local: #868e96;
+  --impact-module: #0f7f8f;
+  --impact-shared: #b7791f;
+  --impact-contract: #9c36b5;
+  --impact-sensitive: #c62a2f;
+  --attention-skim: #868e96;
+  --attention-look: #0f7f8f;
+  --attention-careful: #b7791f;
+  --attention-must-read: #c62a2f;
+
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   color-scheme: light;
@@ -55,6 +65,16 @@
     --n-incidental: #e0a43e;
     --n-speculative: #cf7ee4;
     --n-mechanical: #8d949b;
+
+    --impact-local: #8d949b;
+    --impact-module: #33b5c4;
+    --impact-shared: #e0a43e;
+    --impact-contract: #cf7ee4;
+    --impact-sensitive: #ff7b80;
+    --attention-skim: #8d949b;
+    --attention-look: #33b5c4;
+    --attention-careful: #e0a43e;
+    --attention-must-read: #ff7b80;
     color-scheme: dark;
   }
 }
@@ -152,6 +172,16 @@ h1 { font-size: 24px; line-height: 1.3; margin: 8px 0 16px; letter-spacing: -0.0
   font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--c); border: 1px solid var(--c); border-radius: 4px; padding: 0 5px;
 }
+.badge.impact { border-style: dashed; }
+.attention-banner {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 0 0 12px; padding: 10px 14px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px; max-width: 75ch;
+}
+.attention-banner .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+.attention-banner .badge { font-size: 13px; }
+.attention-banner .unrated { color: var(--muted); font-style: italic; }
+.attention-banner .reasons { flex-basis: 100%; margin: 0; padding-left: 20px; }
+.attention-banner .override { flex-basis: 100%; margin: 0; color: var(--warn-text); }
 .intent { font-weight: 600; font-size: 16px; overflow-wrap: anywhere; }
 .gid { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
 .stats { margin-left: auto; font-family: var(--mono); font-size: 12.5px; color: var(--muted); white-space: nowrap; }

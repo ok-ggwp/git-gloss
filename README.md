@@ -21,7 +21,8 @@ git gloss show [<commit>|<range>]     summary: one line per group, alternatives,
       -g <group>                      ...expand groups, with their code
       --full                          ...every group's details
       --diff                          ...every group's details and code
-      --only speculative,incidental   ...just the parts you might cut
+      --only speculative,incidental   ...just the parts you might cut (impact values work too: --only contract,sensitive; naming both kinds needs both to match)
+      --sort impact                   ...most consequential groups first
 git gloss html [<commit>|<range>]     self-contained HTML view, of one commit or a branch (--open, -o <file>)
 git gloss ary [--port <n>] [--no-open] browse branches, commits and wip in a local web page (see "Browsing")
 git gloss why <file>:<line>[-<end>]   explain why code exists (via blame), looking past mechanical edits
@@ -156,6 +157,14 @@ reviews: honesty: no issues (claude, 2026-10-18) · bugs: defects found (claude,
 A review says that something was checked, not that it passed. Each review ends with a verdict (`VERDICT: CLEAN` or `VERDICT: ISSUES`). For each part of the commit, the latest review that saw it decides, and a clean result that followed one with issues says so.
 
 Like glosses, reviews follow rebased commits in repos set up with `git gloss init`. Reviews are shared by `git gloss sync` (and so by every push with the hooks) like glosses, for commits the remote has. They never conflict: everyone's reviews are kept. Other tools can record reviews too: `git gloss reviews --stamp <rev>` before the review, then `git gloss reviews --record` with the stamp and the report as JSON on stdin.
+
+## Impact and attention
+
+Necessity and consequence are separate: a `required` one-line fix to a login helper matters more than a `required` rename in a leaf component. Two optional fields say so. Each group may have `impact` (`local < module < shared < contract < sensitive`, the farthest its effect reaches if it is wrong) and an `impact_reason` of up to 120 characters. The annotation may have `attention`: `level` (`skim`, `look`, `careful` or `must-read`), one to three `focus` group ids to read first, `reasons`, and an optional `override_reason`. `git gloss schema` lists them all.
+
+`show` leads with `attention: CAREFUL · focus: a, b` and the reasons, and badges each group with its impact; `html` shows the same as a banner whose focus links jump to the groups. A gloss without them reads as `attention: unrated`. When glosses are combined (`carry`, a squash, a rebase) the attention level is the highest of them, the focus groups are the most impactful three, and the reasons are joined; if any of them is unrated, so is the combined gloss.
+
+Notes using these fields are format 4; a git-gloss that predates them refuses such a note ("written by a newer git-gloss") rather than silently dropping the fields. A gloss that doesn't use them is still written in its old format.
 
 ## HTML view
 

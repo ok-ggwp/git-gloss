@@ -99,6 +99,12 @@ Where you can, set `evidence` to a test that exercises the change or the line of
 
 `alternatives` and `risks` are optional, but fill them in when you weighed real options. They are what later readers most often lack.
 
+## Impact and attention (optional)
+
+Necessity says whether a change is needed; `impact` says how far it reaches if it is wrong. Set it on each non-mechanical group, the highest level that applies: `local` (one file or component, no outside callers), `module` (one feature or project), `shared` (used by several projects, or root build, test or lint config), `contract` (an interface others depend on: public APIs, props and events, routes, state shape, message formats, schemas, config keys, dependency versions, CI definitions), `sensitive` (auth, crypto, permissions, data writes or deletes, payments, hardware I/O, secrets, whatever the size). Give `impact_reason` (one short sentence, up to 120 characters) at `contract` and above.
+
+Then set top-level `attention` for the reviewer: `"attention": {"level": "careful", "focus": ["retry-core"], "reasons": ["Changes what callers see on a 503"]}`. `level` is `skim` (glance at the summary), `look` (read the focus groups), `careful` (read every non-mechanical group) or `must-read` (line by line). `focus` is one to three group ids to read first. Don't rate a large "behaviour-neutral" refactor `skim` just because most hunks are; a lockfile or CI edit is a `contract`. Both fields are optional, and glosses without them show as "unrated".
+
 ## Looking up intent
 
 You don't need to look up intent before ordinary edits. Use `git gloss why` when you are genuinely unsure why existing code is the way it is, especially before removing or rewriting something that looks unnecessary, defensive or wrong. That is when an unexplained check gets deleted and a fixed bug comes back.

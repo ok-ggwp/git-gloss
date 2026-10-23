@@ -235,7 +235,7 @@ export function readNote(sha: string): GlossNote | null {
     throw new GlossError(`${at} was written by a newer git-gloss (format ${data.gloss}); upgrade to read it`)
   }
   const annotation = Annotation.safeParse(data?.annotation)
-  if (![1, 2, 3].includes(data?.gloss as number) || !Array.isArray(data.hunks) || !annotation.success) {
+  if (![1, 2, 3, 4].includes(data?.gloss as number) || !Array.isArray(data.hunks) || !annotation.success) {
     throw new GlossError(`${at} is malformed; replace it with \`git gloss add --force\``)
   }
   return { ...(data as GlossNote), annotation: annotation.data }

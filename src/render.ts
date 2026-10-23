@@ -3,7 +3,7 @@ import { styleText } from 'node:util'
 import type { Hunk } from './diff.ts'
 import { gitTry } from './git.ts'
 import { refLabel, sliceStats } from './selection.ts'
-import { servesOf, type Group, type GlossNote, type Necessity } from './schema.ts'
+import { IMPACT, servesOf, type Attention, type AttentionLevel, type Group, type GlossNote, type Impact, type Necessity } from './schema.ts'
 
 type Style = Parameters<typeof styleText>[0]
 
@@ -24,6 +24,39 @@ export function necessityTag(n: Necessity): string {
 
 export function necessityWord(n: Necessity, pad = 0): string {
   return style(NECESSITY_STYLE[n], n.padEnd(pad))
+}
+
+const IMPACT_STYLE: Record<Impact, 'gray' | 'white' | 'yellow' | 'magenta' | 'red'> = {
+  local: 'gray',
+  module: 'white',
+  shared: 'yellow',
+  contract: 'magenta',
+  sensitive: 'red',
+}
+
+// "[contract]", padded to `pad` columns.
+export function impactTag(i: Impact, pad = 0): string {
+  return style(['bold', IMPACT_STYLE[i]], `[${i}]`) + ' '.repeat(Math.max(0, pad - i.length - 2))
+}
+
+// Width of the widest impact tag, "[sensitive]".
+export const IMPACT_W = Math.max(...IMPACT.map((i) => i.length)) + 2
+
+const ATTENTION_STYLE: Record<AttentionLevel, 'gray' | 'cyan' | 'yellow' | 'red'> = {
+  skim: 'gray',
+  look: 'cyan',
+  careful: 'yellow',
+  'must-read': 'red',
+}
+
+// "attention: CAREFUL · focus: a, b" with the reasons beneath; "unrated" for
+// a gloss that declares none.
+export function attentionBlock(a: Attention | undefined): string[] {
+  if (!a) return [style('dim', 'attention: unrated')]
+  const head = `attention: ${style(['bold', ATTENTION_STYLE[a.level]], a.level.toUpperCase())}` +
+    (a.focus?.length ? ` · focus: ${a.focus.join(', ')}` : '')
+  return [head, ...(a.reasons ?? []).flatMap((r) => field('•', r)),
+    ...(a.override_reason ? field('override:', a.override_reason) : [])]
 }
 
 export const termWidth = () => Math.min(process.stdout.columns || 100, 120)
@@ -72,13 +105,15 @@ export function colorDiff(text: string, indent = ''): string {
 }
 
 export function groupHeader(g: Group): string[] {
-  const prefix = `■ [${g.necessity}] `
+  const impact = g.impact ? ` [${g.impact}]` : ''
+  const prefix = `■ [${g.necessity}]${impact} `
   const out = wrap(g.intent, termWidth() - prefix.length).map((l, i) =>
-    (i === 0 ? `${style('bold', '■')} ${necessityTag(g.necessity)} ` : ' '.repeat(prefix.length)) + style('bold', l))
+    (i === 0 ? `${style('bold', '■')} ${necessityTag(g.necessity)}${g.impact ? ' ' + impactTag(g.impact) : ''} ` : ' '.repeat(prefix.length)) + style('bold', l))
   out[out.length - 1] += ' ' + style('dim', `(${g.id})`)
   const serves = servesOf(g)
   if (serves[0] !== 'task') out.push(...field('serves:', serves.join(', ')))
   out.push(...field('if removed:', g.removal_impact))
+  if (g.impact_reason) out.push(...field('impact:', g.impact_reason))
   if (g.evidence) out.push(...field('evidence:', g.evidence))
   if (g.notes) out.push(...field('notes:', g.notes))
   return out

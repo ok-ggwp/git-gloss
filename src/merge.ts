@@ -1,5 +1,6 @@
 import type { Hunk } from './diff.ts'
 import { matchHunks } from './loader.ts'
+import { combineAttention } from './attention.ts'
 import { servesOf, type Annotation, type Group, type GlossNote } from './schema.ts'
 import { bodyLines, changedCount, formatRanges, selections, uncovered, type Claim, type Uncovered } from './selection.ts'
 import { alsoServed } from './validate.ts'
@@ -179,6 +180,13 @@ export function mergeGlosses(sources: Source[], target: Hunk[]): Merged {
   const summaries = unique(notes.flatMap((a) => (a.summary ? [a.summary] : [])))
   const alternatives = unique(notes.flatMap((a) => a.alternatives ?? []))
   const risks = unique(notes.flatMap((a) => a.risks ?? []))
+  const rated = used.filter((i) => sources[i].note.annotation.attention)
+  // One unrated source makes the whole gloss unrated: its changes have no level to take.
+  const attention = rated.length < used.length ? undefined : combineAttention(
+    rated.map((i) => sources[i].note.annotation.attention!),
+    (part, id) => newId.get(`${rated[part]}\0${id}`),
+    groups,
+  )
   const annotation: Annotation = {
     version: 1,
     task: tasks.join('; '),
@@ -186,6 +194,7 @@ export function mergeGlosses(sources: Source[], target: Hunk[]): Merged {
     groups,
     ...(alternatives.length ? { alternatives } : {}),
     ...(risks.length ? { risks } : {}),
+    ...(attention ? { attention } : {}),
     ...(notes[0].author ? { author: notes[0].author } : {}),
   }
 

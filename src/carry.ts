@@ -68,5 +68,8 @@ export function carryGloss(note: GlossNote, current: Hunk[], previous: Hunk[] = 
   const claims = groups.flatMap((g) =>
     [...selections(g.hunks, (id) => { const h = byId.get(id); return h && changedCount(h) })]
       .flatMap(([id, lines]): Claim[] => { const h = byId.get(id); return h ? [{ hunk: h, lines }] : [] }))
-  return { annotation: { ...a, groups }, kept: groups.length, total: a.groups.length, dropped, gaps: uncovered(current, claims), partialMatch }
+  // Focus groups that were left behind can't be pointed at.
+  const focus = a.attention?.focus?.filter((id) => keptIds.has(id))
+  const attention = a.attention && { ...a.attention, focus: focus?.length ? focus : undefined }
+  return { annotation: { ...a, groups, ...(attention ? { attention } : {}) }, kept: groups.length, total: a.groups.length, dropped, gaps: uncovered(current, claims), partialMatch }
 }

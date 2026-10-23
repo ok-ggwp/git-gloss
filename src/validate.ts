@@ -46,6 +46,10 @@ export function validate(annotation: Annotation, hunks: Hunk[]): ValidationResul
     }
   }
 
+  const focus = annotation.attention?.focus ?? []
+  for (const id of focus) if (!groupIds.has(id)) errors.push(`attention.focus names unknown group "${id}"`)
+  if (new Set(focus).size < focus.length) errors.push('attention.focus lists a group twice')
+
   // A group is in a cycle if it can reach itself by following serves links.
   const byId = new Map(annotation.groups.map((g) => [g.id, g]))
   for (const g of annotation.groups) {

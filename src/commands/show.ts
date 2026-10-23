@@ -3,14 +3,15 @@ import { commitSubject, gitTry, readNote, resolveCommits } from '../git.ts'
 import type { Hunk } from '../diff.ts'
 import { refLabel, sliceStats, sliceText } from '../selection.ts'
 import { loadGloss, type LoadedGloss, type LoadedGroup } from '../loader.ts'
-import { NECESSITY, type Necessity } from '../schema.ts'
+import { impactRank } from '../attention.ts'
+import { IMPACT, NECESSITY, isImpact, isNecessity, type Group, type Impact, type Necessity } from '../schema.ts'
 import { current, reviewStatus, statusPhrase, verdict, type StageStatus } from '../reviews.ts'
 import {
-  colorDiff, field, groupHeader, hunkLabel, necessityWord, noteFooter, page, style, termWidth, wrap,
+  attentionBlock, colorDiff, field, groupHeader, hunkLabel, IMPACT_W, impactTag, necessityWord, noteFooter, page, style, termWidth, wrap,
 } from '../render.ts'
 
 export const usage =
-  'show [<commit> | <range>] [-g <group>]... [--full] [--diff] [--only <necessity,...>]   summarise a gloss, or each commit in a range'
+  'show [<commit> | <range>] [-g <group>]... [--full] [--diff] [--only <necessity|impact,...> (a group must match each kind named)] [--sort impact]   summarise a gloss, or each commit in a range'
 
 // Counts over the lines each part selects, not whole hunks, so groups that
 // split a hunk don't both count all of it.
@@ -34,12 +35,18 @@ export function run(argv: string[]): number {
       full: { type: 'boolean' },
       diff: { type: 'boolean' },
       only: { type: 'string' },
+      sort: { type: 'string' },
     },
   })
-  const only = values.only?.split(',').map((s) => s.trim()) as Necessity[] | undefined
-  const unknown = only?.filter((n) => !NECESSITY.includes(n))
+  const names = values.only?.split(',').map((s) => s.trim())
+  const unknown = names?.filter((n) => !isNecessity(n) && !isImpact(n))
   if (unknown?.length) {
-    console.error(`error: unknown necessity ${unknown.join(', ')}; expected ${NECESSITY.join(', ')}`)
+    console.error(`error: unknown necessity or impact ${unknown.join(', ')}; expected ${NECESSITY.join(', ')} or ${IMPACT.join(', ')}`)
+    return 2
+  }
+  const only: Only | undefined = names && { names, necessities: names.filter(isNecessity), impacts: names.filter(isImpact) }
+  if (values.sort !== undefined && values.sort !== 'impact') {
+    console.error(`error: unknown sort ${values.sort}; expected impact`)
     return 2
   }
 
@@ -71,7 +78,7 @@ export function run(argv: string[]): number {
     }
     const out = renderCommit(sha, gloss, values, only, true)
     if (!out) {
-      console.error(`no groups match ${[values.group && `-g ${values.group.join(',')}`, only && `--only ${only.join(',')}`].filter(Boolean).join(' and ')}`)
+      console.error(`no groups match ${[values.group && `-g ${values.group.join(',')}`, only && `--only ${only.names.join(',')}`].filter(Boolean).join(' and ')}`)
       return 1
     }
     page(out.join('\n'))
@@ -108,14 +115,19 @@ export function run(argv: string[]): number {
     }
     // An --only filter can leave a commit with nothing to show; say so and move on.
     out.push(...(renderCommit(sha, gloss, values, only, false) ??
-      [`${style('yellow', sha.slice(0, 10))} ${style('bold', gloss.subject)}`, style('dim', `no ${only?.join('/')} groups`)]))
+      [`${style('yellow', sha.slice(0, 10))} ${style('bold', gloss.subject)}`, style('dim', `no ${only?.names.join('/')} groups`)]))
   })
   if (glossed) out.push('', style('dim', 'One commit in detail: git gloss show <commit> --full   (or -g <group> for its code)'))
   page(out.join('\n'))
   return 0
 }
 
-type ShowOptions = { group?: string[]; full?: boolean; diff?: boolean }
+type ShowOptions = { group?: string[]; full?: boolean; diff?: boolean; sort?: string }
+
+// --only names necessities, impacts or both: a group must match each kind named.
+type Only = { names: string[]; necessities: Necessity[]; impacts: Impact[] }
+const matchesOnly = (g: Group, only: Only | undefined) => !only ||
+  ((!only.necessities.length || only.necessities.includes(g.necessity)) && (!only.impacts.length || (!!g.impact && only.impacts.includes(g.impact))))
 
 // One line on whether the commit as it is now was reviewed, per stage.
 function reviewsLine(sha: string): string {
@@ -128,7 +140,7 @@ function reviewsLine(sha: string): string {
 
 // One commit's view, or null if no group matches -g/--only. `hints` adds the
 // footer on how to expand, which a range prints once instead.
-function renderCommit(sha: string, gloss: LoadedGloss, values: ShowOptions, only: Necessity[] | undefined, hints: boolean): string[] | null {
+function renderCommit(sha: string, gloss: LoadedGloss, values: ShowOptions, only: Only | undefined, hints: boolean): string[] | null {
 
   const a = gloss.note.annotation
   const short = sha.slice(0, 7)
@@ -136,17 +148,24 @@ function renderCommit(sha: string, gloss: LoadedGloss, values: ShowOptions, only
   out.push(...field('task:', a.task, 0))
   if (a.summary) out.push(...field('summary:', a.summary, 0))
   for (const w of gloss.warnings) out.push(...field('⚠', w, 0).map((l) => style('red', l)))
-  out.push(reviewsLine(sha))
+  out.push(...attentionBlock(a.attention), reviewsLine(sha))
 
   const groups = gloss.groups
-    .filter((g) => !only || only.includes(g.group.necessity))
+    .filter((g) => matchesOnly(g.group, only))
     .filter((g) => !values.group || values.group.includes(g.group.id))
 
   if (!groups.length) return null
+  // --sort impact: the most consequential first, then by necessity as usual.
+  const byNecessity = (x: LoadedGroup, y: LoadedGroup) => NECESSITY.indexOf(x.group.necessity) - NECESSITY.indexOf(y.group.necessity)
+  const byImpact = (x: LoadedGroup, y: LoadedGroup) => impactRank(y.group.impact) - impactRank(x.group.impact) || byNecessity(x, y)
+  const detail = values.group || values.full || values.diff
+  // The summary lists required first; detail views keep the gloss's order unless asked.
+  if (values.sort === 'impact') groups.sort(byImpact)
+  else if (!detail) groups.sort(byNecessity)
 
   // -g: chosen groups with their code. --full: every group's details, plus
   // alternatives and risks. --diff: --full plus code.
-  if (values.group || values.full || values.diff) {
+  if (detail) {
     const withCode = values.diff || !!values.group
     for (const g of groups) {
       out.push('', ...groupHeader(g.group))
@@ -169,14 +188,13 @@ function renderCommit(sha: string, gloss: LoadedGloss, values: ShowOptions, only
   }
 
   // Summary: one line per group.
-  const sorted = [...groups].sort((x, y) => NECESSITY.indexOf(x.group.necessity) - NECESSITY.indexOf(y.group.necessity))
   const tally = NECESSITY.map((n) => [n, gloss.groups.filter((g) => g.group.necessity === n).length] as const)
     .filter(([, c]) => c > 0)
     .map(([n, c]) => `${c} ${necessityWord(n)}`)
-  const showing = groups.length < gloss.groups.length ? style('dim', `  (showing ${groups.length}: --only ${only?.join(',')})`) : ''
+  const showing = groups.length < gloss.groups.length ? style('dim', `  (showing ${groups.length}: --only ${only?.names.join(',')})`) : ''
   out.push('', `${style('bold', `${gloss.groups.length} groups:`)} ${tally.join(style('dim', ' · '))}${showing}`, '')
 
-  const rows = sorted.map((g) => {
+  const rows = groups.map((g) => {
     const s = stats(currentParts(g))
     const stale = g.hunks.filter((h) => h.status !== 'ok').length
     return {
@@ -189,7 +207,9 @@ function renderCommit(sha: string, gloss: LoadedGloss, values: ShowOptions, only
   const statW = Math.max(...rows.map((r) => r.stat.length), un.count ? 8 : 0)
   const addW = Math.max(...rows.map((r) => r.added.length))
   const remW = Math.max(...rows.map((r) => r.removed.length))
-  const intentCol = 2 + 11 + 2 + idW + 2
+  // An impact column only when some group declares one, so older glosses look as before.
+  const impactW = gloss.groups.some((g) => g.group.impact) ? IMPACT_W + 2 : 0
+  const intentCol = 2 + 11 + 2 + impactW + idW + 2
   const statsW = 2 + statW + 1 + addW + 1 + remW
   const intentW = Math.max(20, termWidth() - intentCol - statsW)
   for (const r of rows) {
@@ -197,7 +217,7 @@ function renderCommit(sha: string, gloss: LoadedGloss, values: ShowOptions, only
     // stay on the first line so the numbers still line up.
     const [first, ...rest] = wrap(r.g.group.intent, intentW)
     out.push(
-      `  ${necessityWord(r.g.group.necessity, 11)}  ${style('bold', r.g.group.id.padEnd(idW))}  ` +
+      `  ${necessityWord(r.g.group.necessity, 11)}  ${impactW ? (r.g.group.impact ? impactTag(r.g.group.impact, IMPACT_W) : ' '.repeat(IMPACT_W)) + '  ' : ''}${style('bold', r.g.group.id.padEnd(idW))}  ` +
       `${first.padEnd(intentW)}  ` +
       style('dim', r.stat.padStart(statW)) + ' ' + style('green', r.added.padStart(addW)) + ' ' + style('red', r.removed.padStart(remW)),
       ...rest.map((l) => ' '.repeat(intentCol) + l),

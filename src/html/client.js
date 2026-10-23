@@ -24,6 +24,11 @@
     e.style.setProperty('--c', 'var(--n-' + necessity + ')')
     return e
   }
+  function levelBadge(kind, name) {
+    var b = el('span', 'badge ' + kind, name)
+    b.style.setProperty('--c', 'var(--' + kind + '-' + name + ')')
+    return b
+  }
   function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's') }
   function stats(added, removed) {
     return add(el('span', 'stats'), el('span', 'plus', '+' + added), document.createTextNode(' '), el('span', 'minus', '−' + removed))
@@ -81,6 +86,7 @@
 
     var title = add(el('div', 'group-title'),
       el('span', 'badge', g.necessity),
+      g.impact ? levelBadge('impact', g.impact) : null,
       el('span', 'intent', g.intent),
       el('span', 'gid', g.id))
     if (g.stale) add(title, el('span', 'stale', g.stale + ' of ' + plural(g.total, 'hunk') + ' changed or gone'))
@@ -97,6 +103,7 @@
       fact('serves', links)
     }
     fact('if removed', g.removal_impact)
+    fact('impact', g.impact_reason ? g.impact + ': ' + g.impact_reason : null)
     fact('evidence', g.evidence)
     fact('notes', g.notes)
 
@@ -131,6 +138,27 @@
   function commitMeta(c) {
     return add(el('div', 'commit'), el('span', 'sha', c.sha.slice(0, 10)),
       el('span', null, c.author), el('span', null, new Date(c.date).toLocaleString()))
+  }
+
+  // The declared attention: the level, the reasons and links to the groups to
+  // read first; "unrated" when the gloss declares none.
+  function attentionBanner(c) {
+    var a = c.attention
+    var box = el('section', 'attention-banner')
+    if (!a) return add(box, el('span', 'label', 'Attention'), el('span', 'unrated', 'unrated'))
+    add(box, el('span', 'label', 'Attention'), levelBadge('attention', a.level))
+    if (a.focus && a.focus.length) {
+      var look = add(el('span', 'look'), document.createTextNode('look here first: '))
+      a.focus.forEach(function (id, i) { if (i) look.appendChild(document.createTextNode(', ')); look.appendChild(groupLink(c, id)) })
+      add(box, look)
+    }
+    if (a.reasons && a.reasons.length) {
+      var ul = el('ul', 'reasons')
+      a.reasons.forEach(function (r) { ul.appendChild(el('li', null, r)) })
+      add(box, ul)
+    }
+    if (a.override_reason) add(box, el('p', 'override', 'Rated below what the change suggests: ' + a.override_reason))
+    return box
   }
 
   // One commit's groups, unannotated changes, risks and alternatives, with its
@@ -241,6 +269,7 @@
       statement(main, 'Task', only.task)
       statement(main, 'Summary', only.summary)
       only.warnings.forEach(function (w) { add(main, el('div', 'warning', '⚠ ' + w)) })
+      if (only.glossed) add(main, attentionBanner(only))
       reviewsBlock(only, main)
     }
 
@@ -294,6 +323,7 @@
         statement(target, 'Task', c.task)
         statement(target, 'Summary', c.summary)
         c.warnings.forEach(function (w) { add(target, el('div', 'warning', '⚠ ' + w)) })
+        if (c.glossed) add(target, attentionBanner(c))
         reviewsBlock(c, target)
         add(main, target)
       }

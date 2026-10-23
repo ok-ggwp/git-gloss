@@ -219,7 +219,7 @@ test('notes joined by a squash, or from a newer version, get specific errors', (
     execFileSync('git', ['notes', '--ref', 'refs/notes/gloss', 'add', '-f', '-m', body], { cwd: dir })
   note('{"gloss": 1}\n\n{"gloss": 1}')
   assert.match(gloss(dir, ['show']).err, /several glosses joined together/)
-  note('{"gloss": 4, "future": true}')
+  note('{"gloss": 5, "future": true}')
   let r = gloss(dir, ['show'])
   assert.match(r.err, /newer git-gloss/)
   r = gloss(dir, ['add'], annotation([retryCore, config]))

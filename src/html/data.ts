@@ -5,7 +5,7 @@ import { loadGloss } from '../loader.ts'
 import type { Hunk } from '../diff.ts'
 import type { GroupHunk, LoadedGloss } from '../loader.ts'
 import { bodyLines, changedCount, gapText, isGap, refLabel, slice, sliceStats } from '../selection.ts'
-import { NECESSITY, NECESSITY_HELP, servesOf, type Necessity } from '../schema.ts'
+import { IMPACT, IMPACT_HELP, NECESSITY, NECESSITY_HELP, servesOf, type Attention, type Impact, type Necessity } from '../schema.ts'
 
 // Everything the page needs, precomputed so the client only lays it out.
 export type PageLine =
@@ -30,6 +30,8 @@ export type PageGroup = {
   id: string
   intent: string
   necessity: Necessity
+  impact?: Impact
+  impact_reason?: string
   // Always a list (normalised with servesOf), which the client relies on.
   serves: string[]
   removal_impact: string
@@ -55,6 +57,8 @@ export type CommitData = {
   glossed: boolean
   task: string
   summary?: string
+  // The declared attention, or null when the gloss declares none ("unrated").
+  attention: Attention | null
   warnings: string[]
   groups: PageGroup[]
   unannotated: PageHunk[]
@@ -90,6 +94,7 @@ export type PageData = {
   // Merge commits in the range, which the page lists but doesn't review.
   merges: { sha: string; subject: string }[]
   necessity: { name: Necessity; help: string }[]
+  impact: { name: Impact; help: string }[]
   commits: CommitData[]
   generated: string
 }
@@ -168,6 +173,8 @@ export function commitData(gloss: LoadedGloss): CommitData {
         id: g.id,
         intent: g.intent,
         necessity: g.necessity,
+        impact: g.impact,
+        impact_reason: g.impact_reason,
         serves: servesOf(g),
         removal_impact: g.removal_impact,
         evidence: g.evidence,
@@ -192,6 +199,7 @@ export function commitData(gloss: LoadedGloss): CommitData {
     glossed: true,
     task: a.task,
     summary: a.summary,
+    attention: a.attention ?? null,
     warnings: gloss.warnings,
     groups,
     unannotated: gloss.unannotated.map((u) => pageHunk(u.hunk, u.lines, 'unannotated', [])),
@@ -210,6 +218,7 @@ function unglossedData(sha: string): CommitData {
     date,
     glossed: false,
     task: '',
+    attention: null,
     warnings: [],
     groups: [],
     unannotated: parseDiff(commitDiff(sha)).map((h) => pageHunk(h, null, 'unannotated', [])),
@@ -224,6 +233,7 @@ export function buildPageData(shas: string[], range: string | null = null, merge
     range,
     merges: merges.map((sha) => ({ sha, subject: commitSubject(sha) })),
     necessity: NECESSITY.map((name) => ({ name, help: NECESSITY_HELP[name] })),
+    impact: IMPACT.map((name) => ({ name, help: IMPACT_HELP[name] })),
     commits: shas.map((sha) => {
       const gloss = loadGloss(sha)
       return gloss ? commitData(gloss) : unglossedData(sha)
