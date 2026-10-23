@@ -1,0 +1,713 @@
+{
+  "gloss": 4,
+  "commit": "fc0361fe371125f598ae6420c084dfb8f1e54c00",
+  "created_at": "2026-10-23T23:37:55.541Z",
+  "annotation": {
+    "version": 1,
+    "task": "Phase 2 of attention & impact: computed signals, config, the floor, derivation and under-rating checks",
+    "summary": "Adds `git gloss signals`, built-in and repo config (.gloss/config.json, git config), the computed floor, derived attention and impact shown as \"derived\", under-rating checks on `add`, and the signals summary in `hunks`. Nothing computed is stored in the note.",
+    "groups": [
+      {
+        "id": "signals-engine",
+        "intent": "Compute path classes, pattern hits, stats, dependency bumps and floors per hunk and change",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "No computed signals: nothing to floor, derive or check against",
+        "evidence": "test/signals.test.ts pattern hits, damping, lockfile and fixture tests",
+        "impact": "module",
+        "hunks": [
+          "h38"
+        ],
+        "notes": "Pattern hits use only added/removed lines; test, docs and lockfile paths damp hits; test/docs/generated cap the path floor at local; lockfiles are at least contract. package-lock.json and pnpm-lock.yaml are parsed from changed lines only."
+      },
+      {
+        "id": "glob",
+        "intent": "A small glob matcher (**, *, ?, {a,b}) instead of a dependency",
+        "necessity": "supporting",
+        "serves": [
+          "signals-engine",
+          "config"
+        ],
+        "removal_impact": "Path classes could not be matched; path.matchesGlob is missing on Node 20",
+        "evidence": "test/signals.test.ts glob matcher test",
+        "impact": "module",
+        "hunks": [
+          "h21"
+        ]
+      },
+      {
+        "id": "config",
+        "intent": "Built-in defaults, .gloss/config.json (extends or replaces), git config overrides, zod validation",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Repos could not teach git-gloss their own layout; defaults would be fixed",
+        "evidence": "test/signals.test.ts config extends/replace, errors and git config tests",
+        "impact": "contract",
+        "impact_reason": "adds the .gloss/config.json format and gloss.attention.* git config keys",
+        "hunks": [
+          "h18"
+        ],
+        "notes": "The sensitive floor reported for this file comes from the default secret and encryption patterns defined in it, not from handling secrets."
+      },
+      {
+        "id": "floor-derive",
+        "intent": "Group floors, derived attention and the under-rating check",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "No floor to check declared levels against, and no derived values for unrated glosses",
+        "evidence": "test/signals.test.ts derivation, group floor and ratingProblems tests",
+        "impact": "module",
+        "hunks": [
+          "h19",
+          "h5"
+        ],
+        "notes": "Behaviour-changing: necessity not mechanical and not all hunks tests, docs, generated files or lockfiles. Served by tests: a group made only of test hunks names it in serves, directly or through a chain; serving \"task\" does not count. The floor adds no raise-one-step rules except at least careful for large changes."
+      },
+      {
+        "id": "signals-command",
+        "intent": "New `git gloss signals` command (text and --json) for a commit, range or the working tree",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Authors and tools could not see the signals except in the hunks summary",
+        "evidence": "test/signals.test.ts signals text and json test",
+        "impact": "contract",
+        "impact_reason": "new CLI command and a JSON shape other tools may read",
+        "hunks": [
+          "h6",
+          "h17",
+          "h20"
+        ],
+        "notes": "signals wip reads the working tree without taking a snapshot (git.ts workingDiff)."
+      },
+      {
+        "id": "add-checks",
+        "intent": "add warns on under-rated group impact, errors on under-rated attention, --allow-underrate",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Authors could still quietly under-rate a change",
+        "evidence": "test/signals.test.ts add under-rating tests",
+        "impact": "contract",
+        "impact_reason": "add now refuses glosses it accepted before, and loads the repo config",
+        "hunks": [
+          "h7",
+          "h8",
+          "h9"
+        ]
+      },
+      {
+        "id": "hunks-summary",
+        "intent": "hunks ends with a short signals summary",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Authors would not see the floor before writing the gloss",
+        "evidence": "test/signals.test.ts hunks summary test",
+        "impact": "module",
+        "hunks": [
+          "h10",
+          "h11"
+        ]
+      },
+      {
+        "id": "show-display",
+        "intent": "show marks derived attention and impact, shows the floor and a below-floor flag",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Derived values and the floor would not be visible to reviewers",
+        "evidence": "test/signals.test.ts show, override and back-compat tests",
+        "impact": "module",
+        "hunks": [
+          "h12",
+          "h13",
+          "h14",
+          "h15",
+          "h16",
+          "h36",
+          "h37"
+        ]
+      },
+      {
+        "id": "html-display",
+        "intent": "html shows derived badges, the floor and a mismatch line",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The html view would still say unrated and hide the floor",
+        "evidence": "test/signals.test.ts html data assertions",
+        "impact": "module",
+        "hunks": [
+          "h22",
+          "h23",
+          "h24",
+          "h25",
+          "h26",
+          "h27",
+          "h28",
+          "h29",
+          "h30",
+          "h31",
+          "h32",
+          "h33"
+        ]
+      },
+      {
+        "id": "loader-hunks",
+        "intent": "The loaded gloss keeps all current hunks so signals can be computed",
+        "necessity": "supporting",
+        "serves": [
+          "floor-derive",
+          "show-display",
+          "html-display"
+        ],
+        "removal_impact": "Derived values could not see hunks that no group claims",
+        "impact": "local",
+        "hunks": [
+          "h34",
+          "h35"
+        ]
+      },
+      {
+        "id": "skill",
+        "intent": "Gloss skill: read the signals first, never declare below the floor, worked example",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Authors would not know to check the floor and would hit add errors blindly",
+        "impact": "module",
+        "hunks": [
+          "h3",
+          "h4"
+        ]
+      },
+      {
+        "id": "readme",
+        "intent": "README: signals, floor, derivation and config",
+        "necessity": "supporting",
+        "serves": [
+          "signals-command",
+          "config",
+          "floor-derive",
+          "add-checks"
+        ],
+        "removal_impact": "The config format and derivation rules would be undocumented",
+        "impact": "local",
+        "hunks": [
+          "h1",
+          "h2"
+        ]
+      },
+      {
+        "id": "test-updates",
+        "intent": "Existing attention tests expect derived text and a lowest level that passes the floor",
+        "necessity": "supporting",
+        "serves": [
+          "show-display",
+          "add-checks"
+        ],
+        "removal_impact": "Four phase 1 tests would fail: unrated became derived, and skim on code is below the floor",
+        "impact": "local",
+        "hunks": [
+          "h39",
+          "h40",
+          "h41",
+          "h42",
+          "h43"
+        ]
+      },
+      {
+        "id": "signals-tests",
+        "intent": "Tests for signals, config, floor, derivation, add checks and the four calibration fixtures",
+        "necessity": "supporting",
+        "serves": [
+          "signals-engine",
+          "glob",
+          "config",
+          "floor-derive",
+          "signals-command",
+          "add-checks",
+          "hunks-summary",
+          "show-display",
+          "html-display"
+        ],
+        "removal_impact": "The floor and derivation rules would be unverified",
+        "impact": "local",
+        "hunks": [
+          "h44"
+        ]
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Whole-hunk signals for groups that claim some lines of a hunk",
+        "rejected_because": "A new file is one hunk split among groups; one device-write line would make every group sensitive"
+      },
+      {
+        "option": "Include the raise-one-step rules in the floor",
+        "rejected_because": "They depend on the gloss, and a large contract-hit change would then floor at must-read instead of careful"
+      }
+    ],
+    "risks": [
+      "Any code change in a non-test file has floor look, so declaring skim on code now needs override_reason",
+      "Default secret patterns are noisy on code that defines or lists them (this change's config.ts); override_reason is the escape hatch",
+      "Derived values and floors are computed on read from the current working-tree config, so show or html of an old commit can change after a config edit",
+      "A malformed config prints its warning once on stderr while show and html fall back to unrated"
+    ],
+    "attention": {
+      "level": "careful",
+      "focus": [
+        "add-checks",
+        "floor-derive",
+        "signals-engine"
+      ],
+      "reasons": [
+        "add now refuses glosses it accepted before",
+        "floor and derivation rules decide what authors must declare",
+        "lockfile parsing and damping are heuristics"
+      ],
+      "override_reason": "The must-read floor comes from src/config.ts, which only defines the default secret and encryption patterns; no secrets or crypto are handled."
+    },
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-sonnet-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 12,
+      "oldLines": 8,
+      "newStart": 12,
+      "newLines": 11,
+      "hash": "7a2bd0884b577e28"
+    },
+    {
+      "id": "h2",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 162,
+      "oldLines": 9,
+      "newStart": 165,
+      "newLines": 42,
+      "hash": "20f7ef4584bd7469"
+    },
+    {
+      "id": "h3",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 31,
+      "oldLines": 7,
+      "newStart": 31,
+      "newLines": 7,
+      "hash": "becdde45705809a7"
+    },
+    {
+      "id": "h4",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 99,
+      "oldLines": 11,
+      "newStart": 99,
+      "newLines": 31,
+      "hash": "05ca55378e88c02d"
+    },
+    {
+      "id": "h5",
+      "file": "src/attention.ts",
+      "oldFile": "src/attention.ts",
+      "oldStart": 1,
+      "oldLines": 8,
+      "newStart": 1,
+      "newLines": 21,
+      "hash": "f5fc5727d56b4b8a"
+    },
+    {
+      "id": "h6",
+      "file": "src/cli.ts",
+      "oldFile": "src/cli.ts",
+      "oldStart": 10,
+      "oldLines": 12,
+      "newStart": 10,
+      "newLines": 13,
+      "hash": "bddaf40d7df52ce9"
+    },
+    {
+      "id": "h7",
+      "file": "src/commands/add.ts",
+      "oldFile": "src/commands/add.ts",
+      "oldStart": 5,
+      "oldLines": 8,
+      "newStart": 5,
+      "newLines": 10,
+      "hash": "bcb321856a838ecb"
+    },
+    {
+      "id": "h8",
+      "file": "src/commands/add.ts",
+      "oldFile": "src/commands/add.ts",
+      "oldStart": 16,
+      "oldLines": 6,
+      "newStart": 18,
+      "newLines": 7,
+      "hash": "c2ea507dfbb8a67b"
+    },
+    {
+      "id": "h9",
+      "file": "src/commands/add.ts",
+      "oldFile": "src/commands/add.ts",
+      "oldStart": 45,
+      "oldLines": 11,
+      "newStart": 48,
+      "newLines": 22,
+      "hash": "c4bbfc04d4702712"
+    },
+    {
+      "id": "h10",
+      "file": "src/commands/hunks.ts",
+      "oldFile": "src/commands/hunks.ts",
+      "oldStart": 6,
+      "oldLines": 6,
+      "newStart": 6,
+      "newLines": 10,
+      "hash": "dedd520728b9488b"
+    },
+    {
+      "id": "h11",
+      "file": "src/commands/hunks.ts",
+      "oldFile": "src/commands/hunks.ts",
+      "oldStart": 61,
+      "oldLines": 6,
+      "newStart": 65,
+      "newLines": 9,
+      "hash": "754dbb25276a847b"
+    },
+    {
+      "id": "h12",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 4,
+      "oldLines": 10,
+      "newStart": 4,
+      "newLines": 11,
+      "hash": "66f643390267d2f4"
+    },
+    {
+      "id": "h13",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 148,
+      "oldLines": 7,
+      "newStart": 149,
+      "newLines": 8,
+      "hash": "029984683aecc70a"
+    },
+    {
+      "id": "h14",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 207,
+      "oldLines": 8,
+      "newStart": 209,
+      "newLines": 13,
+      "hash": "f667259054f9e145"
+    },
+    {
+      "id": "h15",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 217,
+      "oldLines": 7,
+      "newStart": 224,
+      "newLines": 7,
+      "hash": "18fad4b35b1797ff"
+    },
+    {
+      "id": "h16",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 231,
+      "oldLines": 6,
+      "newStart": 238,
+      "newLines": 8,
+      "hash": "5ad43317feea14e2"
+    },
+    {
+      "id": "h17",
+      "file": "src/commands/signals.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 85,
+      "hash": "943b840314ffa175"
+    },
+    {
+      "id": "h18",
+      "file": "src/config.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 180,
+      "hash": "abf543c3c6f9b808"
+    },
+    {
+      "id": "h19",
+      "file": "src/floor.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 184,
+      "hash": "dba19d33c59b02f6"
+    },
+    {
+      "id": "h20",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 144,
+      "oldLines": 6,
+      "newStart": 144,
+      "newLines": 16,
+      "hash": "eb2cef89efe52803"
+    },
+    {
+      "id": "h21",
+      "file": "src/glob.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 57,
+      "hash": "2d643b5cee98e7e9"
+    },
+    {
+      "id": "h22",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 29,
+      "oldLines": 6,
+      "newStart": 29,
+      "newLines": 14,
+      "hash": "33dfaf2238a2eb84"
+    },
+    {
+      "id": "h23",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 86,
+      "oldLines": 7,
+      "newStart": 94,
+      "newLines": 7,
+      "hash": "f6fad0dd70593797"
+    },
+    {
+      "id": "h24",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 140,
+      "oldLines": 13,
+      "newStart": 148,
+      "newLines": 24,
+      "hash": "e8e4b4c879405605"
+    },
+    {
+      "id": "h25",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 157,
+      "oldLines": 7,
+      "newStart": 176,
+      "newLines": 8,
+      "hash": "5b651958140644e9"
+    },
+    {
+      "id": "h26",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 4,
+      "oldLines": 8,
+      "newStart": 4,
+      "newLines": 10,
+      "hash": "1dcd8965e3f8b6bc"
+    },
+    {
+      "id": "h27",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 32,
+      "oldLines": 6,
+      "newStart": 34,
+      "newLines": 8,
+      "hash": "07948590b5ab296b"
+    },
+    {
+      "id": "h28",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 59,
+      "oldLines": 6,
+      "newStart": 63,
+      "newLines": 10,
+      "hash": "c97608832ab7dfec"
+    },
+    {
+      "id": "h29",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 149,
+      "oldLines": 6,
+      "newStart": 157,
+      "newLines": 9,
+      "hash": "6210705b9dc8184f"
+    },
+    {
+      "id": "h30",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 175,
+      "oldLines": 6,
+      "newStart": 186,
+      "newLines": 7,
+      "hash": "fe7a1d73b5d07cbe"
+    },
+    {
+      "id": "h31",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 200,
+      "oldLines": 6,
+      "newStart": 212,
+      "newLines": 7,
+      "hash": "d37d0fc89a1fd298"
+    },
+    {
+      "id": "h32",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 219,
+      "oldLines": 6,
+      "newStart": 232,
+      "newLines": 7,
+      "hash": "57e7d1dee1da4476"
+    },
+    {
+      "id": "h33",
+      "file": "src/html/style.css",
+      "oldFile": "src/html/style.css",
+      "oldStart": 179,
+      "oldLines": 6,
+      "newStart": 179,
+      "newLines": 9,
+      "hash": "7a357538307ed47c"
+    },
+    {
+      "id": "h34",
+      "file": "src/loader.ts",
+      "oldFile": "src/loader.ts",
+      "oldStart": 24,
+      "oldLines": 6,
+      "newStart": 24,
+      "newLines": 8,
+      "hash": "9adfc24bfe6983db"
+    },
+    {
+      "id": "h35",
+      "file": "src/loader.ts",
+      "oldFile": "src/loader.ts",
+      "oldStart": 95,
+      "oldLines": 5,
+      "newStart": 97,
+      "newLines": 5,
+      "hash": "e93f799f615b6ef0"
+    },
+    {
+      "id": "h36",
+      "file": "src/render.ts",
+      "oldFile": "src/render.ts",
+      "oldStart": 3,
+      "oldLines": 6,
+      "newStart": 3,
+      "newLines": 7,
+      "hash": "526e820e35ea90bd"
+    },
+    {
+      "id": "h37",
+      "file": "src/render.ts",
+      "oldFile": "src/render.ts",
+      "oldStart": 39,
+      "oldLines": 23,
+      "newStart": 40,
+      "newLines": 45,
+      "hash": "03acfe44251a35c9"
+    },
+    {
+      "id": "h38",
+      "file": "src/signals.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 344,
+      "hash": "990f932c49e8c556"
+    },
+    {
+      "id": "h39",
+      "file": "test/attention.test.ts",
+      "oldFile": "test/attention.test.ts",
+      "oldStart": 106,
+      "oldLines": 13,
+      "newStart": 106,
+      "newLines": 13,
+      "hash": "313e202360568b7e"
+    },
+    {
+      "id": "h40",
+      "file": "test/attention.test.ts",
+      "oldFile": "test/attention.test.ts",
+      "oldStart": 121,
+      "oldLines": 7,
+      "newStart": 121,
+      "newLines": 7,
+      "hash": "5e1b473ca610831a"
+    },
+    {
+      "id": "h41",
+      "file": "test/attention.test.ts",
+      "oldFile": "test/attention.test.ts",
+      "oldStart": 228,
+      "oldLines": 7,
+      "newStart": 228,
+      "newLines": 7,
+      "hash": "6ebba943433ec9e3"
+    },
+    {
+      "id": "h42",
+      "file": "test/attention.test.ts",
+      "oldFile": "test/attention.test.ts",
+      "oldStart": 243,
+      "oldLines": 11,
+      "newStart": 243,
+      "newLines": 11,
+      "hash": "331f28425395ac64"
+    },
+    {
+      "id": "h43",
+      "file": "test/attention.test.ts",
+      "oldFile": "test/attention.test.ts",
+      "oldStart": 257,
+      "oldLines": 5,
+      "newStart": 257,
+      "newLines": 5,
+      "hash": "200366f625b39275"
+    },
+    {
+      "id": "h44",
+      "file": "test/signals.test.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 583,
+      "hash": "a80a5fe6afb2a77a"
+    }
+  ]
+}
