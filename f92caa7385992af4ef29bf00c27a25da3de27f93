@@ -1,0 +1,667 @@
+{
+  "gloss": 4,
+  "commit": "f92caa7385992af4ef29bf00c27a25da3de27f93",
+  "created_at": "2026-10-23T21:19:30.263Z",
+  "annotation": {
+    "version": 1,
+    "task": "Phase 1 of attention & impact: declared per-group impact and per-change attention (schema, validation, display, carry/merge)",
+    "summary": "Adds optional group impact/impact_reason and an optional attention object; show and html display them, carry/merge combine them, and notes using them are format 4 so older readers refuse instead of dropping them.",
+    "groups": [
+      {
+        "id": "schema-fields",
+        "intent": "Add impact, impact_reason and attention to the annotation schema",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "There would be nowhere to declare impact or attention",
+        "evidence": "test/attention.test.ts schema accept/reject test",
+        "impact": "contract",
+        "impact_reason": "New stored annotation fields, also printed by `git gloss schema`",
+        "hunks": [
+          "h39",
+          "h40",
+          "h41",
+          "h42",
+          "h43"
+        ]
+      },
+      {
+        "id": "note-format-4",
+        "intent": "Write notes using the new fields as format 4 so older readers refuse them",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Older git-gloss versions would read these notes, drop the fields, and write them back without them",
+        "evidence": "test/attention.test.ts format test; checked by hand against the pre-change CLI",
+        "impact": "contract",
+        "impact_reason": "Stored note format; older readers strip unknown keys and would lose fields on carry",
+        "hunks": [
+          "h44",
+          "h45",
+          "h15",
+          "h48"
+        ],
+        "notes": "Also bumps the existing test's 'newer version' note from format 4 to 5, since 4 is now real."
+      },
+      {
+        "id": "focus-validation",
+        "intent": "Reject attention.focus ids that name no group, or repeat",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A gloss could point reviewers at a group that does not exist",
+        "evidence": "test/attention.test.ts add refuses unknown focus",
+        "impact": "module",
+        "hunks": [
+          "h46"
+        ]
+      },
+      {
+        "id": "attention-combine",
+        "intent": "Combine attention when glosses are carried or merged",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "carry, adopt, squash and fixup would drop attention, or keep focus ids of groups that are gone",
+        "evidence": "test/attention.test.ts squash and wip-carry tests",
+        "impact": "contract",
+        "impact_reason": "Squash and rebase would otherwise silently lose the new fields",
+        "hunks": [
+          "h4",
+          "h5",
+          "h33",
+          "h34",
+          "h35"
+        ],
+        "notes": "Level is the maximum; focus is renamed, deduplicated, ranked by impact and cut to 3; reasons are unioned. Merge keeps source groups separate, so group impact is carried as is. If any contributing source is unrated, the combined gloss has no attention."
+      },
+      {
+        "id": "show-display",
+        "intent": "show: attention header, impact badges, --sort impact, --only impact",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Declared fields would be stored but invisible in the terminal",
+        "evidence": "test/attention.test.ts show test",
+        "impact": "module",
+        "hunks": [
+          "h6",
+          "h7",
+          "h8",
+          "h9",
+          "h10",
+          "h11",
+          "h12",
+          "h13",
+          "h14",
+          "h36",
+          "h37",
+          "h38"
+        ],
+        "notes": "Glosses without attention print 'attention: unrated'; the impact column appears only when some group has an impact. show has no --json today, so none was added."
+      },
+      {
+        "id": "html-display",
+        "intent": "html: attention banner with focus links, impact badges and reasons",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The HTML view and ary would not show attention or impact",
+        "evidence": "test/attention.test.ts html tests",
+        "impact": "module",
+        "hunks": [
+          "h16",
+          "h17",
+          "h18",
+          "h19",
+          "h20",
+          "h21",
+          "h22",
+          "h23",
+          "h24",
+          "h25",
+          "h26",
+          "h27",
+          "h28",
+          "h29",
+          "h30",
+          "h31",
+          "h32"
+        ]
+      },
+      {
+        "id": "docs",
+        "intent": "Document the new fields in the README and the gloss skill",
+        "necessity": "supporting",
+        "serves": [
+          "schema-fields",
+          "show-display",
+          "html-display"
+        ],
+        "removal_impact": "Authors would not know to set impact and attention, or what format 4 means",
+        "impact": "local",
+        "hunks": [
+          "h1",
+          "h2",
+          "h3"
+        ]
+      },
+      {
+        "id": "tests",
+        "intent": "Tests for schema, format, display, sorting, html and carry",
+        "necessity": "supporting",
+        "serves": [
+          "schema-fields",
+          "note-format-4",
+          "focus-validation",
+          "attention-combine",
+          "show-display",
+          "html-display"
+        ],
+        "removal_impact": "None of the new behaviour would be checked",
+        "impact": "local",
+        "hunks": [
+          "h47"
+        ]
+      }
+    ],
+    "risks": [
+      "Phase 1 only: no computed signals, floors or under-rating checks",
+      "attention.focus is optional in the schema so carry can drop it when its groups are gone",
+      "Rollout: any gloss using impact, impact_reason or attention is written as note format 4, so every reader at or below 0.3.0 (show, carry, html, ary, old post-rewrite/pre-push hooks that call them, and git-gud, which bundles @ok-ggwp/git-gloss 0.2.0) reports 'written by a newer git-gloss; upgrade to read it' until upgraded; glosses without the new fields still write as format 1-3 and stay readable",
+      "Merge/carry: a source gloss whose groups are all dropped from a squash target no longer contributes its attention level to the combined (max) level; intended, but silent",
+      "Squashing or carrying a rated commit with an unrated one gives a combined gloss with no attention (it shows unrated), so a rated source's level is lost; phase 2's computed floor will derive a level for it"
+    ],
+    "attention": {
+      "level": "careful",
+      "focus": [
+        "note-format-4",
+        "attention-combine"
+      ],
+      "reasons": [
+        "Changes the stored note format and how glosses merge",
+        "Existing glosses must read and write unchanged"
+      ]
+    },
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-sonnet-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 21,
+      "oldLines": 7,
+      "newStart": 21,
+      "newLines": 8,
+      "hash": "487c110d6cb39dbf"
+    },
+    {
+      "id": "h2",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 157,
+      "oldLines": 6,
+      "newStart": 158,
+      "newLines": 14,
+      "hash": "f7e3eaeee8ee41d8"
+    },
+    {
+      "id": "h3",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 99,
+      "oldLines": 6,
+      "newStart": 99,
+      "newLines": 12,
+      "hash": "d5e6cdb56ca82308"
+    },
+    {
+      "id": "h4",
+      "file": "src/attention.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 25,
+      "hash": "37f6d4fce827192e"
+    },
+    {
+      "id": "h5",
+      "file": "src/carry.ts",
+      "oldFile": "src/carry.ts",
+      "oldStart": 68,
+      "oldLines": 5,
+      "newStart": 68,
+      "newLines": 8,
+      "hash": "46b16966bdcfcc4e"
+    },
+    {
+      "id": "h6",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 3,
+      "oldLines": 14,
+      "newStart": 3,
+      "newLines": 15,
+      "hash": "f3d8068d94ceb8ee"
+    },
+    {
+      "id": "h7",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 34,
+      "oldLines": 12,
+      "newStart": 35,
+      "newLines": 18,
+      "hash": "76efff660d363af3"
+    },
+    {
+      "id": "h8",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 71,
+      "oldLines": 7,
+      "newStart": 78,
+      "newLines": 7,
+      "hash": "4cf30cef1f65f403"
+    },
+    {
+      "id": "h9",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 108,
+      "oldLines": 14,
+      "newStart": 115,
+      "newLines": 19,
+      "hash": "4a70eabd2144ffc6"
+    },
+    {
+      "id": "h10",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 128,
+      "oldLines": 7,
+      "newStart": 140,
+      "newLines": 7,
+      "hash": "7d5c1042b0753aff"
+    },
+    {
+      "id": "h11",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 136,
+      "oldLines": 17,
+      "newStart": 148,
+      "newLines": 24,
+      "hash": "4399934edb15ac7c"
+    },
+    {
+      "id": "h12",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 169,
+      "oldLines": 14,
+      "newStart": 188,
+      "newLines": 13,
+      "hash": "1af782790fab348c"
+    },
+    {
+      "id": "h13",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 189,
+      "oldLines": 7,
+      "newStart": 207,
+      "newLines": 9,
+      "hash": "9643f88d2787b752"
+    },
+    {
+      "id": "h14",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 197,
+      "oldLines": 7,
+      "newStart": 217,
+      "newLines": 7,
+      "hash": "f3ee1f7f42fb1341"
+    },
+    {
+      "id": "h15",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 235,
+      "oldLines": 7,
+      "newStart": 235,
+      "newLines": 7,
+      "hash": "d1aa5f43c157e889"
+    },
+    {
+      "id": "h16",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 24,
+      "oldLines": 6,
+      "newStart": 24,
+      "newLines": 11,
+      "hash": "589a1517c20063e0"
+    },
+    {
+      "id": "h17",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 81,
+      "oldLines": 6,
+      "newStart": 86,
+      "newLines": 7,
+      "hash": "f34f7b6523a0a7a1"
+    },
+    {
+      "id": "h18",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 97,
+      "oldLines": 6,
+      "newStart": 103,
+      "newLines": 7,
+      "hash": "1bc6aba9aea59143"
+    },
+    {
+      "id": "h19",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 133,
+      "oldLines": 6,
+      "newStart": 140,
+      "newLines": 27,
+      "hash": "dec4f91695a8c6bb"
+    },
+    {
+      "id": "h20",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 241,
+      "oldLines": 6,
+      "newStart": 269,
+      "newLines": 7,
+      "hash": "42f5b596862276ff"
+    },
+    {
+      "id": "h21",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 294,
+      "oldLines": 6,
+      "newStart": 323,
+      "newLines": 7,
+      "hash": "45f08ea66bea27ed"
+    },
+    {
+      "id": "h22",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 5,
+      "oldLines": 7,
+      "newStart": 5,
+      "newLines": 7,
+      "hash": "098f0e33c08d6016"
+    },
+    {
+      "id": "h23",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 30,
+      "oldLines": 6,
+      "newStart": 30,
+      "newLines": 8,
+      "hash": "dac9af51f6594f88"
+    },
+    {
+      "id": "h24",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 55,
+      "oldLines": 6,
+      "newStart": 57,
+      "newLines": 8,
+      "hash": "1ea1d3b3eb99dee2"
+    },
+    {
+      "id": "h25",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 90,
+      "oldLines": 6,
+      "newStart": 94,
+      "newLines": 7,
+      "hash": "6c38206cdc3ac4df"
+    },
+    {
+      "id": "h26",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 168,
+      "oldLines": 6,
+      "newStart": 173,
+      "newLines": 8,
+      "hash": "351f197811d92638"
+    },
+    {
+      "id": "h27",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 192,
+      "oldLines": 6,
+      "newStart": 199,
+      "newLines": 7,
+      "hash": "d9556ce2f470cd5e"
+    },
+    {
+      "id": "h28",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 210,
+      "oldLines": 6,
+      "newStart": 218,
+      "newLines": 7,
+      "hash": "4e24a5918573d429"
+    },
+    {
+      "id": "h29",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 224,
+      "oldLines": 6,
+      "newStart": 233,
+      "newLines": 7,
+      "hash": "73305ed16cc94096"
+    },
+    {
+      "id": "h30",
+      "file": "src/html/style.css",
+      "oldFile": "src/html/style.css",
+      "oldStart": 24,
+      "oldLines": 6,
+      "newStart": 24,
+      "newLines": 16,
+      "hash": "4dfef577e0acbf78"
+    },
+    {
+      "id": "h31",
+      "file": "src/html/style.css",
+      "oldFile": "src/html/style.css",
+      "oldStart": 55,
+      "oldLines": 6,
+      "newStart": 65,
+      "newLines": 16,
+      "hash": "2927ee3711719112"
+    },
+    {
+      "id": "h32",
+      "file": "src/html/style.css",
+      "oldFile": "src/html/style.css",
+      "oldStart": 152,
+      "oldLines": 6,
+      "newStart": 172,
+      "newLines": 16,
+      "hash": "4022ebce920120ea"
+    },
+    {
+      "id": "h33",
+      "file": "src/merge.ts",
+      "oldFile": "src/merge.ts",
+      "oldStart": 1,
+      "oldLines": 5,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "87b05ee3f5050d9d"
+    },
+    {
+      "id": "h34",
+      "file": "src/merge.ts",
+      "oldFile": "src/merge.ts",
+      "oldStart": 179,
+      "oldLines": 6,
+      "newStart": 180,
+      "newLines": 13,
+      "hash": "447089ef87d2ac06"
+    },
+    {
+      "id": "h35",
+      "file": "src/merge.ts",
+      "oldFile": "src/merge.ts",
+      "oldStart": 186,
+      "oldLines": 6,
+      "newStart": 194,
+      "newLines": 7,
+      "hash": "d203f72eb9d5d491"
+    },
+    {
+      "id": "h36",
+      "file": "src/render.ts",
+      "oldFile": "src/render.ts",
+      "oldStart": 3,
+      "oldLines": 7,
+      "newStart": 3,
+      "newLines": 7,
+      "hash": "840221801334e1b3"
+    },
+    {
+      "id": "h37",
+      "file": "src/render.ts",
+      "oldFile": "src/render.ts",
+      "oldStart": 26,
+      "oldLines": 6,
+      "newStart": 26,
+      "newLines": 39,
+      "hash": "c8be56e3bdb0138c"
+    },
+    {
+      "id": "h38",
+      "file": "src/render.ts",
+      "oldFile": "src/render.ts",
+      "oldStart": 72,
+      "oldLines": 13,
+      "newStart": 105,
+      "newLines": 15,
+      "hash": "74ac5335b8f8bf63"
+    },
+    {
+      "id": "h39",
+      "file": "src/schema.ts",
+      "oldFile": "src/schema.ts",
+      "oldStart": 14,
+      "oldLines": 6,
+      "newStart": 14,
+      "newLines": 8,
+      "hash": "cfd8b8baf0c3e67e"
+    },
+    {
+      "id": "h40",
+      "file": "src/schema.ts",
+      "oldFile": "src/schema.ts",
+      "oldStart": 23,
+      "oldLines": 6,
+      "newStart": 25,
+      "newLines": 33,
+      "hash": "ad62f8fa323e8027"
+    },
+    {
+      "id": "h41",
+      "file": "src/schema.ts",
+      "oldFile": "src/schema.ts",
+      "oldStart": 41,
+      "oldLines": 6,
+      "newStart": 70,
+      "newLines": 15,
+      "hash": "70e7341576a36805"
+    },
+    {
+      "id": "h42",
+      "file": "src/schema.ts",
+      "oldFile": "src/schema.ts",
+      "oldStart": 48,
+      "oldLines": 6,
+      "newStart": 86,
+      "newLines": 20,
+      "hash": "bc032ad95fc5b982"
+    },
+    {
+      "id": "h43",
+      "file": "src/schema.ts",
+      "oldFile": "src/schema.ts",
+      "oldStart": 58,
+      "oldLines": 6,
+      "newStart": 110,
+      "newLines": 7,
+      "hash": "98098677782db7d7"
+    },
+    {
+      "id": "h44",
+      "file": "src/schema.ts",
+      "oldFile": "src/schema.ts",
+      "oldStart": 73,
+      "oldLines": 10,
+      "newStart": 126,
+      "newLines": 13,
+      "hash": "c947a552dd1f0eaa"
+    },
+    {
+      "id": "h45",
+      "file": "src/schema.ts",
+      "oldFile": "src/schema.ts",
+      "oldStart": 102,
+      "oldLines": 7,
+      "newStart": 158,
+      "newLines": 7,
+      "hash": "115c24f7eef49928"
+    },
+    {
+      "id": "h46",
+      "file": "src/validate.ts",
+      "oldFile": "src/validate.ts",
+      "oldStart": 46,
+      "oldLines": 6,
+      "newStart": 46,
+      "newLines": 10,
+      "hash": "79040d7b3b568d37"
+    },
+    {
+      "id": "h47",
+      "file": "test/attention.test.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 261,
+      "hash": "a86babf4f4263677"
+    },
+    {
+      "id": "h48",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 219,
+      "oldLines": 7,
+      "newStart": 219,
+      "newLines": 7,
+      "hash": "ab3b12fbee4bf76f"
+    }
+  ]
+}
