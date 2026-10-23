@@ -10,12 +10,13 @@ import * as review from './commands/review.ts'
 import * as reviews from './commands/reviews.ts'
 import * as schema from './commands/schema.ts'
 import * as show from './commands/show.ts'
+import * as signals from './commands/signals.ts'
 import * as sync from './commands/sync.ts'
 import * as versions from './commands/versions.ts'
 import * as why from './commands/why.ts'
 
 const COMMANDS: Record<string, { usage: string; run: (argv: string[]) => number }> = {
-  init, hunks, add, adopt, carry, show, html, ary, why, review, reviews, sync, versions, schema,
+  init, hunks, signals, add, adopt, carry, show, html, ary, why, review, reviews, sync, versions, schema,
 }
 
 function help(): string {

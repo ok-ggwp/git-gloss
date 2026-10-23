@@ -24,6 +24,8 @@ export type LoadedGloss = {
   sha: string
   subject: string
   note: GlossNote
+  // Every hunk of the commit's diff as it is now.
+  hunks: Hunk[]
   groups: LoadedGroup[]
   // Changed lines in the commit's diff that no group covers.
   unannotated: Uncovered[]
@@ -95,5 +97,5 @@ export function loadGloss(sha: string): LoadedGloss | null {
     )
   }
 
-  return { sha, subject: commitSubject(sha), note, groups, unannotated, stale: warnings.length > 0, warnings }
+  return { sha, subject: commitSubject(sha), note, hunks: current, groups, unannotated, stale: warnings.length > 0, warnings }
 }

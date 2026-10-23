@@ -12,8 +12,11 @@ git gloss init [--hooks]              follow amends/rebases; fetch origin's glos
 git gloss sync [<remote>]             fetch, merge and push glosses (default: origin)
 git gloss hunks [<commit>|wip]        list hunks, numbering changed lines for h3:2-5 references;
                                       wip snapshots your uncommitted work instead
+git gloss signals [<commit>|<range>|wip] [--json]
+                                      what the diff itself says about attention: path classes, pattern
+                                      hits, dependency bumps and the computed floor
 git gloss adopt [<commit>]            move the gloss of uncommitted work onto the commit made from it
-git gloss add [<commit>] -f a.json    attach an annotation (validated against the diff)
+git gloss add [<commit>] -f a.json    attach an annotation (validated against the diff; --allow-underrate)
 git gloss carry <source>... [--to <c>] gloss a commit from the glosses of the commits its changes came from
                                       (a squash, cherry-pick or rebase): git gloss carry main..feature --to <squash>
       --find [--squash] [<commit>...] ...working out which commits those are
@@ -162,9 +165,42 @@ Like glosses, reviews follow rebased commits in repos set up with `git gloss ini
 
 Necessity and consequence are separate: a `required` one-line fix to a login helper matters more than a `required` rename in a leaf component. Two optional fields say so. Each group may have `impact` (`local < module < shared < contract < sensitive`, the farthest its effect reaches if it is wrong) and an `impact_reason` of up to 120 characters. The annotation may have `attention`: `level` (`skim`, `look`, `careful` or `must-read`), one to three `focus` group ids to read first, `reasons`, and an optional `override_reason`. `git gloss schema` lists them all.
 
-`show` leads with `attention: CAREFUL · focus: a, b` and the reasons, and badges each group with its impact; `html` shows the same as a banner whose focus links jump to the groups. A gloss without them reads as `attention: unrated`. When glosses are combined (`carry`, a squash, a rebase) the attention level is the highest of them, the focus groups are the most impactful three, and the reasons are joined; if any of them is unrated, so is the combined gloss.
+`show` leads with `attention: CAREFUL (declared) · floor: careful · focus: a, b` and the reasons, and badges each group with its impact; `html` shows the same as a banner whose focus links jump to the groups. Where nothing is declared, `show` and `html` show a value computed from the diff and mark it, as in `attention: LOOK (derived)` (a group's derived impact is in parentheses); a gloss reads as `attention: unrated` only where no signals can be computed. When glosses are combined (`carry`, a squash, a rebase) the attention level is the highest of them and the focus groups are the most impactful three, with the reasons joined; if any of them declared none, the combined gloss declares none and shows a derived one.
 
-Notes using these fields are format 4; a git-gloss that predates them refuses such a note ("written by a newer git-gloss") rather than silently dropping the fields. A gloss that doesn't use them is still written in its old format.
+Notes using these fields are format 4; a git-gloss that predates them refuses such a note ("written by a newer git-gloss") rather than silently dropping the fields. A gloss that doesn't use them is still written in its old format. Derived values and floors are computed on every read and never stored in a note.
+
+### Computed signals and the floor
+
+`git gloss signals [<commit>|<range>|wip] [--json]` reports, per hunk, file and change: the path classes (`sensitive`, `shared`, `contract`, `generated`, `test`, `docs`, plus `lockfile` and `manifest`), pattern hits, stats (files, hunks, lines, test files, share of hunks in tests), dependency changes, and the floor. `wip` is the working tree as it is now (no snapshot is taken). `hunks` ends with a short summary of the same, so read it before writing a gloss. Signals are cheap heuristics from globs and regexes, not a security scanner.
+
+- **Pattern hits** are regexes (case-insensitive unless the pattern sets `flags`) matched against the *added and removed* lines of a hunk only: never unchanged context lines, never the `@@` header. In test, docs and lockfile paths they are *damped*: still reported, but they don't count towards the floor (a `password` in a test file is not sensitive).
+- **Dependencies.** Edits to manifests and lockfiles are listed. `package-lock.json` and `pnpm-lock.yaml` are parsed from their changed lines for version bumps, and a bump of a package that no `package.json` change names is flagged as transitive. Other lockfiles are `contract` with no version detail.
+- **Floor of a hunk**: the highest of its path class (`sensitive`, `contract`, `shared`; lockfiles and manifests are at least `contract`; otherwise `module`) and its undamped pattern hits. Test, docs and generated files cap at `local` (a pattern hit in generated code still counts). A group's floor is the highest floor of its hunks; for a group that claims only some lines of a hunk, only the hits on those lines count.
+- **Floor of the change**: skim for `local`, look for `module`, careful for `shared` and `contract`, must-read for `sensitive`, and at least careful when more than `attention.largeChangeFiles` (default 50) files changed.
+- **Derived attention** (when the gloss declares none): start from the highest group impact (declared, else the group's floor) with the same mapping, then raise it one step (capped at must-read, once however many apply) for a behaviour-changing group that no test group serves, for a speculative or defensive group outside tests, or for more than `largeChangeFiles` files; never below the floor. A group is *behaviour-changing* when its necessity is not `mechanical` and not all its hunks are tests, docs, generated files or lockfiles. It is *served by tests* when a group made only of test-file hunks names it in `serves`, directly or through groups it serves; a test group serving `"task"` doesn't count.
+
+`add` checks a gloss against the floor. A group whose declared `impact` is below its floor (above plain `module`) is a warning naming the signal. A declared `attention.level` below the floor is an error unless `attention.override_reason` says why; `--allow-underrate` turns that error into a warning. Leaving `impact` or `attention` out is always allowed. An `override_reason` is shown by `show` and `html` next to the floor, flagged as a mismatch.
+
+### Config
+
+The built-in defaults name no language, framework or tool, only common file names. A repo adds to them with `.gloss/config.json`, committed in that repo:
+
+```json
+{
+  "attention": { "largeChangeFiles": 80 },
+  "paths": {
+    "shared": ["packages/shared/**", "tsconfig.base.json"],
+    "sensitive": ["src/devices/**"],
+    "test": { "extends": false, "globs": ["**/*.spec.*", "e2e/**"] }
+  },
+  "patterns": {
+    "sensitive": [{ "regex": "\\bdevice\\.write\\(", "name": "device write" }],
+    "contract": ["<regex for the repo's public-API markers>"]
+  }
+}
+```
+
+A class is a list that extends the default list, or `{ "extends": false, "globs": [...] }` (`"regexes"` for patterns) to replace it. Path classes: `sensitive`, `shared`, `contract`, `generated`, `test`, `docs`, `lockfile`, `manifest`; pattern classes: `sensitive`, `contract`, `shared`. Globs support `**`, `*`, `?` and `{a,b}`; a glob without a `/` matches that name at any depth. `git config gloss.attention.largeChangeFiles <n>` overrides the file. A malformed config is an error naming the file and key (`add` and `signals` stop; `show` falls back to declared values and "unrated").
 
 ## HTML view
 

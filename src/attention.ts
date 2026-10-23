@@ -1,7 +1,20 @@
-import { ATTENTION, IMPACT, type Attention, type Group, type Impact } from './schema.ts'
+import { ATTENTION, IMPACT, type Attention, type AttentionLevel, type Group, type Impact } from './schema.ts'
 
 // Rank of a group's impact; a group with none is below every level.
 export const impactRank = (i: Impact | undefined) => (i ? IMPACT.indexOf(i) : -1)
+
+export const maxImpact = (a: Impact, b: Impact): Impact => (impactRank(b) > impactRank(a) ? b : a)
+
+export const attentionRank = (a: AttentionLevel | undefined) => (a ? ATTENTION.indexOf(a) : -1)
+export const maxAttention = (a: AttentionLevel, b: AttentionLevel): AttentionLevel => (attentionRank(b) > attentionRank(a) ? b : a)
+// One step up, capped at must-read.
+export const raise = (a: AttentionLevel): AttentionLevel => ATTENTION[Math.min(ATTENTION.length - 1, ATTENTION.indexOf(a) + 1)]
+
+// The attention a given impact calls for, before any raising.
+const ATTENTION_FOR_IMPACT: Record<Impact, AttentionLevel> = {
+  local: 'skim', module: 'look', shared: 'careful', contract: 'careful', sensitive: 'must-read',
+}
+export const attentionForImpact = (i: Impact): AttentionLevel => ATTENTION_FOR_IMPACT[i]
 
 // What the reviewer should do when glosses are combined (a squash, a rebase):
 // the highest level of any of them. Focus groups of all of them, renamed to

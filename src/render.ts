@@ -3,6 +3,7 @@ import { styleText } from 'node:util'
 import type { Hunk } from './diff.ts'
 import { gitTry } from './git.ts'
 import { refLabel, sliceStats } from './selection.ts'
+import { attentionRank } from './attention.ts'
 import { IMPACT, servesOf, type Attention, type AttentionLevel, type Group, type GlossNote, type Impact, type Necessity } from './schema.ts'
 
 type Style = Parameters<typeof styleText>[0]
@@ -39,23 +40,45 @@ export function impactTag(i: Impact, pad = 0): string {
   return style(['bold', IMPACT_STYLE[i]], `[${i}]`) + ' '.repeat(Math.max(0, pad - i.length - 2))
 }
 
+// "(contract)": an impact derived from the diff rather than declared.
+export function derivedImpactTag(i: Impact, pad = 0): string {
+  return style('dim', `(${i})`) + ' '.repeat(Math.max(0, pad - i.length - 2))
+}
+
 // Width of the widest impact tag, "[sensitive]".
 export const IMPACT_W = Math.max(...IMPACT.map((i) => i.length)) + 2
 
-const ATTENTION_STYLE: Record<AttentionLevel, 'gray' | 'cyan' | 'yellow' | 'red'> = {
+export const ATTENTION_STYLE: Record<AttentionLevel, 'gray' | 'cyan' | 'yellow' | 'red'> = {
   skim: 'gray',
   look: 'cyan',
   careful: 'yellow',
   'must-read': 'red',
 }
 
-// "attention: CAREFUL · focus: a, b" with the reasons beneath; "unrated" for
-// a gloss that declares none.
-export function attentionBlock(a: Attention | undefined): string[] {
-  if (!a) return [style('dim', 'attention: unrated')]
-  const head = `attention: ${style(['bold', ATTENTION_STYLE[a.level]], a.level.toUpperCase())}` +
+// What `show` knows beyond the declared attention: the computed floor and
+// the attention derived when none is declared.
+export type AttentionView = { floor: AttentionLevel; derived: { level: AttentionLevel; reasons: string[] } }
+
+// Declared below the computed floor.
+export const belowFloor = (a: Attention | undefined, view: Pick<AttentionView, 'floor'> | undefined) =>
+  !!a && !!view && attentionRank(a.level) < attentionRank(view.floor)
+
+// "attention: CAREFUL (declared) · floor: careful · focus: a, b" with the
+// reasons beneath. Without a declared level but with signals: "LOOK (derived)"
+// and why. "unrated" where nothing is declared and no signals could be computed.
+export function attentionBlock(a: Attention | undefined, view?: AttentionView): string[] {
+  const level = (l: AttentionLevel) => style(['bold', ATTENTION_STYLE[l]], l.toUpperCase())
+  if (!a) {
+    if (!view) return [style('dim', 'attention: unrated')]
+    const d = view.derived
+    return [`attention: ${level(d.level)} ${style('dim', '(derived)')}` + (d.level === view.floor ? '' : ` · floor: ${view.floor}`),
+      ...d.reasons.flatMap((r) => field('•', r))]
+  }
+  const head = `attention: ${level(a.level)}${view ? ' ' + style('dim', '(declared)') + ` · floor: ${view.floor}` : ''}` +
     (a.focus?.length ? ` · focus: ${a.focus.join(', ')}` : '')
+  const below = belowFloor(a, view)
   return [head, ...(a.reasons ?? []).flatMap((r) => field('•', r)),
+    ...(below ? field('⚠', `declared ${a.level}, below the computed floor ${view!.floor}` + (a.override_reason ? '' : ' (no override_reason)'), 2).map((l) => style('yellow', l)) : []),
     ...(a.override_reason ? field('override:', a.override_reason) : [])]
 }
 

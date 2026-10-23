@@ -4,8 +4,10 @@ import { parseDiff } from '../diff.ts'
 import { loadGloss } from '../loader.ts'
 import type { Hunk } from '../diff.ts'
 import type { GroupHunk, LoadedGloss } from '../loader.ts'
+import { belowFloor } from '../render.ts'
+import { showsImpact, tryAnalyze } from '../floor.ts'
 import { bodyLines, changedCount, gapText, isGap, refLabel, slice, sliceStats } from '../selection.ts'
-import { IMPACT, IMPACT_HELP, NECESSITY, NECESSITY_HELP, servesOf, type Attention, type Impact, type Necessity } from '../schema.ts'
+import { IMPACT, IMPACT_HELP, NECESSITY, NECESSITY_HELP, servesOf, type Attention, type AttentionLevel, type Impact, type Necessity } from '../schema.ts'
 
 // Everything the page needs, precomputed so the client only lays it out.
 export type PageLine =
@@ -32,6 +34,8 @@ export type PageGroup = {
   necessity: Necessity
   impact?: Impact
   impact_reason?: string
+  // The group's floor from the diff, shown as a derived impact when none is declared.
+  impact_derived?: Impact
   // Always a list (normalised with servesOf), which the client relies on.
   serves: string[]
   removal_impact: string
@@ -59,6 +63,10 @@ export type CommitData = {
   summary?: string
   // The declared attention, or null when the gloss declares none ("unrated").
   attention: Attention | null
+  // Computed on read, not stored: the floor, the attention derived when none is
+  // declared (with why), and whether the declared one is below the floor. Null
+  // when no signals could be computed.
+  computed: { floor: AttentionLevel; derived: { level: AttentionLevel; reasons: string[] }; below: boolean } | null
   warnings: string[]
   groups: PageGroup[]
   unannotated: PageHunk[]
@@ -149,6 +157,9 @@ const allLines = (h: Hunk) => Array.from({ length: changedCount(h) }, (_, i) => 
 export function commitData(gloss: LoadedGloss): CommitData {
   const [author, date] = git(['log', '-1', '--format=%an%x00%aI', gloss.sha]).trim().split('\0')
   const a = gloss.note.annotation
+  const an = tryAnalyze(gloss)
+  // Same threshold as `show`: derived impact badges only where the diff puts a group above module.
+  const derivedImpact = showsImpact(gloss.groups.map((x) => x.group), an)
 
   // Which groups claim each changed line, so shared lines are split between
   // their groups in the bar and each hunk can link to the groups it shares
@@ -175,6 +186,7 @@ export function commitData(gloss: LoadedGloss): CommitData {
         necessity: g.necessity,
         impact: g.impact,
         impact_reason: g.impact_reason,
+        impact_derived: g.impact || !derivedImpact ? undefined : an?.groups.get(g.id)?.floor,
         serves: servesOf(g),
         removal_impact: g.removal_impact,
         evidence: g.evidence,
@@ -200,6 +212,7 @@ export function commitData(gloss: LoadedGloss): CommitData {
     task: a.task,
     summary: a.summary,
     attention: a.attention ?? null,
+    computed: an ? { floor: an.floor, derived: an.derived, below: belowFloor(a.attention, an) } : null,
     warnings: gloss.warnings,
     groups,
     unannotated: gloss.unannotated.map((u) => pageHunk(u.hunk, u.lines, 'unannotated', [])),
@@ -219,6 +232,7 @@ function unglossedData(sha: string): CommitData {
     glossed: false,
     task: '',
     attention: null,
+    computed: null,
     warnings: [],
     groups: [],
     unannotated: parseDiff(commitDiff(sha)).map((h) => pageHunk(h, null, 'unannotated', [])),

@@ -29,6 +29,14 @@
     b.style.setProperty('--c', 'var(--' + kind + '-' + name + ')')
     return b
   }
+  // A badge for a value derived from the diff rather than declared by the author.
+  function derivedBadge(kind, name) {
+    var b = levelBadge(kind, name)
+    b.classList.add('derived')
+    b.textContent = name + ' (derived)'
+    b.title = 'Derived from the diff, not declared in the gloss'
+    return b
+  }
   function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's') }
   function stats(added, removed) {
     return add(el('span', 'stats'), el('span', 'plus', '+' + added), document.createTextNode(' '), el('span', 'minus', '−' + removed))
@@ -86,7 +94,7 @@
 
     var title = add(el('div', 'group-title'),
       el('span', 'badge', g.necessity),
-      g.impact ? levelBadge('impact', g.impact) : null,
+      g.impact ? levelBadge('impact', g.impact) : g.impact_derived ? derivedBadge('impact', g.impact_derived) : null,
       el('span', 'intent', g.intent),
       el('span', 'gid', g.id))
     if (g.stale) add(title, el('span', 'stale', g.stale + ' of ' + plural(g.total, 'hunk') + ' changed or gone'))
@@ -140,13 +148,24 @@
       el('span', null, c.author), el('span', null, new Date(c.date).toLocaleString()))
   }
 
-  // The declared attention: the level, the reasons and links to the groups to
-  // read first; "unrated" when the gloss declares none.
+  // The declared attention (or the one derived from the diff, marked as such),
+  // the computed floor, the reasons and links to the groups to read first;
+  // "unrated" when there is nothing declared and no signals.
   function attentionBanner(c) {
-    var a = c.attention
+    var a = c.attention, k = c.computed
     var box = el('section', 'attention-banner')
-    if (!a) return add(box, el('span', 'label', 'Attention'), el('span', 'unrated', 'unrated'))
+    if (!a && !k) return add(box, el('span', 'label', 'Attention'), el('span', 'unrated', 'unrated'))
+    if (!a) {
+      add(box, el('span', 'label', 'Attention'), derivedBadge('attention', k.derived.level))
+      if (k.derived.reasons.length) {
+        var dl = el('ul', 'reasons')
+        k.derived.reasons.forEach(function (r) { dl.appendChild(el('li', null, r)) })
+        add(box, dl)
+      }
+      return box
+    }
     add(box, el('span', 'label', 'Attention'), levelBadge('attention', a.level))
+    if (k) add(box, el('span', 'floor', 'declared · floor: ' + k.floor))
     if (a.focus && a.focus.length) {
       var look = add(el('span', 'look'), document.createTextNode('look here first: '))
       a.focus.forEach(function (id, i) { if (i) look.appendChild(document.createTextNode(', ')); look.appendChild(groupLink(c, id)) })
@@ -157,7 +176,8 @@
       a.reasons.forEach(function (r) { ul.appendChild(el('li', null, r)) })
       add(box, ul)
     }
-    if (a.override_reason) add(box, el('p', 'override', 'Rated below what the change suggests: ' + a.override_reason))
+    if (k && k.below) add(box, el('p', 'override mismatch', 'Declared ' + a.level + ', below the computed floor ' + k.floor + (a.override_reason ? '. Reason given: ' + a.override_reason : ' (no reason given).')))
+    else if (a.override_reason) add(box, el('p', 'override', 'Rated below what the change suggests: ' + a.override_reason))
     return box
   }
 

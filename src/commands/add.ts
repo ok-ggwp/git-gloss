@@ -5,8 +5,10 @@ import { commitDiff, isWipSnapshot, NOTES_REF, readNote, resolveCommit, WIP_NOTE
 import { location, parseDiff } from '../diff.ts'
 import { Annotation, noteFormat } from '../schema.ts'
 import { validate } from '../validate.ts'
+import { loadConfig } from '../config.ts'
+import { analyzeGroups, groupInputsFor, ratingProblems } from '../floor.ts'
 
-export const usage = 'add [<commit>] [-f <file>] [--force] [--partial] [--dry-run]   attach an annotation (JSON from file or stdin)'
+export const usage = 'add [<commit>] [-f <file>] [--force] [--partial] [--allow-underrate] [--dry-run]   attach an annotation (JSON from file or stdin)'
 
 export function run(argv: string[]): number {
   const { values, positionals } = parseArgs({
@@ -16,6 +18,7 @@ export function run(argv: string[]): number {
       file: { type: 'string', short: 'f' },
       force: { type: 'boolean' },
       partial: { type: 'boolean' },
+      'allow-underrate': { type: 'boolean' },
       'dry-run': { type: 'boolean' },
     },
   })
@@ -45,11 +48,22 @@ export function run(argv: string[]): number {
   if (uncovered.length && !values.partial) {
     errors.push(`hunks not assigned to any group: ${uncovered.join(', ')} (every hunk needs a group, or pass --partial)`)
   }
+  // Computed signals: group impact below its floor is a warning; attention
+  // below the floor is an error unless explained (override_reason) or allowed.
+  // A malformed config stops here with its own message.
+  const warnings: string[] = []
+  if (!errors.length) {
+    const analysis = analyzeGroups(hunks, groupInputsFor(parsed.data, hunks), loadConfig())
+    const problems = ratingProblems(parsed.data, analysis)
+    warnings.push(...problems.warnings)
+    if (problems.underrated) (values['allow-underrate'] ? warnings : errors).push(problems.underrated)
+  }
   if (errors.length) {
     console.error('error: annotation is inconsistent with the commit:\n' + errors.map((e) => `  ✖ ${e}`).join('\n'))
     return 1
   }
 
+  for (const w of warnings) console.error(`warning: ${w}`)
   // Not an error: long intents still work, but they make the summary rows tall.
   for (const g of parsed.data.groups.filter((g) => g.intent.length > 100)) {
     console.error(`note: group "${g.id}" has a ${g.intent.length}-character intent; keep it under ~80 and move detail to "notes"`)

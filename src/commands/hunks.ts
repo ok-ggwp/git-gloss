@@ -6,6 +6,10 @@ import { location, parseDiff } from '../diff.ts'
 import { noteFormat } from '../schema.ts'
 import { colorDiff, hunkLabel, page, style } from '../render.ts'
 import { bodyLines, changedCount } from '../selection.ts'
+import { loadConfig } from '../config.ts'
+import { withSignals } from '../floor.ts'
+import { analyze } from '../signals.ts'
+import { summaryLines } from './signals.ts'
 
 export const usage = 'hunks [<commit> | wip] [--stat] [--json]   list a commit\'s hunks (or snapshot uncommitted work with wip), numbering changed lines'
 
@@ -61,6 +65,9 @@ export function run(argv: string[]): number {
     return [colorDiff(header, '       '), ...body.map((l) =>
       style('dim', (l.idx === null ? '' : String(l.idx)).padStart(5)) + '  ' + colorDiff(l.raw))].join('\n')
   }
-  page(hunks.map((h) => hunkLabel(h) + style('dim', `  (${changedCount(h)} changed)`) + (values.stat ? '' : '\n' + numbered(h) + '\n')).join('\n'))
+  // What the diff itself says about attention, for the author to read before glossing.
+  const summary = withSignals(() => summaryLines(analyze(hunks, loadConfig())))
+  const signals = summary ? ['', ...summary] : []
+  page([hunks.map((h) => hunkLabel(h) + style('dim', `  (${changedCount(h)} changed)`) + (values.stat ? '' : '\n' + numbered(h) + '\n')).join('\n'), ...signals].join('\n'))
   return 0
 }

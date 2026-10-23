@@ -4,10 +4,11 @@ import type { Hunk } from '../diff.ts'
 import { refLabel, sliceStats, sliceText } from '../selection.ts'
 import { loadGloss, type LoadedGloss, type LoadedGroup } from '../loader.ts'
 import { impactRank } from '../attention.ts'
+import { showsImpact, tryAnalyze } from '../floor.ts'
 import { IMPACT, NECESSITY, isImpact, isNecessity, type Group, type Impact, type Necessity } from '../schema.ts'
 import { current, reviewStatus, statusPhrase, verdict, type StageStatus } from '../reviews.ts'
 import {
-  attentionBlock, colorDiff, field, groupHeader, hunkLabel, IMPACT_W, impactTag, necessityWord, noteFooter, page, style, termWidth, wrap,
+  attentionBlock, colorDiff, derivedImpactTag, field, groupHeader, hunkLabel, IMPACT_W, impactTag, necessityWord, noteFooter, page, style, termWidth, wrap,
 } from '../render.ts'
 
 export const usage =
@@ -148,7 +149,8 @@ function renderCommit(sha: string, gloss: LoadedGloss, values: ShowOptions, only
   out.push(...field('task:', a.task, 0))
   if (a.summary) out.push(...field('summary:', a.summary, 0))
   for (const w of gloss.warnings) out.push(...field('⚠', w, 0).map((l) => style('red', l)))
-  out.push(...attentionBlock(a.attention), reviewsLine(sha))
+  const an = tryAnalyze(gloss)
+  out.push(...attentionBlock(a.attention, an ? { floor: an.floor, derived: an.derived } : undefined), reviewsLine(sha))
 
   const groups = gloss.groups
     .filter((g) => matchesOnly(g.group, only))
@@ -207,8 +209,13 @@ function renderCommit(sha: string, gloss: LoadedGloss, values: ShowOptions, only
   const statW = Math.max(...rows.map((r) => r.stat.length), un.count ? 8 : 0)
   const addW = Math.max(...rows.map((r) => r.added.length))
   const remW = Math.max(...rows.map((r) => r.removed.length))
-  // An impact column only when some group declares one, so older glosses look as before.
-  const impactW = gloss.groups.some((g) => g.group.impact) ? IMPACT_W + 2 : 0
+  // An impact column only when some group declares one or the diff puts one
+  // above the baseline (module), so plain glosses look as before. Undeclared
+  // ones show the group's floor in parentheses.
+  const floorOf = (g: LoadedGroup) => an?.groups.get(g.group.id)?.floor
+  const showImpact = showsImpact(gloss.groups.map((g) => g.group), an)
+  const impactW = showImpact ? IMPACT_W + 2 : 0
+  const anyDerived = showImpact && gloss.groups.some((g) => !g.group.impact && floorOf(g))
   const intentCol = 2 + 11 + 2 + impactW + idW + 2
   const statsW = 2 + statW + 1 + addW + 1 + remW
   const intentW = Math.max(20, termWidth() - intentCol - statsW)
@@ -217,7 +224,7 @@ function renderCommit(sha: string, gloss: LoadedGloss, values: ShowOptions, only
     // stay on the first line so the numbers still line up.
     const [first, ...rest] = wrap(r.g.group.intent, intentW)
     out.push(
-      `  ${necessityWord(r.g.group.necessity, 11)}  ${impactW ? (r.g.group.impact ? impactTag(r.g.group.impact, IMPACT_W) : ' '.repeat(IMPACT_W)) + '  ' : ''}${style('bold', r.g.group.id.padEnd(idW))}  ` +
+      `  ${necessityWord(r.g.group.necessity, 11)}  ${impactW ? (r.g.group.impact ? impactTag(r.g.group.impact, IMPACT_W) : floorOf(r.g) ? derivedImpactTag(floorOf(r.g)!, IMPACT_W) : ' '.repeat(IMPACT_W)) + '  ' : ''}${style('bold', r.g.group.id.padEnd(idW))}  ` +
       `${first.padEnd(intentW)}  ` +
       style('dim', r.stat.padStart(statW)) + ' ' + style('green', r.added.padStart(addW)) + ' ' + style('red', r.removed.padStart(remW)),
       ...rest.map((l) => ' '.repeat(intentCol) + l),
@@ -230,6 +237,8 @@ function renderCommit(sha: string, gloss: LoadedGloss, values: ShowOptions, only
     const where = gloss.unannotated.map((u) => refLabel(u.hunk.id, u.lines)).join(', ')
     out.push(`  ${style(['bold', 'red'], 'unannotated'.padEnd(11))}  ${style('red', `+${un.added} -${un.removed} not in any group: ${where}`)}`)
   }
+
+  if (anyDerived) out.push('', style('dim', '(impact in parentheses is derived from the diff, not declared)'))
 
   // Rejected alternatives and risks: short, and often what a reader most
   // lacks, so they're in the summary rather than only behind --full.

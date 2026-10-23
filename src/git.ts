@@ -144,6 +144,16 @@ export function wipStaleness(sha: string): string | null {
   return null
 }
 
+// The diff of uncommitted work against HEAD, as a snapshot would have it,
+// without taking a snapshot: no ref is written (only objects). Hunk ids match
+// those of `hunks wip` for the same working tree.
+export function workingDiff(): { diff: string; excluded: string[] } {
+  const { tree, excluded } = workingTree()
+  const head = headSha()
+  if (head && git(['rev-parse', `${head}^{tree}`]).trim() === tree) throw new GlossError('there are no uncommitted changes')
+  return { diff: diffBetween(head ?? EMPTY_TREE, tree), excluded }
+}
+
 export function resolveCommit(rev: string): string {
   // "wip": the latest snapshot of uncommitted work (made by `hunks wip`). A
   // branch or tag named wip still works when there is no snapshot, and can be

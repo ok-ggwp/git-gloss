@@ -31,7 +31,7 @@ The commands below are written as `git gloss …`. That works only where git-glo
 
 ## Steps
 
-1. Run `git gloss hunks wip` to snapshot the uncommitted work and see it split into hunks with ids `h1`, `h2`, …, with each hunk's changed (`+`/`-`) lines numbered from 1. If you change files afterwards, run it again: that takes a new snapshot, and a gloss must match the snapshot it was written for.
+1. Run `git gloss hunks wip` to snapshot the uncommitted work and see it split into hunks with ids `h1`, `h2`, …, with each hunk's changed (`+`/`-`) lines numbered from 1, and a `signals:` summary of what in it deserves attention (see "Impact and attention"). If you change files afterwards, run it again: that takes a new snapshot, and a gloss must match the snapshot it was written for.
 2. Group changes **by intent**, not by file. One intent often spans several files. When one hunk mixes intents (common in new files, which are a single hunk), give each group only its lines: `"h6:1-40"`, `"h6:41-55,60"`. The numbers count changed lines only, as `hunks` prints them. Every changed line must belong to at least one group; `add` lists any that don't.
    Take hunk ids and line numbers from the `git gloss hunks` output for this snapshot or commit, never from memory of the diff or from an earlier commit. Ids depend on the order git lists hunks, and line numbers count only changed lines, so guesses are easily wrong. `add` rejects ranges past the end of a hunk, but a wrong range that stays in bounds is accepted and silently attaches an intent to the wrong code.
 3. Write the annotation JSON (shape below; `git gloss schema` prints the full JSON Schema) to a file in your scratchpad, then run:
@@ -99,11 +99,31 @@ Where you can, set `evidence` to a test that exercises the change or the line of
 
 `alternatives` and `risks` are optional, but fill them in when you weighed real options. They are what later readers most often lack.
 
-## Impact and attention (optional)
+## Impact and attention
 
-Necessity says whether a change is needed; `impact` says how far it reaches if it is wrong. Set it on each non-mechanical group, the highest level that applies: `local` (one file or component, no outside callers), `module` (one feature or project), `shared` (used by several projects, or root build, test or lint config), `contract` (an interface others depend on: public APIs, props and events, routes, state shape, message formats, schemas, config keys, dependency versions, CI definitions), `sensitive` (auth, crypto, permissions, data writes or deletes, payments, hardware I/O, secrets, whatever the size). Give `impact_reason` (one short sentence, up to 120 characters) at `contract` and above.
+Necessity says whether a change is needed; `impact` says how far it reaches if it is wrong. Read the `signals:` summary at the end of `git gloss hunks wip` (or run `git gloss signals wip` for hunks, pattern hits and dependency bumps) **before** writing the gloss: it is the floor the gloss is checked against.
 
-Then set top-level `attention` for the reviewer: `"attention": {"level": "careful", "focus": ["retry-core"], "reasons": ["Changes what callers see on a 503"]}`. `level` is `skim` (glance at the summary), `look` (read the focus groups), `careful` (read every non-mechanical group) or `must-read` (line by line). `focus` is one to three group ids to read first. Don't rate a large "behaviour-neutral" refactor `skim` just because most hunks are; a lockfile or CI edit is a `contract`. Both fields are optional, and glosses without them show as "unrated".
+- `impact` on each non-mechanical group, the highest level that applies: `local` (one file or component, no outside callers), `module` (one feature or project), `shared` (used by several projects, or root build, test or lint config), `contract` (an interface others depend on: public APIs, props and events, routes, state shape, message formats, schemas, config keys, dependency versions, CI definitions), `sensitive` (auth, crypto, permissions, data writes or deletes, payments, hardware I/O, secrets, whatever the size). Give `impact_reason` (one short sentence, up to 120 characters) at `contract` and above. `add` warns when a group is rated below its floor.
+- `attention` for the reviewer: `level` is `skim` (glance at the summary), `look` (read the focus groups), `careful` (read every non-mechanical group) or `must-read` (line by line); `focus` is one to three group ids to read first; `reasons` tie the level to signals.
+- Never declare `attention.level` below the floor without `override_reason`: `add` refuses it. Don't reach for `--allow-underrate`; raise the level, or say why the floor is wrong. A large "behaviour-neutral" refactor deserves `careful`, not `skim`, however many hunks are mechanical.
+- Name the groups that test others in `serves` (`"serves": ["gauge-fix"]`, not `"task"`): a behaviour change that no test group serves raises the derived attention, and say so in `reasons` when it is untested.
+- Both fields are optional. Without them `show` derives a value from the diff and marks it `(derived)`.
+
+Example: a change adds a dev dependency, fixes a device write, and tweaks a label with no test. `signals` says `sensitive: src/devices/gauge.ts (pattern: device write)` and `contract: package-lock.json (transitive bump: some-pkg 7.1.0 -> 7.1.2)`, so the floor is must-read.
+
+```json
+"groups": [
+  {"id": "gauge-fix", "intent": "Send the brightness value, not the signal", "necessity": "required", "serves": "task",
+   "impact": "sensitive", "impact_reason": "writes a value to the device", "removal_impact": "The gauge shows a constant", "hunks": ["h2"]},
+  {"id": "gauge-test", "intent": "Cover the written value", "necessity": "supporting", "serves": ["gauge-fix"], "removal_impact": "The fix is untested", "hunks": ["h3"]},
+  {"id": "label-fix", "intent": "Fix the Save label", "necessity": "required", "serves": "task",
+   "impact": "module", "removal_impact": "The button says Sav", "hunks": ["h4"]},
+  {"id": "report-dep", "intent": "Add the report tool; lockfile also bumps some-pkg 7.1.0 to 7.1.2", "necessity": "mechanical", "serves": "task",
+   "impact": "contract", "impact_reason": "dependency versions; the some-pkg bump is not ours", "removal_impact": "No test reports", "hunks": ["h1"]}
+],
+"attention": {"level": "must-read", "focus": ["gauge-fix", "report-dep"],
+  "reasons": ["gauge-fix writes to the device", "lockfile bumps some-pkg beyond the new dependency", "label-fix has no test"]}
+```
 
 ## Looking up intent
 

@@ -106,13 +106,13 @@ test('a note is format 4 only when it uses the new fields', () => {
   assert.equal(noteOf(dir).gloss, 4)
 })
 
-test('a glossed commit without attention shows as unrated', () => {
+test('a glossed commit without attention shows a derived attention', () => {
   const { dir, write, commit } = repo()
   write('app.js', ['function main() {', '  run2()', '}'])
   write('util.js', ['export const a = 2'])
   commit('plain', [group('a', ['h1', 'h2'])])
   const r = gloss(dir, ['show'])
-  assert.match(r.out, /attention: unrated/)
+  assert.match(r.out, /attention: CAREFUL \(derived\) · floor: look/)
   assert.doesNotMatch(r.out, /\[(local|module|shared|contract|sensitive)\]/)
   assert.match(r.out, /^ {2}required {2,}a {2}/m, 'rows have no impact column')
 })
@@ -121,7 +121,7 @@ test('show leads with the attention, badges groups, and --sort / --only take imp
   const { dir } = rated()
   let r = gloss(dir, ['show'])
   assert.equal(r.code, 0, r.err)
-  assert.match(r.out, /attention: CAREFUL · focus: risky, quiet/)
+  assert.match(r.out, /attention: CAREFUL \(declared\) · floor: look · focus: risky, quiet/)
   assert.match(r.out, /• device write/)
   const rows = r.out.split('\n').filter((l) => /^ {2}(required|mechanical) /.test(l)).map((l) => l.trim().split(/\s+/).slice(0, 3))
   assert.deepEqual(rows, [['required', '[sensitive]', 'risky'], ['mechanical', '[local]', 'quiet']])
@@ -228,7 +228,7 @@ test('carrying a wip gloss keeps the attention and drops focus groups left behin
   const r = gloss(dir, ['hunks', 'wip'])
   assert.equal(r.code, 0, r.err)
   const show = gloss(dir, ['show', 'wip'])
-  assert.match(show.out, /attention: CAREFUL · focus: y\n/)
+  assert.match(show.out, /attention: CAREFUL \(declared\) · floor: look · focus: y\n/)
   assert.doesNotMatch(show.out, /\bx\b.*intent/)
 })
 
@@ -243,11 +243,11 @@ test('combineAttention keeps an override_reason only from parts at the combined 
   assert.equal(both.override_reason, 'x; y')
 })
 
-test('squashing a rated commit with an unrated one leaves the squash unrated', () => {
+test('squashing a rated commit with an unrated one stores no attention, and shows a derived one', () => {
   const { dir, g, write, commit } = repo()
   g('checkout', '-qb', 'feat')
   write('app.js', ['function main() {', '  run()', '  log()', '}'])
-  commit('one', [group('logging', ['h1'], { impact: 'local' })], { level: 'skim', focus: ['logging'] })
+  commit('one', [group('logging', ['h1'], { impact: 'local' })], { level: 'look', focus: ['logging'] })
   write('util.js', ['export const a = 2'])
   commit('two', [group('logic', ['h1'])])
   g('checkout', '-q', 'main')
@@ -257,5 +257,5 @@ test('squashing a rated commit with an unrated one leaves the squash unrated', (
   const r = gloss(dir, ['carry', 'main~1..feat'])
   assert.equal(r.code, 0, r.err)
   assert.equal(noteOf(dir).annotation.attention, undefined, 'an unrated source makes the combined gloss unrated')
-  assert.match(gloss(dir, ['show']).out, /attention: unrated/)
+  assert.match(gloss(dir, ['show']).out, /attention: [A-Z-]+ \(derived\)/, 'computed on read from the diff')
 })
