@@ -1,0 +1,445 @@
+{
+  "gloss": 4,
+  "commit": "cf0a9b9273865adb17bea8008467ec5391bfad61",
+  "created_at": "2026-10-24T10:46:12.047Z",
+  "annotation": {
+    "version": 1,
+    "task": "Make `git gloss ary` one document: the review desk served by ary, with the branch, base and revision pickers in the desk's own top bar (no iframe shell, no second sidebar)",
+    "summary": "`/` now renders the desk page for /?rev=&head=&base= (302 to the canonical URL when no rev); the refs travel in the page JSON as an optional `ary` block, and src/ary/picker.js is spliced into the nonce'd script only in that mode, so `html` pages change only by the sticky top bar and rail sizing fix (shared CSS, plus a ResizeObserver) and are otherwise unchanged, and the CSP is unchanged. The old shell, /view, /api/refs, /api/log and /ary.js|css are removed. Dropped on purpose: the commit list with search and Load more, the per-commit gloss/reviewed marks list, the Reload/open-in-tab bar. Also dropped: the wip row's stale warning and glossed mark (wipStaleness/notedCommits are no longer called). Also dropped: the pickers' wip choice; wip opens only when / is opened with nothing chosen, or by typing `wip` in the revision box.",
+    "groups": [
+      {
+        "id": "desk-route",
+        "intent": "Serve the desk at / from ?rev=&head=&base=, redirecting to the canonical URL",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "ary would have no page to serve without the old shell",
+        "evidence": "test/ary.test.ts 'ary serves the desk page itself ...'",
+        "impact": "contract",
+        "impact_reason": "the URL scheme and request handling of the server change; / replaces /view, /api/*",
+        "hunks": [
+          "h10:1-5,9-65",
+          "h11:1-4,19-21",
+          "h12:1-2"
+        ],
+        "notes": "Ports the old client load() rules to the server: wip first only when nothing at all is chosen, else base..head if it has commits, else the head's newest commit as a sha; a deleted head or base renders with a notice instead of redirecting. head/base are only trusted if they name a known branch; they only pick pickers' values and the default rev. Page CSP is the same nonce policy as `html` (no connect-src: no fetch); the HTTP header adds frame-ancestors 'none'. Host check, GET/HEAD only, revParam validation, MAX_RANGE_COMMITS and no-store are untouched. A branch more than MAX_RANGE_COMMITS ahead of its base falls back to its newest commit instead of an error page; an explicit oversized ?rev= still gets the 422."
+      },
+      {
+        "id": "error-page",
+        "intent": "One escaped HTML error page for every failure, with a link back to the default view",
+        "necessity": "supporting",
+        "serves": "desk-route",
+        "removal_impact": "Errors from / would be JSON text in the browser, or the escaped page would lose its no-frame policy",
+        "evidence": "test/ary.test.ts 'ary refuses what it should' (hostile rev escaped)",
+        "impact": "module",
+        "hunks": [
+          "h10:6-8",
+          "h12:8"
+        ],
+        "notes": "The 'Back to the default view' link is a small extra of mine, since an error page has no pickers; drop it if unwanted."
+      },
+      {
+        "id": "ary-data",
+        "intent": "Optional `ary` block in the page data; the page includes picker.js only when it is present",
+        "necessity": "supporting",
+        "serves": "desk-route",
+        "removal_impact": "The pickers would have no branch list and would need a fetch (and a looser CSP)",
+        "evidence": "test/ary.test.ts: `html`'s page has no aryBar (test suite for html unchanged and passing)",
+        "impact": "module",
+        "hunks": [
+          "h18",
+          "h19"
+        ]
+      },
+      {
+        "id": "picker",
+        "intent": "picker.js: branch combobox with search and keyboard, base picker and revision box; choosing loads a URL",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "No way to change branch, base or revision",
+        "evidence": "test/ary.test.ts browser tests",
+        "impact": "module",
+        "hunks": [
+          "h7"
+        ],
+        "notes": "Moved from the old client.js picker(); same matching (all words, case-insensitive, 200 shown) and keys. Repo text only via textContent."
+      },
+      {
+        "id": "desk-bar",
+        "intent": "Mount the picker bar once in the desk's top bar and style it with the desk's tokens",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The pickers would not appear, or would look like the old shell",
+        "evidence": "test/ary.test.ts 'in a browser, the desk is the whole page ...'",
+        "impact": "module",
+        "hunks": [
+          "h15",
+          "h16",
+          "h20:1-23"
+        ],
+        "notes": " The base picker's none label and the deleted-base notice say 'just the newest commit', matching what the desk shows (it cannot show whole history: 200-commit cap)."
+      },
+      {
+        "id": "sticky-bar",
+        "intent": "Keep the top bar sticky and fit the rail under it at >=900px",
+        "necessity": "supporting",
+        "serves": "desk-bar",
+        "removal_impact": "The rail's last rows are unreachable at scroll 0, badly so with ary's taller top bar (same bug, smaller, in `html`)",
+        "evidence": "test/ary.test.ts 'the rail fits under a sticky top bar on wide screens' (failed before, passes after)",
+        "impact": "module",
+        "hunks": [
+          "h17",
+          "h20:24-27"
+        ],
+        "notes": "Fixes a layout bug the taller ary bar exposes; the task itself does not require a sticky bar. Shared desk CSS, so `git gloss html` changes too. --top-h is measured from the bar and kept current with a ResizeObserver (guarded). Below 900px nothing changes."
+      },
+      {
+        "id": "remove-shell",
+        "intent": "Delete the old shell, its routes and the log/refs code only it used",
+        "necessity": "supporting",
+        "serves": "desk-route",
+        "removal_impact": "Dead shell, /view, /api/refs, /api/log and listLog would remain, still served and tested",
+        "impact": "module",
+        "hunks": [
+          "h3",
+          "h4",
+          "h5",
+          "h6",
+          "h8",
+          "h9",
+          "h11:5-18",
+          "h12:3-7",
+          "h13"
+        ],
+        "notes": "Dropped on purpose: commit list with search and Load more, per-commit gloss/reviewed marks list, Reload and open-in-tab bar. /view and /api/log are gone; /api/refs too (refs are embedded in the page). browse.ts keeps listRefs only, as plain names. Also gone: the old wip row's `stale` warning and `glossed` mark (listRefs no longer calls wipStaleness or notedCommits); the desk only flags changed hunks per group. Follow-ups are in TODO.md. Also dropped: the pickers' wip choice; wip opens only when / is opened with nothing chosen, or by typing `wip` in the revision box."
+      },
+      {
+        "id": "tests",
+        "intent": "Update ary tests to the new routes; browser tests for picking a branch and for hostile input",
+        "necessity": "supporting",
+        "serves": [
+          "desk-route",
+          "picker",
+          "desk-bar",
+          "error-page",
+          "sticky-bar"
+        ],
+        "removal_impact": "The new routes, redirects, notices and the escaping of branch names would be untested",
+        "evidence": "hostile-input test fails when embedJson stops escaping '<' (checked)",
+        "impact": "local",
+        "hunks": [
+          "h21",
+          "h22",
+          "h23",
+          "h24",
+          "h25",
+          "h26"
+        ]
+      },
+      {
+        "id": "docs",
+        "intent": "README ary section, usage text and TODO item match the new layout",
+        "necessity": "supporting",
+        "serves": "desk-route",
+        "removal_impact": "README would describe a commit list and Reload that no longer exist",
+        "impact": "local",
+        "hunks": [
+          "h1",
+          "h2",
+          "h14"
+        ]
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Keep the picker script as a separate /ary.js asset",
+        "rejected_because": "Needs script-src 'self' in the page CSP; embedding it in the nonce'd script keeps the CSP identical to html's"
+      },
+      {
+        "option": "Fetch refs from /api/refs",
+        "rejected_because": "Needs connect-src 'self'; embedding refs in the page JSON needs no fetch"
+      }
+    ],
+    "risks": [
+      "Branch names are embedded in the page JSON (escaped with embedJson) and rendered through textContent only; a regression in either is the injection path (see the hostile-input test)",
+      "An empty repo or a repo with no commits to show gets an error page without pickers",
+      "top bar is now sticky at >=900px, which costs vertical space"
+    ],
+    "attention": {
+      "level": "careful",
+      "focus": [
+        "desk-route",
+        "picker"
+      ],
+      "reasons": [
+        "the public URL scheme and routes changed (/view and /api/* removed, ?rev&head&base added)",
+        "desk-route is the server's request handling and page CSP"
+      ]
+    },
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-sonnet-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 212,
+      "oldLines": 7,
+      "newStart": 212,
+      "newLines": 7,
+      "hash": "d25e7bf17a70f977"
+    },
+    {
+      "id": "h2",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 55,
+      "oldLines": 9,
+      "newStart": 55,
+      "newLines": 17,
+      "hash": "8718013072853f59"
+    },
+    {
+      "id": "h3",
+      "file": "scripts/build.mjs",
+      "oldFile": "scripts/build.mjs",
+      "oldStart": 10,
+      "oldLines": 4,
+      "newStart": 10,
+      "newLines": 4,
+      "hash": "2feb944528676375"
+    },
+    {
+      "id": "h4",
+      "file": "src/ary/browse.ts",
+      "oldFile": "src/ary/browse.ts",
+      "oldStart": 1,
+      "oldLines": 108,
+      "newStart": 1,
+      "newLines": 38,
+      "hash": "7becc48d3fed0f46"
+    },
+    {
+      "id": "h5",
+      "file": "src/ary/client.js",
+      "oldFile": "src/ary/client.js",
+      "oldStart": 1,
+      "oldLines": 401,
+      "newStart": 0,
+      "newLines": 0,
+      "hash": "32d2999d76a5dd67"
+    },
+    {
+      "id": "h6",
+      "file": "src/ary/index.html",
+      "oldFile": "src/ary/index.html",
+      "oldStart": 1,
+      "oldLines": 13,
+      "newStart": 0,
+      "newLines": 0,
+      "hash": "5a01a261758d7122"
+    },
+    {
+      "id": "h7",
+      "file": "src/ary/picker.js",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 163,
+      "hash": "490377637d316591"
+    },
+    {
+      "id": "h8",
+      "file": "src/ary/server.ts",
+      "oldFile": "src/ary/server.ts",
+      "oldStart": 1,
+      "oldLines": 20,
+      "newStart": 1,
+      "newLines": 13,
+      "hash": "282f7a531533bf07"
+    },
+    {
+      "id": "h9",
+      "file": "src/ary/server.ts",
+      "oldFile": "src/ary/server.ts",
+      "oldStart": 29,
+      "oldLines": 11,
+      "newStart": 22,
+      "newLines": 6,
+      "hash": "28065dd9803b6ab6"
+    },
+    {
+      "id": "h10",
+      "file": "src/ary/server.ts",
+      "oldFile": "src/ary/server.ts",
+      "oldStart": 46,
+      "oldLines": 10,
+      "newStart": 34,
+      "newLines": 69,
+      "hash": "a78f707b063634ad"
+    },
+    {
+      "id": "h11",
+      "file": "src/ary/server.ts",
+      "oldFile": "src/ary/server.ts",
+      "oldStart": 58,
+      "oldLines": 23,
+      "newStart": 105,
+      "newLines": 14,
+      "hash": "5b44a600ef8e65c4"
+    },
+    {
+      "id": "h12",
+      "file": "src/ary/server.ts",
+      "oldFile": "src/ary/server.ts",
+      "oldStart": 87,
+      "oldLines": 18,
+      "newStart": 125,
+      "newLines": 14,
+      "hash": "5b5b84333aeb4473"
+    },
+    {
+      "id": "h13",
+      "file": "src/ary/style.css",
+      "oldFile": "src/ary/style.css",
+      "oldStart": 1,
+      "oldLines": 115,
+      "newStart": 0,
+      "newLines": 0,
+      "hash": "44559fbff757f372"
+    },
+    {
+      "id": "h14",
+      "file": "src/commands/ary.ts",
+      "oldFile": "src/commands/ary.ts",
+      "oldStart": 3,
+      "oldLines": 11,
+      "newStart": 3,
+      "newLines": 11,
+      "hash": "861235881cfddfe7"
+    },
+    {
+      "id": "h15",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 466,
+      "oldLines": 6,
+      "newStart": 466,
+      "newLines": 10,
+      "hash": "b1159ce698de3748"
+    },
+    {
+      "id": "h16",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 753,
+      "oldLines": 7,
+      "newStart": 757,
+      "newLines": 7,
+      "hash": "37c2c1d39981d012"
+    },
+    {
+      "id": "h17",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 1091,
+      "oldLines": 8,
+      "newStart": 1095,
+      "newLines": 12,
+      "hash": "8e03f2e623872e88"
+    },
+    {
+      "id": "h18",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 109,
+      "oldLines": 6,
+      "newStart": 109,
+      "newLines": 21,
+      "hash": "f66eb468970f8ffe"
+    },
+    {
+      "id": "h19",
+      "file": "src/html/page.ts",
+      "oldFile": "src/html/page.ts",
+      "oldStart": 33,
+      "oldLines": 7,
+      "newStart": 33,
+      "newLines": 7,
+      "hash": "acfa7b95a62a0aab"
+    },
+    {
+      "id": "h20",
+      "file": "src/html/style.css",
+      "oldFile": "src/html/style.css",
+      "oldStart": 119,
+      "oldLines": 13,
+      "newStart": 119,
+      "newLines": 38,
+      "hash": "57fb58a2cacf11c3"
+    },
+    {
+      "id": "h21",
+      "file": "test/ary.test.ts",
+      "oldFile": "test/ary.test.ts",
+      "oldStart": 7,
+      "oldLines": 6,
+      "newStart": 7,
+      "newLines": 7,
+      "hash": "ee6d5a73e866450c"
+    },
+    {
+      "id": "h22",
+      "file": "test/ary.test.ts",
+      "oldFile": "test/ary.test.ts",
+      "oldStart": 50,
+      "oldLines": 112,
+      "newStart": 51,
+      "newLines": 88,
+      "hash": "e686c8060990d12e"
+    },
+    {
+      "id": "h23",
+      "file": "test/ary.test.ts",
+      "oldFile": "test/ary.test.ts",
+      "oldStart": 166,
+      "oldLines": 7,
+      "newStart": 143,
+      "newLines": 7,
+      "hash": "28b6279a574fe223"
+    },
+    {
+      "id": "h24",
+      "file": "test/ary.test.ts",
+      "oldFile": "test/ary.test.ts",
+      "oldStart": 178,
+      "oldLines": 12,
+      "newStart": 155,
+      "newLines": 28,
+      "hash": "fddad75d3e6860d1"
+    },
+    {
+      "id": "h25",
+      "file": "test/ary.test.ts",
+      "oldFile": "test/ary.test.ts",
+      "oldStart": 223,
+      "oldLines": 12,
+      "newStart": 216,
+      "newLines": 12,
+      "hash": "0b0e4ed0e696aed8"
+    },
+    {
+      "id": "h26",
+      "file": "test/ary.test.ts",
+      "oldFile": "test/ary.test.ts",
+      "oldStart": 248,
+      "oldLines": 3,
+      "newStart": 241,
+      "newLines": 95,
+      "hash": "303989a1a6e6eb7f"
+    }
+  ]
+}
