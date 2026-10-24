@@ -158,7 +158,7 @@ function renderCommit(sha: string, gloss: LoadedGloss, values: ShowOptions, only
   if (a.summary) out.push(...field('summary:', a.summary, 0))
   for (const w of gloss.warnings) out.push(...field('⚠', w, 0).map((l) => style('red', l)))
   const an = tryAnalyze(gloss)
-  out.push(...attentionBlock(a.attention, an ? { floor: an.floor, derived: an.derived } : undefined), reviewsLine(sha))
+  out.push(...attentionBlock(a.attention, an ? { floor: an.floor, derived: an.derived, timedOut: an.timedOut } : undefined), reviewsLine(sha))
 
   const groups = gloss.groups
     .filter((g) => matchesOnly(g.group, only))

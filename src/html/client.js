@@ -240,6 +240,11 @@
       reasons.forEach(function (r) { ul.appendChild(el('li', null, r)) })
       add(box, ul)
     }
+    if (k && k.timedOut && k.timedOut.length) {
+      var tl = el('ul', 'timedout')
+      k.timedOut.forEach(function (r) { tl.appendChild(el('li', null, r)) })
+      add(box, tl)
+    }
     if (c.risks.length) {
       var rb = button('linkbtn', plural(c.risks.length, 'risk') + ' flagged', function () { selectRisks(commits.indexOf(c)) })
       add(box, add(el('p', 'look'), rb))

@@ -66,7 +66,7 @@ export type CommitData = {
   // Computed on read, not stored: the floor, the attention derived when none is
   // declared (with why), and whether the declared one is below the floor. Null
   // when no signals could be computed.
-  computed: { floor: AttentionLevel; derived: { level: AttentionLevel; reasons: string[] }; below: boolean } | null
+  computed: { floor: AttentionLevel; derived: { level: AttentionLevel; reasons: string[] }; below: boolean; timedOut: string[] } | null
   warnings: string[]
   groups: PageGroup[]
   // Group ids in review order: the attention's focus groups first, then by
@@ -242,7 +242,7 @@ export function commitData(gloss: LoadedGloss): CommitData {
     task: a.task,
     summary: a.summary,
     attention: a.attention ?? null,
-    computed: an ? { floor: an.floor, derived: an.derived, below: belowFloor(a.attention, an) } : null,
+    computed: an ? { floor: an.floor, derived: an.derived, below: belowFloor(a.attention, an), timedOut: an.timedOut } : null,
     warnings: gloss.warnings,
     groups,
     order: reviewOrder(groups, a.attention?.focus),

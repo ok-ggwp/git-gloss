@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmp } from './tmp.ts'
 import { parseDiff } from '../src/diff.ts'
@@ -676,4 +676,129 @@ test('a change that edits the config says its own edit was not used to rate it',
   const groups = [group('all', ['h1', 'h2'])]
   const add = gloss(r.dir, ...addArgs(['--dry-run'], groups, { level: 'must-read', focus: ['all'] }))
   assert.match(add.err, /warning: .*is edited here; this change is rated with the base branch's config/)
+})
+
+// ---- timed-out patterns are marked ----
+
+test('a pattern that timed out is marked on its hits, in signals, show and the floor reasons; a normal one is not', () => {
+  const r = repo({ 'app.js': 'run()\n' })
+  r.config({ patterns: { sensitive: ['(a+)+$'], contract: [{ regex: 'plain', name: 'plain word' }] } })
+  r.write('app.js', `${'a'.repeat(40)}!\nplain\n`)
+  const sig = JSON.parse(gloss(r.dir, ['signals', 'wip', '--json']).out)
+  const hits = sig.hunks[0].hits as { name: string; timedOut?: boolean }[]
+  const slow = hits.filter((h) => h.name === '(a+)+$'), plain = hits.filter((h) => h.name === 'plain word')
+  assert.equal(slow.length, 3, 'it counts as matching every changed line (the removed one too)')
+  assert.ok(slow.every((h) => h.timedOut === true), 'the second line hits the skipped set in the same process and is marked too')
+  assert.equal(plain.length, 1)
+  assert.equal(plain[0].timedOut, undefined)
+  assert.equal(sig.floor.impact, 'sensitive')
+  assert.ok(sig.floor.reasons.some((x: string) => /pattern: \(a\+\)\+\$ \(timed out: counted as matching\)/.test(x)), sig.floor.reasons.join('|'))
+  const text = gloss(r.dir, ['signals', 'wip']).out
+  assert.match(text, /timed out: counted as matching/)
+  // show: gloss the snapshot, then read the summary
+  const hunks = gloss(r.dir, ['hunks', 'wip'])
+  assert.equal(hunks.code, 0)
+  const note = { version: 1, task: 't', summary: 's', groups: [group('g', ['h1'], { impact: 'sensitive', impact_reason: 'x' })] }
+  const add = gloss(r.dir, ['add', 'wip'], JSON.stringify(note))
+  assert.equal(add.code, 0, add.err)
+  const show = gloss(r.dir, ['show', 'wip'])
+  assert.match(show.out, /timed out: counted as matching/)
+  const page = join(r.dir, 'out.html')
+  assert.equal(gloss(r.dir, ['html', 'wip', '-o', page]).code, 0)
+  assert.match(readFileSync(page, 'utf8'), /pattern \(a\+\)\+\$ timed out: counted as matching/, 'the page data carries it for the attention card')
+})
+
+// ---- git failing is not "no config" ----
+
+test('a git failure reading the config warns once and uses the defaults; a missing file stays quiet', () => {
+  const quiet = repo({ 'src/auth/login.js': 'check()\n' })
+  quiet.write('src/auth/login.js', 'skip()\n')
+  const q = gloss(quiet.dir, ['signals', 'wip', '--json'])
+  assert.equal(q.code, 0)
+  assert.equal(q.err, '', 'no config file at the base is the normal case: no warning')
+
+  const r = repo({ 'src/auth/login.js': 'check()\n' })
+  r.config({ patterns: { sensitive: ['stricter'] } })
+  // Lose the config's blob: the path is in the base tree but git cannot read it.
+  r.g('checkout', '-q', '-b', 'feature')
+  r.write('app.js', 'stricter()\n')
+  r.commit('change')
+  const blob = r.g('rev-parse', 'main:.gloss/config.json')
+  const loose = join(r.dir, '.git', 'objects', blob.slice(0, 2), blob.slice(2))
+  chmodSync(join(r.dir, '.git', 'objects', blob.slice(0, 2)), 0o700)
+  rmSync(loose)
+  // A commit, not wip: a snapshot would write the file's blob back.
+  const out = gloss(r.dir, ['signals', 'HEAD', '--json'])
+  assert.equal(out.code, 0, out.err)
+  const warns = out.err.split('\n').filter((l) => /warning: .*\.gloss\/config\.json/.test(l))
+  assert.equal(warns.length, 1, `one warning, got: ${out.err} | ${out.out.slice(0, 300)}`)
+  assert.match(warns[0], /could not be read from the base branch .*using the built-in defaults/)
+  assert.doesNotMatch(out.err, /no base branch/)
+})
+
+test('a failing merge-base is not reported as "no base branch"', () => {
+  const r = repo({ 'app.js': 'run()\n' })
+  r.config({ patterns: { sensitive: ['stricter'] } })
+  // main exists but is not a commit: git fails for a reason other than "no base".
+  r.g('checkout', '-q', '--detach', 'HEAD')
+  writeFileSync(join(r.dir, '.git', 'refs', 'heads', 'main'), `${r.g('rev-parse', 'HEAD^{tree}')}\n`)
+  r.write('app.js', 'stricter()\n')
+  const out = gloss(r.dir, ['signals', 'wip', '--json'])
+  assert.equal(out.code, 0, out.err)
+  assert.doesNotMatch(out.err, /no base branch/)
+  assert.match(out.err, /warning: git failed finding the base branch/)
+})
+
+test('a config that is not at the base ref (in the change, or only on disk) is the quiet "no file" case', () => {
+  // Only in the change's commit.
+  const a = repo({ 'app.js': 'run()\n' })
+  a.g('checkout', '-q', '-b', 'feat')
+  a.config({ patterns: { sensitive: ['x'] } })
+  const outA = gloss(a.dir, ['signals', 'HEAD', '--json'])
+  assert.equal(outA.code, 0, outA.err)
+  assert.equal(outA.err, '', 'config added by the change itself: not read, no warning')
+  // Only in the working tree, uncommitted.
+  const b = repo({ 'app.js': 'run()\n' })
+  b.write('.gloss/config.json', JSON.stringify({ patterns: { sensitive: ['x'] } }))
+  b.write('app.js', 'x()\n')
+  const outB = gloss(b.dir, ['signals', 'wip', '--json'])
+  assert.equal(outB.code, 0, outB.err)
+  assert.equal(outB.err, '', 'config only on disk: no warning')
+})
+
+test('the base config applies when git-gloss runs from a subdirectory', () => {
+  const r = repo({ 'sub/app.js': 'run()\n' })
+  r.config({ patterns: { sensitive: ['stricter'] } })
+  r.write('sub/app.js', 'stricter()\n')
+  const root = JSON.parse(gloss(r.dir, ['signals', 'wip', '--json']).out)
+  const sub = gloss(join(r.dir, 'sub'), ['signals', 'wip', '--json'])
+  assert.equal(root.floor.impact, 'sensitive')
+  assert.equal(JSON.parse(sub.out).floor.impact, 'sensitive', 'same result as from the root')
+  assert.equal(sub.err, '')
+})
+
+test('a broken earlier base candidate warns and the next working one is used', () => {
+  const r = repo({ 'app.js': 'run()\n' })
+  r.config({ patterns: { sensitive: ['stricter'] } })
+  r.g('update-ref', 'refs/remotes/origin/main', r.g('rev-parse', 'HEAD^{tree}'))
+  r.write('app.js', 'stricter()\n')
+  const out = gloss(r.dir, ['signals', 'wip', '--json'])
+  assert.equal(out.code, 0, out.err)
+  assert.match(out.err, /warning: git failed finding the base branch/)
+  assert.doesNotMatch(out.err, /no base branch/)
+  assert.equal(JSON.parse(out.out).floor.impact, 'sensitive', 'the config on local main applies')
+})
+
+test('a repository with no commits has no base and says nothing about git failing', () => {
+  const dir = tmp('signals-unborn-')
+  const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
+  g('init', '-q', '-b', 'main')
+  g('config', 'user.email', 't@example.com')
+  g('config', 'user.name', 'Test')
+  g('commit', '-q', '--allow-empty', '-m', 'x')
+  // main exists, but HEAD is an unborn branch: nothing to take a merge base of.
+  g('symbolic-ref', 'HEAD', 'refs/heads/fresh')
+  writeFileSync(join(dir, 'a.js'), 'x\n')
+  const out = gloss(dir, ['signals', 'wip', '--json'])
+  assert.doesNotMatch(out.err, /git failed/)
 })

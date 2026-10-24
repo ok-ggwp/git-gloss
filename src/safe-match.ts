@@ -12,17 +12,19 @@ const script = new vm.Script('texts.map((t) => re.test(t))')
 const ctx = vm.createContext({ re: null, texts: [] as string[] })
 const skipped = new Set<string>()
 
-export function matchLines(re: RegExp, texts: string[]): boolean[] {
+// `timedOut` is true when the answer is the fail-closed one (this call or an
+// earlier one in the process hit the budget), so hits can say so.
+export function matchLines(re: RegExp, texts: string[]): { hit: boolean[]; timedOut: boolean } {
   const key = `${re.source}/${re.flags}`
-  if (skipped.has(key)) return texts.map(() => true)
+  if (skipped.has(key)) return { hit: texts.map(() => true), timedOut: true }
   ctx.re = re
   ctx.texts = texts
   try {
-    return script.runInContext(ctx, { timeout: BUDGET_MS }) as boolean[]
+    return { hit: script.runInContext(ctx, { timeout: BUDGET_MS }) as boolean[], timedOut: false }
   } catch (err) {
     if ((err as { code?: string }).code !== 'ERR_SCRIPT_EXECUTION_TIMEOUT') throw err
     skipped.add(key)
     console.error(`warning: pattern ${JSON.stringify(re.source)} took over ${BUDGET_MS}ms and is treated as matching every line from now on (catastrophic backtracking, or a padded line?)`)
-    return texts.map(() => true)
+    return { hit: texts.map(() => true), timedOut: true }
   }
 }

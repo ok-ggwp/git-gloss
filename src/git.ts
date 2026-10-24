@@ -19,7 +19,10 @@ export const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 
 // Errors whose message is fit to show the user without a stack trace.
 export class GlossError extends Error {}
-export class GitError extends GlossError {}
+export class GitError extends GlossError {
+  // git's exit code, when it ran and failed (1 is often "no", 128 a real failure).
+  status?: number
+}
 
 export function git(args: string[], input?: string, env: Record<string, string> = {}): string {
   try {
@@ -33,7 +36,9 @@ export function git(args: string[], input?: string, env: Record<string, string> 
     })
   } catch (err) {
     const stderr = (err as { stderr?: string }).stderr?.trim()
-    throw new GitError(stderr || `git ${args.join(' ')} failed`)
+    const e = new GitError(stderr || `git ${args.join(' ')} failed`)
+    e.status = typeof (err as { status?: unknown }).status === 'number' ? (err as { status: number }).status : undefined
+    throw e
   }
 }
 

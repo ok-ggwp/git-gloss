@@ -42,7 +42,7 @@ function detailLines(sig: ChangeSignals, label: string): string[] {
     out.push(`  ${style('bold', h.id.padEnd(5))} ${impactTag(h.floor, 11)} ${plain(h.file)}` +
       style('dim', `  [${h.classes.join(', ') || 'no class'}]${h.why.length ? ' ' + plain(h.why.join('; ')) : ''}`))
     for (const x of h.hits.slice(0, 8)) {
-      out.push(`        ${h.id}:${x.line} ${x.sign} ${x.class} pattern "${x.name}"${x.damped ? style('dim', ' (damped: test, docs or lockfile path)') : ''}  ${style('dim', plain(x.text))}`)
+      out.push(`        ${h.id}:${x.line} ${x.sign} ${x.class} pattern "${x.name}"${x.timedOut ? ' (pattern timed out: counted as matching)' : ''}${x.damped ? style('dim', ' (damped: test, docs or lockfile path)') : ''}  ${style('dim', plain(x.text))}`)
     }
     if (h.hits.length > 8) out.push(style('dim', `        ... ${h.hits.length - 8} more hits (--json)`))
   }

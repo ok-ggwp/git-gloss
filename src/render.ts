@@ -58,7 +58,7 @@ export const ATTENTION_STYLE: Record<AttentionLevel, 'gray' | 'cyan' | 'yellow' 
 
 // What `show` knows beyond the declared attention: the computed floor and
 // the attention derived when none is declared.
-export type AttentionView = { floor: AttentionLevel; derived: { level: AttentionLevel; reasons: string[] } }
+export type AttentionView = { floor: AttentionLevel; derived: { level: AttentionLevel; reasons: string[] }; timedOut?: string[] }
 
 // Declared below the computed floor.
 export const belowFloor = (a: Attention | undefined, view: Pick<AttentionView, 'floor'> | undefined) =>
@@ -73,15 +73,17 @@ export function attentionBlock(a: Attention | undefined, view?: AttentionView): 
     if (!view) return [style('dim', 'attention: unrated')]
     const d = view.derived
     return [`attention: ${level(d.level)} ${style('dim', '(derived)')}` + (d.level === view.floor ? '' : ` · floor: ${view.floor}`),
-      ...d.reasons.flatMap((r) => field('•', r))]
+      ...d.reasons.flatMap((r) => field('•', r)), ...timedOutLines(view)]
   }
   const head = `attention: ${level(a.level)}${view ? ' ' + style('dim', '(declared)') + ` · floor: ${view.floor}` : ''}` +
     (a.focus?.length ? ` · focus: ${a.focus.join(', ')}` : '')
   const below = belowFloor(a, view)
   return [head, ...(a.reasons ?? []).flatMap((r) => field('•', r)),
     ...(below ? field('⚠', `declared ${a.level}, below the computed floor ${view!.floor}` + (a.override_reason ? '' : ' (no override_reason)'), 2).map((l) => style('yellow', l)) : []),
-    ...(a.override_reason ? field('override:', a.override_reason) : [])]
+    ...(a.override_reason ? field('override:', a.override_reason) : []), ...timedOutLines(view)]
 }
+
+const timedOutLines = (view: AttentionView | undefined) => (view?.timedOut ?? []).flatMap((r) => field('⚠', r, 2).map((l) => style('yellow', l)))
 
 export const termWidth = () => Math.min(process.stdout.columns || 100, 120)
 

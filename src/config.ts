@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { GlossError, gitTry } from './git.ts'
+import { git, GitError, GlossError, gitTry } from './git.ts'
 import { globToRegExp } from './glob.ts'
 
 // Settings for the computed signals, in three layers (later wins for scalars,
@@ -148,6 +148,30 @@ function gitInt(key: string): number | undefined {
   return Number(v)
 }
 
+// Git failing (a broken repo, an unreadable object, no permission) is not the
+// same as "no base" or "no file": the repo's own, perhaps stricter, config
+// would silently not apply. It is not fatal either (the built-in defaults
+// still give a floor, and refusing to rate anything would make every command
+// fail in a damaged repo), so it is warned about on stderr, once per message,
+// and the defaults are used.
+const warned = new Set<string>()
+function warnOnce(msg: string) {
+  if (warned.has(msg)) return
+  warned.add(msg)
+  console.error(`warning: ${msg}`)
+}
+
+// git's output, or null when it exits 1 with nothing to say (its way of
+// answering "no"); any other failure is thrown.
+function gitAnswer(args: string[]): string | null {
+  try {
+    return git(args)
+  } catch (err) {
+    if (err instanceof GitError && err.status === 1 && /failed$/.test(err.message)) return null
+    throw err
+  }
+}
+
 // The config is read from the base branch, not the working tree: a change under
 // review must not be able to reclassify its own paths or add patterns that
 // lower its own floor. The base is the merge base of the checked-out HEAD (not
@@ -158,18 +182,46 @@ function gitInt(key: string): number | undefined {
 // the change's own config. Editing the file in a change is itself flagged: it
 // is always a `sensitive` path.
 function trustedRef(): string | null {
+  // No commits yet: no base, and nothing failed.
+  if (gitAnswer(['rev-parse', '--verify', '-q', 'HEAD']) === null) return noBase()
+  let failed = false
   // Full ref names, so a tag called "main" cannot stand in for the branch.
   for (const b of ['refs/remotes/origin/main', 'refs/heads/main', 'refs/remotes/origin/master', 'refs/heads/master']) {
-    const mb = gitTry(['merge-base', 'HEAD', b])?.trim()
-    if (mb) return mb
+    try {
+      if (gitAnswer(['rev-parse', '--verify', '-q', b]) === null) continue
+      const mb = gitAnswer(['merge-base', 'HEAD', b])?.trim()
+      if (mb) return mb
+    } catch (err) {
+      // A broken candidate does not hide the ones after it.
+      failed = true
+      warnOnce(`git failed finding the base branch with ${b} (${(err as Error).message}); trying the next candidate`)
+    }
   }
+  // Some candidate failed: git's warning above is the reason, not an absent branch.
+  return failed ? (console.error(`warning: no working base branch, so ${CONFIG_FILE} is not read; using the built-in defaults`), null) : noBase()
+}
+
+function noBase(): null {
   console.error('warning: no base branch (origin/main, main, origin/master, master) found, so .gloss/config.json is not read; using the built-in defaults')
   return null
 }
 
+// The config file at `ref`: null when the file is not there (the usual case),
+// a warning and null when git could not tell or could not read it. Presence
+// is asked of ls-tree (empty output: absent), not read off an error message.
+function configAt(ref: string): string | null {
+  try {
+    if (!git(['ls-tree', '--full-tree', '--name-only', ref, '--', CONFIG_FILE]).trim()) return null
+    return git(['show', `${ref}:${CONFIG_FILE}`])
+  } catch (err) {
+    warnOnce(`${CONFIG_FILE} could not be read from the base branch (${(err as Error).message}); using the built-in defaults, so the repo's own patterns do not apply`)
+    return null
+  }
+}
+
 function readRepoConfig(): z.infer<typeof RepoConfig> | undefined {
   const ref = trustedRef()
-  const text = ref ? gitTry(['show', `${ref}:${CONFIG_FILE}`]) : null
+  const text = ref ? configAt(ref) : null
   if (text === null) return undefined
   let json: unknown
   try {

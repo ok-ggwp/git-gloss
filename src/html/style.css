@@ -164,6 +164,7 @@ kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); 
 .att li { margin-bottom: 4px; }
 .att .look { margin: 10px 0 0; font-size: 13px; }
 .att .override { margin: 10px 0 0; font-size: 13px; color: var(--warn-text); background: var(--warn-bg); border-radius: 6px; padding: 6px 10px; }
+.att .timedout { margin: 10px 0 0; padding: 6px 10px 6px 28px; font-size: 13px; color: var(--warn-text); background: var(--warn-bg); border-radius: 6px; }
 .att .override.mismatch { font-weight: 600; border: 1px solid var(--warn-border); }
 .gauge { display: inline-flex; gap: 3px; }
 .gauge i { display: block; width: 22px; height: 8px; border-radius: 2px; background: var(--line); }

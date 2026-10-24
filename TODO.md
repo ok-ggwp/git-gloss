@@ -121,12 +121,8 @@ Follow-ups, real but left alone:
 
 ## Release
 
-- [ ] A timed-out pattern now counts as matching every line (fails closed) and
-  warns on stderr, but the 250 ms budget is wall-clock, so on a loaded machine a
-  slow pattern can raise the floor on one run and not another, and the hit says
-  nothing about a timeout. Carry a "pattern timed out" marker into
-  `signals --json`, `show` and `html`. Found by the honesty and bugs reviews of the config hardening.
-- [ ] `readRepoConfig` turns any git failure into "no config" without a warning (a failing `git show` on an existing base ref, or a failing `merge-base` reported as "no base branch"). Distinguish "no file" from "git failed". From the honesty review of the config hardening.
+- [ ] The 250 ms pattern budget is still wall-clock: a slow machine can time a pattern out on one run and not another, so the floor can differ between runs (now visible: the hit and the reasons say "timed out", but nothing stabilises it). Follow-up to the timed-out marker; from the bugs review of the config hardening.
+- [ ] A git failure reading the base config warns and uses the built-in defaults, so the repo's stricter patterns do not apply to that run; a failing base candidate warns and the next one is tried (defaults only if none works). A failing run could throw instead if a loud warning is judged too weak. From the honesty review of the config hardening.
 
 ## Attention and impact: the rest of the brief
 

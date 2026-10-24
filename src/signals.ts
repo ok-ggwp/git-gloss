@@ -21,6 +21,9 @@ export type PatternHit = {
   text: string
   // Test, docs and lockfile paths damp hits: still reported, never raise the floor.
   damped: boolean
+  // The pattern exceeded its time budget and is counted as matching every line
+  // (fails closed); absent for a normal hit.
+  timedOut?: boolean
 }
 
 export type HunkSignals = {
@@ -134,9 +137,9 @@ export function hunkSignals(h: Hunk, cfg: Config): HunkSignals {
     const texts = lines.map((l) => l.raw.slice(1))
     for (const c of PATTERN_CLASSES) {
       for (const p of cfg.patterns[c]) {
-        const found = matchLines(p.re, texts)
+        const { hit: found, timedOut } = matchLines(p.re, texts)
         lines.forEach((l, i) => {
-          if (found[i]) hits.push({ class: c, name: p.name, line: l.idx as number, sign: l.kind === 'add' ? '+' : '-', text: clip(texts[i]), damped })
+          if (found[i]) hits.push({ class: c, name: p.name, line: l.idx as number, sign: l.kind === 'add' ? '+' : '-', text: clip(texts[i]), damped, timedOut: timedOut || undefined })
         })
       }
     }
@@ -146,6 +149,14 @@ export function hunkSignals(h: Hunk, cfg: Config): HunkSignals {
   return { id: h.id, file: h.file, oldFile: h.oldFile, classes, hits, pathFloor: pFloor, pathWhy: pWhy, floor, why, inert, test: classes.includes('test') }
 }
 
+// One sentence per pattern that timed out (so matched every line) on a hit that
+// counts toward the floor. floorFrom's reasons only surface when the floor beats
+// the declared or derived level, so show and the html card need this list to
+// say it every time.
+export function timedOutNotes(hunks: HunkSignals[]): string[] {
+  return [...new Set(hunks.flatMap((h) => h.hits.filter((x) => x.timedOut && !x.damped).map((x) => `pattern ${x.name} timed out: counted as matching`)))]
+}
+
 // The floor from a path floor and the pattern hits: damped hits never count,
 // and with `lines` only hits on those changed lines do. `why` names what set
 // it; the path's reasons stand only while the path itself sets the floor.
@@ -153,7 +164,10 @@ function floorFrom(pFloor: Impact, pWhy: string[], hits: PatternHit[], lines: Se
   let floor = pFloor
   const live = hits.filter((x) => !x.damped && (!lines || lines.has(x.line)))
   for (const x of live) floor = maxImpact(floor, x.class)
-  const names = [...new Set(live.filter((x) => x.class === floor).map((x) => `pattern: ${x.name}`))]
+  // Timed-out patterns first, so a summary that shows one reason shows them.
+  const top = live.filter((x) => x.class === floor)
+  const label = (x: PatternHit) => `pattern: ${x.name}${x.timedOut ? ' (timed out: counted as matching)' : ''}`
+  const names = [...new Set([...top].sort((x, y) => +!!y.timedOut - +!!x.timedOut).map(label))]
   return { floor, why: floor === pFloor ? [...pWhy, ...names.filter((n) => !pWhy.includes(n))] : names }
 }
 

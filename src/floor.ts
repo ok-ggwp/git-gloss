@@ -3,7 +3,7 @@ import { ConfigError, loadConfig, type Config } from './config.ts'
 import type { LoadedGloss } from './loader.ts'
 import { attentionForImpact, attentionRank, impactRank, maxAttention, maxImpact, raise } from './attention.ts'
 import { servesOf, type Annotation, type AttentionLevel, type Group, type Impact } from './schema.ts'
-import { analyze, CONFIG_EDIT_NOTE, partFloor, type ChangeSignals, type HunkSignals } from './signals.ts'
+import { analyze, CONFIG_EDIT_NOTE, partFloor, timedOutNotes, type ChangeSignals, type HunkSignals } from './signals.ts'
 import { changedCount, selections } from './selection.ts'
 
 // What a group claims of the diff: whole hunks, or some of a hunk's changed lines.
@@ -34,6 +34,8 @@ export type Analysis = {
   floor: AttentionLevel
   // The attention to show when the gloss declares none.
   derived: Derived
+  // Timed-out patterns that count toward the floor (see timedOutNotes).
+  timedOut: string[]
 }
 
 // The groups of a loaded gloss with their current hunks (a hunk that is gone is skipped).
@@ -126,7 +128,7 @@ export function analyzeGroups(hunks: Hunk[], groups: GroupInput[], cfg: Config):
     level = maxAttention(level, signals.floor.attention)
     reasons.push(`floor ${signals.floor.attention}: ${signals.floor.reasons[0] ?? signals.floor.impact}`)
   }
-  return { signals, groups: floors, floor: signals.floor.attention, derived: { level, reasons } }
+  return { signals, groups: floors, floor: signals.floor.attention, derived: { level, reasons }, timedOut: timedOutNotes(signals.hunks) }
 }
 
 export const analyzeGloss = (gloss: LoadedGloss, cfg: Config): Analysis =>
