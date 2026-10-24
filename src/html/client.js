@@ -264,6 +264,13 @@
     var f = r.state === 'seen' ? 'current' : r.state === 'code-changed' ? 'code changed since review' : 'gloss changed since review'
     return v + ' · ' + f
   }
+  // How far the arbiter got with a stage's latest review, for a rail row: nothing unless it found issues.
+  function decidedShort(r) {
+    // reviewStatus() in src/reviews.ts sorts each stage newest-first, and the page data keeps that order.
+    var latest = r.entries[0]
+    if (!latest || !latest.decisions || latest.verdict === 'clean') return ''
+    return latest.complete ? ' \u00b7 complete' : latest.decisionCount ? ' \u00b7 ' + latest.decisionCount + ' decided' : ' \u00b7 undecided'
+  }
   // One compact row per stage; each opens the Reviews view in the main pane.
   function reviewStatus(c) {
     var ci = commits.indexOf(c)
@@ -274,7 +281,7 @@
       var b = button('rvrow', null, function () { selectReviews(ci, r.stage) })
       b.setAttribute('data-fid', 'rv:' + ci + ':' + r.stage)
       b.title = r.phrase
-      add(b, el('span', 'rvdot ' + (cls === 'review-ok' ? 'ok' : cls === 'stale' ? 'warn' : 'none')), el('span', 'rvstage', r.stage), el('span', 'rvtxt', reviewShort(r)),
+      add(b, el('span', 'rvdot ' + (cls === 'review-ok' ? 'ok' : cls === 'stale' ? 'warn' : 'none')), el('span', 'rvstage', r.stage), el('span', 'rvtxt', reviewShort(r) + decidedShort(r)),
         el('span', 'rvn', r.entries.length))
       box.appendChild(b)
     })
@@ -342,6 +349,9 @@
         if (!top || top.indent < indent || top.list.tagName.toLowerCase() !== tag) {
           if (top && top.indent === indent) stack.pop()
           var list = el(tag)
+          // A numbered list starts at its first item's number, so "5. 6." is not shown as "1. 2.".
+          var first = tag === 'ol' ? parseInt(m[2], 10) : 0
+          if (first > 0 && first < 100000 && first !== 1) list.start = first
           if (stack.length && stack[stack.length - 1].li) stack[stack.length - 1].li.appendChild(list); else root.appendChild(list)
           top = { indent: indent, list: list, li: null }
           stack.push(top)
@@ -376,6 +386,25 @@
     if (v) add(head, el('span', 'chip ' + (v === 'ISSUES' ? 'bad' : 'good'), v === 'ISSUES' ? 'issues found' : 'no issues'))
     return head
   }
+  // What was decided about one review: the summary, then a row per decision. Text only, never markup.
+  function decisionsBlock(e) {
+    if (!e.decisions) return null
+    var box = el('div', 'decisions')
+    add(box, el('h3', 'dhead', 'Decisions'), el('p', 'dsum', e.summary))
+    if (e.decisionCount > e.decisions.length) add(box, el('p', 'muted dhidden', 'showing the latest ' + e.decisions.length + ' of ' + e.decisionCount))
+    if (e.decisions.length) {
+      var ul = el('ul', 'dlist')
+      e.decisions.forEach(function (d) {
+        var row = el('li', 'drow')
+        add(row, el('span', 'chip dchip ' + d.outcome, d.outcome), text(' '), el('span', 'dfinding', d.finding))
+        if (d.note) add(row, text(' \u2014 '), el('span', 'dnote', d.note))
+        add(row, text(' '), el('span', 'muted dby', d.by + ', ' + d.at.slice(0, 10)))
+        ul.appendChild(row)
+      })
+      add(box, ul)
+    }
+    return box
+  }
   function reviewsPane(c, stage) {
     var pane = el('div')
     add(pane, button('btn small back', '‹ Back', goBack))
@@ -387,10 +416,10 @@
       add(sec, el('h2', null, r.stage), add(el('p', 'rvsum'), el('span', reviewClass(r), r.phrase)))
       var entries = r.entries.slice().sort(function (a, b) { return a.at < b.at ? 1 : a.at > b.at ? -1 : 0 })
       entries.forEach(function (e, i) {
-        if (i === 0) add(sec, add(el('div', 'entry'), entryHead(e), markdown(e.findings)))
+        if (i === 0) add(sec, add(el('div', 'entry'), entryHead(e), decisionsBlock(e), markdown(e.findings)))
         else {
           var d = el('details', 'entry old')
-          add(d, add(el('summary'), entryHead(e)), markdown(e.findings))
+          add(d, add(el('summary'), entryHead(e)), decisionsBlock(e), markdown(e.findings))
           add(sec, d)
         }
       })

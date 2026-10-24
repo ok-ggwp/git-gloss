@@ -1,5 +1,5 @@
 import { commitDiff, commitSubject, git } from '../git.ts'
-import { reviewStatus, statusPhrase, verdict } from '../reviews.ts'
+import { decisionSummary, readDecisions, reviewStatus, statusPhrase, verdict } from '../reviews.ts'
 import { parseDiff } from '../diff.ts'
 import { loadGloss } from '../loader.ts'
 import type { Hunk } from '../diff.ts'
@@ -86,17 +86,52 @@ export type PageReview = {
   state: 'seen' | 'code-changed' | 'gloss-changed'
   verdict: 'clean' | 'issues' | 'unknown'
   phrase: string
-  entries: { agent: string; model?: string; mode?: string; at: string; target: string; findings: string }[]
+  entries: PageEntry[]
+}
+
+// The most decisions listed per review (the newest); the summary counts all of them.
+export const MAX_PAGE_DECISIONS = 200
+
+export type PageEntry = {
+  id: string
+  agent: string
+  model?: string
+  mode?: string
+  at: string
+  target: string
+  findings: string
+  // Only on an entry that is not clean or that has decisions: what was decided
+  // about it (oldest first), whether the arbiter marked it complete, and the
+  // summary line. A clean review with no decisions has none of the three.
+  decisions?: { outcome: string; finding: string; note?: string; by: string; at: string }[]
+  complete?: boolean
+  summary?: string
+  // The review's own verdict and how many per-finding decisions it has in all
+  // (`decisions` holds only the newest MAX_PAGE_DECISIONS of them).
+  verdict?: 'clean' | 'issues'
+  decisionCount?: number
 }
 
 function pageReviews(sha: string): PageReview[] {
+  const all = readDecisions(sha)
   return reviewStatus(sha).map((s) => ({
     stage: s.stage,
     state: s.code === 'changed' ? 'code-changed'
       : (s.stage === 'honesty' || s.stage === 'improve') && s.gloss === 'changed' ? 'gloss-changed' : 'seen',
     verdict: verdict(s),
     phrase: statusPhrase(s),
-    entries: s.reviews.map((r) => ({ agent: r.agent, model: r.model, mode: r.mode, at: r.at, target: r.target, findings: r.findings })),
+    entries: s.reviews.map((r): PageEntry => {
+      const entry: PageEntry = { id: r.id, agent: r.agent, model: r.model, mode: r.mode, at: r.at, target: r.target, findings: r.findings }
+      const ds = all.filter((d) => d.review === r.id)
+      if (r.verdict === 'clean' && !ds.length) return entry
+      const done = ds.filter((d) => d.outcome).sort((a, b) => a.at.localeCompare(b.at))
+      entry.decisions = done.slice(-MAX_PAGE_DECISIONS).map((d) => ({ outcome: d.outcome!, finding: d.finding!, ...(d.note ? { note: d.note } : {}), by: d.by, at: d.at }))
+      entry.complete = ds.some((d) => d.complete)
+      entry.summary = decisionSummary(ds)
+      entry.verdict = r.verdict
+      entry.decisionCount = done.length
+      return entry
+    }),
   }))
 }
 

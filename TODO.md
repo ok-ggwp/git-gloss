@@ -172,6 +172,7 @@ The brief is `gloss-review.md` (kept outside the repo; consider adding it under
   a filter chosen in one commit still hides groups after opening another (the
   filter button counts are per commit, so labels and rows can disagree). Reset
   the filters when the open commit changes, or keep them per commit.
+- [ ] Timing assertions flake when the full suite runs in parallel: the signals performance test, the untrusted markdown test (3 s budget) and the hostile decision text test (3 s) fail on a loaded machine and pass alone. Give them headroom or measure CPU time instead of wall time. Seen three times on 2026-10-24.
 - [ ] The browser tests skip on Node 20 (no global `WebSocket`) and the skip is
   silent, so a Node 20 CI would lose all browser coverage without failing.
 - [ ] Performance: every hunk of the selected group is now built eagerly (the old
@@ -195,7 +196,6 @@ and a verdict, so a reader cannot tell "3 fixed, 2 deferred" from "5 ignored".
 
 - [ ] `plain()` misses the bidi marks U+200E, U+200F and U+061C (README says control characters are removed; say so).
 - [ ] The decision reader and writer disagree on `complete` lines (the reader accepts a `note` on one; the writer refuses it), and `isDecisionLine` requires `decision` to be the first key, so a valid hand-written line with another key order is dropped silently. Parse, then check `decision === 1`. From the honesty review of the decision records.
-- [ ] The html Reviews view does not show decisions yet.
 - [ ] Phase 5 (git-gud, other repo): structured findings, so "N still open" can
   be computed.
 

@@ -340,6 +340,18 @@ tr.gap td { background: var(--bg); color: var(--muted); font-style: italic; font
 .chip.good { color: var(--ok); border-color: var(--ok); }
 .chip.bad { color: var(--warn); border-color: var(--warn); }
 
+/* Decisions on a review: the outcome differs by its word and its border, not by colour alone */
+.decisions { margin: 0 0 12px; }
+.dhead { margin: 0 0 2px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.dsum { margin: 0 0 6px; }
+.dlist { list-style: none; margin: 0; padding: 0; }
+.drow { padding: 4px 0; overflow-wrap: anywhere; }
+.dchip { font-size: 12px; padding: 0 8px; }
+.dchip.fixed { color: var(--ok); border-color: var(--ok); border-style: solid; }
+.dchip.follow-up { border-style: dashed; }
+.dchip.rejected { border-style: dotted; text-decoration: line-through; }
+.dchip.accepted { border-style: double; border-width: 3px; }
+
 /* Rendered markdown */
 .md { max-width: 75ch; overflow-wrap: anywhere; }
 .md p { margin: 0 0 10px; }
