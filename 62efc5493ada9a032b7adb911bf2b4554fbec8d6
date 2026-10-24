@@ -1,0 +1,381 @@
+{
+  "gloss": 4,
+  "commit": "62efc5493ada9a032b7adb911bf2b4554fbec8d6",
+  "created_at": "2026-10-24T07:25:20.530Z",
+  "annotation": {
+    "version": 1,
+    "task": "Reimplement the git gloss html page as the Review desk master-detail design",
+    "summary": "The page becomes a rail plus detail pane. Single commit: the Overview is shown first and the rail lists the groups. Range: commits only in the rail, and a commit's groups, filters, reviews in the detail pane with a back link. New behaviour beyond the old page: read progress and marks, and hottest-first ordering of range pages. Data gains a precomputed review order.",
+    "groups": [
+      {
+        "id": "desk-layout",
+        "intent": "Rewrite the page client and styles as a rail plus detail pane",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The page would stay the old single-column list; none of the desk design exists",
+        "evidence": "Chromium screenshots (single, range, wip, inside the ary frame; light, dark, 390px) with no CSP errors; the existing browser tests pass",
+        "impact": "module",
+        "hunks": [
+          "h1",
+          "h2",
+          "h3",
+          "h8",
+          "h9",
+          "h10",
+          "h11",
+          "h12"
+        ],
+        "notes": "Colours reach the DOM only as CSSOM custom properties, so the nonce CSP blocks nothing. Replaces the old chips/necessity overview with a segmented filter plus necessity chips. No branch/base pickers: those belong to ary. Behaviour changes from the old page: each hunk folds on its own (header row stays visible, open by default; the old page collapsed every group's code by default), Expand/Collapse all hunks act on the current group's hunks, o folds the focused hunk (else the first), and the fold state is kept in memory only. The Overview (not the first group) is the default view; it carries the full attention card and Look-here-first cards, and the rail keeps only a small level chip on its Overview row. Risks and alternatives have their own page, opened from a rail row (and a link in the attention card), and appear nowhere else. The rail and the diff blocks' horizontal overflow use overscroll-behavior containment so scrolling them never chains to the page (a vertical wheel over a diff intentionally scrolls the page). Keyboard focus is restored after re-renders. The primary button has its own hover colour (--accent-strong), since the generic .btn hover made its text unreadable."
+      },
+      {
+        "id": "read-progress",
+        "intent": "New: per-group read marks, progress bar and r key, kept per tab in sessionStorage",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The approved design's read progress (3 of 8 read, checkboxes, mark read and go to next) would be missing",
+        "evidence": "Chromium tests: ticking updates the progress and row, marks survive group switches and a reload, a second tab (opened noopener, same browser) starts empty (fails if the code uses localStorage), and with sessionStorage and localStorage both throwing the page renders and marks work in memory (fails if the try/catch around the storage access is removed).",
+        "impact": "module",
+        "hunks": [
+          "h2:52-76",
+          "h3:430-446,767-771,777-792,853-855,1057-1061,1077-1080"
+        ],
+        "notes": "New behaviour, not in the old page. Marks are keyed per commit sha and group id in sessionStorage (this tab only; an in-memory fallback if storage is blocked), and every storage access is in try/catch."
+      },
+      {
+        "id": "range-order",
+        "intent": "Range pages list commits newest first, hottest first by default, with a toggle and an at-a-glance strip",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Range pages would list commits in history order only, with no summary of where attention is needed",
+        "evidence": "Automated Chromium test: ties newest first, history order newest first, the hottest commit selected by default, j/k stepping across commits. Screenshots of main~6..main. The rail headings say what the order is.",
+        "impact": "module",
+        "hunks": [
+          "h3:349-357,366-372,748-751,880-908,915-918,1088"
+        ],
+        "notes": "This changes the existing default: the old page listed a range oldest first; the rail now lists newest first (like git log), hottest first by default, with a History order toggle."
+      },
+      {
+        "id": "reviews-view",
+        "intent": "Reviews: compact status rows in the rail, full findings as rendered markdown in the main pane",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Reviews would again expand inside the rail, stretching it, with findings as raw text in short scroll boxes",
+        "evidence": "Chromium tests in test/reviews.test.ts (rail holds no findings, view shows real headings/lists/strong/code, hostile markup stays text, unterminated fence); screenshots of f92caa7 and 2107f50 in light, dark and 390px with no CSP errors",
+        "impact": "module",
+        "hunks": [
+          "h3:160-325"
+        ],
+        "notes": "Hand-rolled markdown subset (headings #-####, paragraphs, nested lists, fenced code, inline code, bold, italic; links shown as text with the URL in parentheses), built only from DOM nodes, never innerHTML. Unsupported syntax (tables, blockquotes, images, HTML) shows as plain text. The entry verdict chip is read client-side from the trailing VERDICT line because the data carries the verdict per stage only. The matching CSS is part of the desk-layout stylesheet hunks."
+      },
+      {
+        "id": "review-order",
+        "intent": "Precompute the group review order in the page data",
+        "necessity": "supporting",
+        "serves": "desk-layout",
+        "removal_impact": "The desk rail would have no deterministic focus-first, impact, size order",
+        "evidence": "test/gloss.test.ts reviewOrder test; order field checked in test/attention.test.ts",
+        "impact": "module",
+        "hunks": [
+          "h4",
+          "h5",
+          "h6",
+          "h7"
+        ]
+      },
+      {
+        "id": "tests",
+        "intent": "Test the order, rendered attention card, Reviews view and markdown, Next/Previous state, hover contrast and storage-less rendering",
+        "necessity": "supporting",
+        "serves": [
+          "desk-layout",
+          "read-progress",
+          "range-order",
+          "review-order",
+          "reviews-view"
+        ],
+        "removal_impact": "The order rule, the refreshNav fix (Previous/Next going stale after a filter change; the Chromium test fails with refreshNav disabled) and the storage-blocked path would be unchecked; two assertions on removed client function names would fail",
+        "evidence": "Each of these fails without its fix, shown by temporarily removing it: focus restore (BODY has focus), the fresh-tab read-marks assertion (localStorage in use), and the in-memory read marks (try/catch removed). The localStorage-disabled test only checks that the page renders and honours the #hash. Node 20 coverage: only three Chromium tests run without the global WebSocket (they use --dump-dom): hostile gloss as inert text, the rendered attention card, and the page rendering with the #hash and localStorage disabled. The other 15 Chromium tests drive the page over CDP (reviews view and markdown, Previous/Next, hover contrast, read marks and storage fallback, keyboard focus and heading focus, hunk folding, risks and overview, range order, neighbour skipping, rail scroll containment, the #reviews link) and skip on Node 20; checked with node --no-experimental-websocket.",
+        "hunks": [
+          "h13",
+          "h14",
+          "h15",
+          "h16",
+          "h17",
+          "h18",
+          "h19",
+          "h20",
+          "h21",
+          "h22",
+          "h23"
+        ],
+        "notes": "attention.test.ts now checks the rendered DOM in Chromium instead of the client source text. A Chromium test hovers the primary button in light and dark and asserts a text contrast of at least 4.5 (it fails without the hover rule). The storage-less test now asserts the hash-selected group's heading text (it fails with the hash handling disabled). test/reviews.test.ts: the old details/pre.findings browser test is replaced by the rail-status and Reviews-view tests. New Chromium tests: read marks (tab-scoped, storage-blocked), keyboard focus after Next/Mark read/fold controls, per-hunk folding, the Overview first, Look-here-first cards, a risks row and page, and wheel scrolling of the rail not chaining to the page (fails without the CSS). The browser helper moved to test/browser.ts and Chromium tests skip with a message when WebSocket is missing (Node 20)."
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Compute the review order in the client",
+        "rejected_because": "Not testable without a browser; data.ts is pure and covered"
+      }
+    ],
+    "risks": [
+      "Unrated groups (no impact, no derived impact) sort by size and draw a dashed outline meter",
+      "Range pages now default to hottest-first order, a visible change from history order",
+      "Inside ary the page shows three columns and two header bars until the ary shell is restyled",
+      "The line ranges claimed by read-progress and range-order inside the large client.js hunks are approximate, not exact attribution",
+      "The markdown renderer is a small hand-written subset: unusual syntax renders as plain text, and a malformed report can look different from how a full renderer would show it",
+      "The review verdict chip is parsed from the report's trailing VERDICT line; a report without one shows no chip",
+      "Read marks are per tab: lost when the tab closes (restored tabs keep them) and not shared between tabs",
+      "The page does not scroll back to the focused nav button after Next, so a keyboard user may have to scroll down to it",
+      "The 15 CDP-driven Chromium tests skip, with a message, on Node 20 (no global WebSocket), so the interaction behaviour is only covered on Node 22+"
+    ],
+    "attention": {
+      "level": "careful",
+      "focus": [
+        "desk-layout",
+        "range-order",
+        "reviews-view"
+      ],
+      "reasons": [
+        "The whole client is rewritten (about 1000 changed lines) and was checked visually and in Chromium, not by unit tests",
+        "Range ordering changes an existing default",
+        "Reviews now render findings through a new hand-written markdown renderer"
+      ]
+    },
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-sonnet-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 1,
+      "oldLines": 15,
+      "newStart": 1,
+      "newLines": 24,
+      "hash": "7a749d32027a860e"
+    },
+    {
+      "id": "h2",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 20,
+      "oldLines": 51,
+      "newStart": 29,
+      "newLines": 150,
+      "hash": "33324f97ad6cd9fb"
+    },
+    {
+      "id": "h3",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 81,
+      "oldLines": 353,
+      "newStart": 189,
+      "newLines": 915,
+      "hash": "ebc59cc7cdd4309e"
+    },
+    {
+      "id": "h4",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 69,
+      "oldLines": 6,
+      "newStart": 69,
+      "newLines": 10,
+      "hash": "ee7f67f57a86bace"
+    },
+    {
+      "id": "h5",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 152,
+      "oldLines": 6,
+      "newStart": 156,
+      "newLines": 17,
+      "hash": "68fe62195f071493"
+    },
+    {
+      "id": "h6",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 215,
+      "oldLines": 6,
+      "newStart": 230,
+      "newLines": 7,
+      "hash": "425ed792dc1a767d"
+    },
+    {
+      "id": "h7",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 235,
+      "oldLines": 6,
+      "newStart": 251,
+      "newLines": 7,
+      "hash": "a45bc39f528302b0"
+    },
+    {
+      "id": "h8",
+      "file": "src/html/style.css",
+      "oldFile": "src/html/style.css",
+      "oldStart": 1,
+      "oldLines": 19,
+      "newStart": 1,
+      "newLines": 24,
+      "hash": "aaa110044229843b"
+    },
+    {
+      "id": "h9",
+      "file": "src/html/style.css",
+      "oldFile": "src/html/style.css",
+      "oldStart": 24,
+      "oldLines": 15,
+      "newStart": 29,
+      "newLines": 18,
+      "hash": "1e304621a6884d5a"
+    },
+    {
+      "id": "h10",
+      "file": "src/html/style.css",
+      "oldFile": "src/html/style.css",
+      "oldStart": 41,
+      "oldLines": 21,
+      "newStart": 49,
+      "newLines": 24,
+      "hash": "df96d670792531a6"
+    },
+    {
+      "id": "h11",
+      "file": "src/html/style.css",
+      "oldFile": "src/html/style.css",
+      "oldStart": 66,
+      "oldLines": 165,
+      "newStart": 77,
+      "newLines": 182,
+      "hash": "7c361d1d98672736"
+    },
+    {
+      "id": "h12",
+      "file": "src/html/style.css",
+      "oldFile": "src/html/style.css",
+      "oldStart": 232,
+      "oldLines": 31,
+      "newStart": 260,
+      "newLines": 90,
+      "hash": "b738d81881b4fe5a"
+    },
+    {
+      "id": "h13",
+      "file": "test/attention.test.ts",
+      "oldFile": "test/attention.test.ts",
+      "oldStart": 4,
+      "oldLines": 6,
+      "newStart": 4,
+      "newLines": 7,
+      "hash": "4049996fd5bd7a7f"
+    },
+    {
+      "id": "h14",
+      "file": "test/attention.test.ts",
+      "oldFile": "test/attention.test.ts",
+      "oldStart": 159,
+      "oldLines": 11,
+      "newStart": 160,
+      "newLines": 20,
+      "hash": "05f34d7bb0b2c369"
+    },
+    {
+      "id": "h15",
+      "file": "test/attention.test.ts",
+      "oldFile": "test/attention.test.ts",
+      "oldStart": 259,
+      "oldLines": 3,
+      "newStart": 269,
+      "newLines": 293,
+      "hash": "b46cf99c9b0aba8c"
+    },
+    {
+      "id": "h16",
+      "file": "test/browser.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 95,
+      "hash": "6d8059fcc8fc5aa1"
+    },
+    {
+      "id": "h17",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 4,
+      "oldLines": 9,
+      "newStart": 4,
+      "newLines": 10,
+      "hash": "6bfb1fc8dafa0789"
+    },
+    {
+      "id": "h18",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 433,
+      "oldLines": 16,
+      "newStart": 434,
+      "newLines": 11,
+      "hash": "f698e7d5742de3a0"
+    },
+    {
+      "id": "h19",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 460,
+      "oldLines": 6,
+      "newStart": 456,
+      "newLines": 25,
+      "hash": "ef52c1b7663dfd1c"
+    },
+    {
+      "id": "h20",
+      "file": "test/reviews.test.ts",
+      "oldFile": "test/reviews.test.ts",
+      "oldStart": 4,
+      "oldLines": 6,
+      "newStart": 4,
+      "newLines": 7,
+      "hash": "116d29f2f452d389"
+    },
+    {
+      "id": "h21",
+      "file": "test/reviews.test.ts",
+      "oldFile": "test/reviews.test.ts",
+      "oldStart": 151,
+      "oldLines": 41,
+      "newStart": 152,
+      "newLines": 9,
+      "hash": "09ad41c48f3e99a3"
+    },
+    {
+      "id": "h22",
+      "file": "test/reviews.test.ts",
+      "oldFile": "test/reviews.test.ts",
+      "oldStart": 193,
+      "oldLines": 13,
+      "newStart": 162,
+      "newLines": 57,
+      "hash": "6b8dd9fa8cfb7313"
+    },
+    {
+      "id": "h23",
+      "file": "test/reviews.test.ts",
+      "oldFile": "test/reviews.test.ts",
+      "oldStart": 306,
+      "oldLines": 3,
+      "newStart": 319,
+      "newLines": 16,
+      "hash": "2cec69934171f55c"
+    }
+  ]
+}
