@@ -1,0 +1,281 @@
+{
+  "gloss": 4,
+  "commit": "b1bd36761bd4813e7f42303a1bc0b2229b7768ec",
+  "created_at": "2026-10-24T12:18:05.131Z",
+  "annotation": {
+    "version": 1,
+    "task": "Record what was decided about each review finding: decision records beside reviews, written by the arbiter",
+    "summary": "Adds decision lines to the reviews notes ref, a validated reader, `reviews --decide`, CLI display, and makes decisions follow reviews through adopt and carry.",
+    "groups": [
+      {
+        "id": "decision-records",
+        "intent": "Decision record type, validated reader, summary and terminal sanitiser",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "There would be no way to tell arbitrated reviews from ignored ones",
+        "evidence": "test/decisions.test.ts round trip, dedupe, old-reader tests",
+        "impact": "contract",
+        "impact_reason": "a new line format in the shared reviews notes ref that other readers and remotes see",
+        "hunks": [
+          "h12:10-95"
+        ],
+        "notes": "readReviews still ignores decision lines (they fail its review===1 check), which keeps older readers working. Decision lines over 16 KB are skipped before parsing (review lines are not capped; see TODO). Decisions whose review is not on the commit are ignored. plain() strips OSC/CSI and control characters; `by` is validated to the reader's limit before writing."
+      },
+      {
+        "id": "decide-cli",
+        "intent": "reviews --decide / --complete writes a decision on every commit holding the review",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Arbiters could not record decisions",
+        "evidence": "test/decisions.test.ts validation test",
+        "impact": "contract",
+        "impact_reason": "adds CLI flags the arbiter agents will call",
+        "hunks": [
+          "h4",
+          "h5",
+          "h6"
+        ],
+        "notes": "The written line is checked against the reader's 16 KB cap, since control characters become 6-byte JSON escapes; --complete is advisory (later decisions still count); `by` falls back to 'unknown'."
+      },
+      {
+        "id": "decision-display",
+        "intent": "List decisions and a summary under each review; same summary on show",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Recorded decisions would be invisible",
+        "evidence": "test/decisions.test.ts hostile-input test",
+        "impact": "module",
+        "hunks": [
+          "h7",
+          "h8",
+          "h10"
+        ],
+        "notes": "show's decisions part appears only when a non-clean review exists and counts only decisions on those reviews. The html view is not changed."
+      },
+      {
+        "id": "sanitise-output",
+        "intent": "Strip terminal escapes from review records and commit subjects before printing",
+        "necessity": "supporting",
+        "serves": "decision-display",
+        "removal_impact": "A review record or commit subject from a remote could carry escape sequences to the user's terminal",
+        "evidence": "test/decisions.test.ts hostile review records test",
+        "hunks": [
+          "h12:1-9",
+          "h9",
+          "h11"
+        ],
+        "notes": "Done once in readReviews (id left as written, since decisions refer to it) plus the commit subjects in reviews and show. Gloss text (task, summary) is not sanitised here. Existing behaviour change: review findings are now cleaned too; copying a hostile review through adopt/carry writes the cleaned record."
+      },
+      {
+        "id": "decision-follow",
+        "intent": "copyReviews also copies decisions, so adopt and carry keep them",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Decisions made on wip would be lost when the work is committed",
+        "evidence": "test/decisions.test.ts adopt and carry tests",
+        "impact": "module",
+        "hunks": [
+          "h13"
+        ],
+        "notes": "Both adopt and carry call copyReviews, so this one change covers both. sync merges notes with cat_sort_uniq, which keeps the lines already; rebases copy whole notes."
+      },
+      {
+        "id": "decision-tests",
+        "intent": "Tests for round trip, validation, dedupe, old readers, adopt, carry and hostile input",
+        "necessity": "supporting",
+        "serves": [
+          "decision-records",
+          "decide-cli",
+          "decision-display",
+          "sanitise-output",
+          "decision-follow"
+        ],
+        "removal_impact": "None of the decision paths, including the untrusted-text one, would be checked",
+        "hunks": [
+          "h14"
+        ]
+      },
+      {
+        "id": "decision-docs",
+        "intent": "README section on decisions and the old-version cost; TODO updated",
+        "necessity": "supporting",
+        "serves": "decision-records",
+        "removal_impact": "Users would not know the CLI exists or that older git-gloss drops decisions on adopt/carry",
+        "hunks": [
+          "h1",
+          "h2"
+        ]
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Parse findings out of the report",
+        "rejected_because": "Reports are free-form markdown; the design records free-text finding names instead"
+      }
+    ],
+    "risks": [
+      "Older git-gloss copies only review records through adopt/carry and drops decision lines",
+      "Decisions have no per-finding identity beyond free text, so a repeated name is two decisions",
+      "The html page does not show decisions",
+      "decision lines are unsigned, like reviews: anyone who can push notes can add or complete decisions",
+      "Only decision lines are capped at 16 KB; review lines are not capped (pre-existing: readReviews parses every line of any length), so a huge review line from a remote is still parsed (TODO)"
+    ],
+    "attention": {
+      "level": "careful",
+      "focus": [
+        "decision-records",
+        "decision-follow"
+      ],
+      "reasons": [
+        "changes the notes format others read",
+        "touches the adopt and carry copy path"
+      ]
+    },
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-sonnet-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 35,
+      "oldLines": 7,
+      "newStart": 35,
+      "newLines": 10,
+      "hash": "079c164b9ab4f653"
+    },
+    {
+      "id": "h2",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 159,
+      "oldLines": 6,
+      "newStart": 162,
+      "newLines": 26,
+      "hash": "febbfe0b08e17414"
+    },
+    {
+      "id": "h3",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 88,
+      "oldLines": 18,
+      "newStart": 88,
+      "newLines": 18,
+      "hash": "c5f2e0e1d5135fb3"
+    },
+    {
+      "id": "h4",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 2,
+      "oldLines": 10,
+      "newStart": 2,
+      "newLines": 10,
+      "hash": "6c98f4afee0237f3"
+    },
+    {
+      "id": "h5",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 17,
+      "oldLines": 7,
+      "newStart": 17,
+      "newLines": 10,
+      "hash": "4a080ab4d36545e9"
+    },
+    {
+      "id": "h6",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 51,
+      "oldLines": 6,
+      "newStart": 54,
+      "newLines": 37,
+      "hash": "fafb6d1ce1adb45a"
+    },
+    {
+      "id": "h7",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 59,
+      "oldLines": 13,
+      "newStart": 93,
+      "newLines": 21,
+      "hash": "ac70d99ed36921f6"
+    },
+    {
+      "id": "h8",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 6,
+      "oldLines": 7,
+      "newStart": 6,
+      "newLines": 7,
+      "hash": "263cc1ac6c99abab"
+    },
+    {
+      "id": "h9",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 111,
+      "oldLines": 12,
+      "newStart": 111,
+      "newLines": 12,
+      "hash": "30ca1fa49de5a4a2"
+    },
+    {
+      "id": "h10",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 135,
+      "oldLines": 7,
+      "newStart": 135,
+      "newLines": 14,
+      "hash": "4248ec3c6c77b676"
+    },
+    {
+      "id": "h11",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 145,
+      "oldLines": 7,
+      "newStart": 152,
+      "newLines": 7,
+      "hash": "9204726a57b5ed70"
+    },
+    {
+      "id": "h12",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 102,
+      "oldLines": 18,
+      "newStart": 102,
+      "newLines": 107,
+      "hash": "66c3885045f1d4bf"
+    },
+    {
+      "id": "h13",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 139,
+      "oldLines": 7,
+      "newStart": 228,
+      "newLines": 8,
+      "hash": "b0c950d922d7d555"
+    },
+    {
+      "id": "h14",
+      "file": "test/decisions.test.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 215,
+      "hash": "239d5bf802a278da"
+    }
+  ]
+}
