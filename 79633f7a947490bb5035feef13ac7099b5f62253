@@ -1,0 +1,251 @@
+{
+  "gloss": 4,
+  "commit": "79633f7a947490bb5035feef13ac7099b5f62253",
+  "created_at": "2026-10-24T21:20:23.946Z",
+  "annotation": {
+    "version": 1,
+    "task": "Show decision records in the html Reviews view",
+    "summary": "Page data gives each review entry its id, decisions, complete flag and summary; the Reviews pane lists them under each entry and the rail row says how far they got.",
+    "groups": [
+      {
+        "id": "data",
+        "intent": "Add id, decisions (oldest first, capped at 200), complete and summary to each non-clean or decided review entry in the page data, reading decisions once per commit.",
+        "necessity": "required",
+        "serves": [
+          "pane",
+          "rail"
+        ],
+        "removal_impact": "The page has nothing to show about decisions.",
+        "impact": "module",
+        "impact_reason": "Only the html page's data.",
+        "hunks": [
+          "h9",
+          "h10"
+        ],
+        "notes": "The MAX_PAGE_DECISIONS cap (200) is defensive: it guards page size."
+      },
+      {
+        "id": "pane",
+        "intent": "Show a Decisions block (summary and a chip, finding, note, by and date row per decision) under each review entry, built with textContent only.",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Decisions stay invisible in the html view.",
+        "impact": "module",
+        "impact_reason": "Only the html Reviews pane.",
+        "hunks": [
+          "h7",
+          "h8"
+        ],
+        "notes": "Untrusted remote text: no innerHTML, no markdown, no links."
+      },
+      {
+        "id": "rail",
+        "intent": "Rail suffix: nothing for a clean review; else 'N decided', 'undecided' or ' · complete'",
+        "necessity": "supporting",
+        "serves": "pane",
+        "removal_impact": "The rail row does not hint that decisions exist.",
+        "impact": "local",
+        "impact_reason": "One rail row text.",
+        "hunks": [
+          "h4",
+          "h5"
+        ],
+        "notes": "For any non-clean review (issues, or no verdict line) the latest review's suffix is 'N decided', 'undecided', or ' · complete' (no count) when marked complete."
+      },
+      {
+        "id": "style",
+        "intent": "Style the Decisions block; outcomes differ by border shape and the word, not colour alone.",
+        "necessity": "supporting",
+        "serves": "pane",
+        "removal_impact": "The block is unstyled.",
+        "impact": "local",
+        "impact_reason": "CSS for one block.",
+        "hunks": [
+          "h11"
+        ]
+      },
+      {
+        "id": "docs",
+        "intent": "README says what the HTML view shows of decisions; the TODO item is done.",
+        "necessity": "supporting",
+        "serves": "pane",
+        "removal_impact": "Docs still say the view lacks decisions.",
+        "impact": "local",
+        "impact_reason": "README and TODO text only.",
+        "hunks": [
+          "h1",
+          "h3"
+        ]
+      },
+      {
+        "id": "tests",
+        "intent": "Page-data, DOM, wip-adopt and hostile-input browser tests for decisions in the page.",
+        "necessity": "required",
+        "serves": [
+          "data",
+          "pane",
+          "rail",
+          "ol-start"
+        ],
+        "removal_impact": "Nothing guards the feature or its untrusted-text handling.",
+        "impact": "local",
+        "impact_reason": "Test file only.",
+        "hunks": [
+          "h12"
+        ]
+      },
+      {
+        "id": "ol-start",
+        "intent": "A numbered list in a report starts at its first number",
+        "necessity": "incidental",
+        "serves": "pane",
+        "removal_impact": "Finding numbers in decisions no longer match the rendered report.",
+        "impact": "local",
+        "impact_reason": "One list-creation branch of the markdown renderer.",
+        "hunks": [
+          "h6"
+        ],
+        "notes": "Pre-existing rendering bug (ordered lists restarted at 1), found while checking that decision finding numbers line up with the rendered report; serves the Reviews pane."
+      }
+    ],
+    "risks": [
+      "A review's decision list shows only its newest 200 (oldest first), with a 'showing the latest 200 of N' line; the summary and the rail count all of them.",
+      "A complete marker with no decisions shows ' · complete' in the rail and 'none · complete' in the pane.",
+      "The rail reads only the newest review of a stage, while the stage's 'issues found' text can come from an older review covering other lines.",
+      "The page reads the reviews note twice per commit (two extra git processes per commit on a range).",
+      "Three browser timing assertions (signals perf, untrusted markdown, and this change's own hostile test under 3000 ms) can flake when the full suite runs in parallel; they pass alone."
+    ],
+    "attention": {
+      "level": "careful",
+      "focus": [
+        "pane",
+        "data"
+      ],
+      "reasons": [
+        "Renders text from remote notes in the page; built only with textContent, and a hostile-input browser test (red under innerHTML) covers it."
+      ]
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 178,
+      "oldLines": 9,
+      "newStart": 178,
+      "newLines": 9,
+      "hash": "6302696869c2c574"
+    },
+    {
+      "id": "h2",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 172,
+      "oldLines": 6,
+      "newStart": 172,
+      "newLines": 7,
+      "hash": "27945b820f4e8494"
+    },
+    {
+      "id": "h3",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 195,
+      "oldLines": 7,
+      "newStart": 196,
+      "newLines": 6,
+      "hash": "e2039de6fcfcbfe4"
+    },
+    {
+      "id": "h4",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 264,
+      "oldLines": 6,
+      "newStart": 264,
+      "newLines": 13,
+      "hash": "163ea28c9214276b"
+    },
+    {
+      "id": "h5",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 274,
+      "oldLines": 7,
+      "newStart": 281,
+      "newLines": 7,
+      "hash": "cdcaf1b566d426b3"
+    },
+    {
+      "id": "h6",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 342,
+      "oldLines": 6,
+      "newStart": 349,
+      "newLines": 9,
+      "hash": "49f3d2e0c765d3d6"
+    },
+    {
+      "id": "h7",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 376,
+      "oldLines": 6,
+      "newStart": 386,
+      "newLines": 25,
+      "hash": "997a5f2c203e1ef3"
+    },
+    {
+      "id": "h8",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 387,
+      "oldLines": 10,
+      "newStart": 416,
+      "newLines": 10,
+      "hash": "f5edb1279c9aa146"
+    },
+    {
+      "id": "h9",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 1,
+      "oldLines": 5,
+      "newStart": 1,
+      "newLines": 5,
+      "hash": "cdd1ae39cbe0e330"
+    },
+    {
+      "id": "h10",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 86,
+      "oldLines": 17,
+      "newStart": 86,
+      "newLines": 52,
+      "hash": "5ec6e8a20c191aae"
+    },
+    {
+      "id": "h11",
+      "file": "src/html/style.css",
+      "oldFile": "src/html/style.css",
+      "oldStart": 340,
+      "oldLines": 6,
+      "newStart": 340,
+      "newLines": 18,
+      "hash": "8cb2e5a98de343b1"
+    },
+    {
+      "id": "h12",
+      "file": "test/htmldec.test.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 239,
+      "hash": "b343be5386d581f5"
+    }
+  ]
+}
