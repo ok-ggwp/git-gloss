@@ -1,9 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { tmp } from './tmp.ts'
 import { browse, skipBrowse } from './browser.ts'
 
 const BIN = join(import.meta.dirname, '..', 'bin', 'git-gloss.js')
@@ -14,7 +14,7 @@ function gloss(cwd: string, args: string[], input?: string) {
 }
 
 function repo() {
-  const dir = mkdtempSync(join(tmpdir(), 'reviews-test-'))
+  const dir = tmp('reviews-test-')
   const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe' }).trim()
   g('init', '-q', '-b', 'main')
   g('config', 'user.email', 't@example.com')
@@ -108,7 +108,7 @@ test('a squash is covered by its commits\' reviews together', () => {
 })
 
 test('sync shares reviews, keeping both sides\'; fetching works before anyone has pushed one', () => {
-  const origin = mkdtempSync(join(tmpdir(), 'reviews-origin-'))
+  const origin = tmp('reviews-origin-')
   execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin])
   const a = repo()
   a.write('app.js', ['function main() {', '  run()', '  stop()', '}'])
@@ -119,7 +119,7 @@ test('sync shares reviews, keeping both sides\'; fetching works before anyone ha
   a.g('fetch', '-q', 'origin')
   assert.equal(gloss(a.dir, ['sync']).code, 0)
 
-  const b = mkdtempSync(join(tmpdir(), 'reviews-b-'))
+  const b = tmp('reviews-b-')
   execFileSync('git', ['clone', '-q', origin, b])
   execFileSync('git', ['config', 'user.email', 'b@example.com'], { cwd: b })
   execFileSync('git', ['config', 'user.name', 'B'], { cwd: b })

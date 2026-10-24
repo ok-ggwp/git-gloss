@@ -1,18 +1,18 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
-import { cpSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, symlinkSync, writeFileSync } from 'node:fs'
 import { Script } from 'node:vm'
 import { GitError, resolveCommit } from '../src/git.ts'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { tmp } from './tmp.ts'
 
 const BIN = join(import.meta.dirname, '..', 'bin', 'git-gloss.js')
 
 // A repo with main, and a feature branch of two commits, the first glossed.
 function repo(): { dir: string; sha: string[] } {
-  const dir = mkdtempSync(join(tmpdir(), 'ary-test-'))
+  const dir = tmp('ary-test-')
   const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe' }).trim()
   g('init', '-q', '-b', 'main')
   g('config', 'user.email', 't@example.com')
@@ -207,7 +207,7 @@ test('ary reports a busy port and a bad one', async () => {
 // server reads from beside itself. Build a copy of the project and serve from it.
 test('the built package serves the ary page', async () => {
   const root = join(import.meta.dirname, '..')
-  const copy = mkdtempSync(join(tmpdir(), 'ary-build-'))
+  const copy = tmp('ary-build-')
   for (const f of ['scripts', 'src', 'package.json', 'tsconfig.json', 'tsconfig.build.json']) cpSync(join(root, f), join(copy, f), { recursive: true })
   symlinkSync(join(root, 'node_modules'), join(copy, 'node_modules'))
   execFileSync(process.execPath, [join(copy, 'scripts', 'build.mjs')], { cwd: copy, stdio: 'pipe' })

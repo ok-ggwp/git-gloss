@@ -1,9 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { tmp } from './tmp.ts'
 import { chromium, dumpDom } from './browser.ts'
 import { parseDiff } from '../src/diff.ts'
 import { matchHunks } from '../src/loader.ts'
@@ -13,7 +13,7 @@ import { bodyLines, formatRanges, parseRef, slice } from '../src/selection.ts'
 const BIN = join(import.meta.dirname, '..', 'bin', 'git-gloss.js')
 
 function repo(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const dir = tmp('gloss-test-')
   const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
   g('init', '-q', '-b', 'main')
   g('config', 'user.email', 't@example.com')
@@ -133,7 +133,7 @@ test('a gloss carried onto an amended commit is reported as stale', () => {
 })
 
 test('a gloss survives a rebase that shifts its hunks', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const dir = tmp('gloss-test-')
   const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
   g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
   const lines = Array.from({ length: 20 }, (_, n) => `line ${n}`)
@@ -195,7 +195,7 @@ test('review marks author text as untrusted and includes unannotated hunks', () 
 })
 
 test('review fences can\'t be closed by backticks in the diff', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const dir = tmp('gloss-test-')
   const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
   g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
   writeFileSync(join(dir, 'doc.md'), 'text\n````\ncode\n````\n')
@@ -247,7 +247,7 @@ test('matchHunks does all hash matches before falling back to location', () => {
 })
 
 test('init migrates the old refspec, and fetching keeps unpushed local glosses', () => {
-  const origin = mkdtempSync(join(tmpdir(), 'gloss-origin-'))
+  const origin = tmp('gloss-origin-')
   execFileSync('git', ['init', '-q', '--bare', origin])
   const a = repo()
   execFileSync('git', ['remote', 'add', 'origin', origin], { cwd: a })
@@ -411,7 +411,7 @@ const EVIL = '</script><script>document.title="pwned"</script><img src=x onerror
 
 // A commit whose subject, file content and gloss text are all hostile.
 function hostileRepo(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const dir = tmp('gloss-test-')
   const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
   g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
   writeFileSync(join(dir, 'page.html'), EVIL + '\n')
@@ -503,7 +503,7 @@ test('review --material prints the gloss and code without the honesty instructio
 
 // A hunk with two separate changes, so groups can split it by line.
 function splitRepo(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const dir = tmp('gloss-test-')
   const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
   g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
   writeFileSync(join(dir, 'f.js'), ['a', 'b', 'c', 'd', 'e'].join('\n') + '\n')
@@ -564,7 +564,7 @@ test('html splits a hunk between groups by line', () => {
 })
 
 test('splitting a large new file stays fast', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const dir = tmp('gloss-test-')
   const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
   g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
   writeFileSync(join(dir, 'big.txt'), Array.from({ length: 20000 }, (_, i) => `line ${i}`).join('\n') + '\n')
@@ -699,7 +699,7 @@ test('ranges list skipped merges, reject "...", say "1 commit", and never read o
 
 // A bare origin and two teammates' clones of it, sharing two commits.
 function team(): { origin: string; a: string; b: string; g: (dir: string, ...args: string[]) => string } {
-  const root = mkdtempSync(join(tmpdir(), 'gloss-team-'))
+  const root = tmp('gloss-team-')
   const g = (dir: string, ...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe' })
   const origin = join(root, 'origin.git')
   execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin])
@@ -804,7 +804,7 @@ test('init --hooks syncs glosses on git push without recursing or replacing othe
   writeFileSync(join(a, 'new.txt'), 'n\n'); g(a, 'add', '.'); g(a, 'commit', '-qm', 'more')
   // The hook calls `git gloss`; give it this checkout's CLI rather than relying
   // on a global install.
-  const bin = mkdtempSync(join(tmpdir(), 'gloss-bin-'))
+  const bin = tmp('gloss-bin-')
   writeFileSync(join(bin, 'git-gloss'), `#!/bin/sh\nexec "${process.execPath}" "${BIN}" "$@"\n`, { mode: 0o755 })
   execFileSync('git', ['push', '-q', 'origin', 'main'], { cwd: a, stdio: 'pipe', env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } })
   assert.ok(g(origin, 'for-each-ref', 'refs/notes/gloss').trim(), 'the branch push also pushed glosses')
@@ -823,7 +823,7 @@ test('sync retries when someone else pushes glosses between its fetch and push',
   gloss(a, ['add', 'HEAD'], annotation([retryCore, config]))
   gloss(b, ['add', 'HEAD~1'], annotation([{ ...retryCore, hunks: ['h1'] }]))
   // A git wrapper that, on a's first notes push, lets b push first.
-  const bin = mkdtempSync(join(tmpdir(), 'gloss-bin-'))
+  const bin = tmp('gloss-bin-')
   const realGit = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim()
   const marker = join(bin, 'raced')
   writeFileSync(join(bin, 'git'), `#!/bin/sh
@@ -855,7 +855,7 @@ test('a gloss changed on one side and deleted on the other is kept, not lost', (
 // f.js line 2 is added (required), renamed (mechanical), left alone by an
 // unrelated commit, then the file is renamed to g.js.
 function historyRepo(): { dir: string; commit: (msg: string, lines: string[], groups: object[], file?: string) => void } {
-  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const dir = tmp('gloss-test-')
   const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
   g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
   const commit = (msg: string, lines: string[], groups: object[], file = 'f.js') => {
@@ -930,7 +930,7 @@ test('why history handles added lines that look like diff headers', () => {
 
 test('why history works for paths with spaces and quotes, and the hint keeps --rev', () => {
   for (const name of ['my file.js', 'q"x.js']) {
-    const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+    const dir = tmp('gloss-test-')
     const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
     g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
     const whole = (id: string, necessity: string) => ({ id, intent: id, necessity, serves: 'task', removal_impact: 'x', hunks: ['h1'] })
@@ -973,7 +973,7 @@ test('why looks back through every mechanical change to the first real explanati
 })
 
 test('a commit whose lines in a range are split gets each run traced separately', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const dir = tmp('gloss-test-')
   const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
   g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
   const lines = Array.from({ length: 20 }, (_, i) => `line ${i + 1}`)
@@ -996,7 +996,7 @@ test('a commit whose lines in a range are split gets each run traced separately'
 })
 
 test('why works in SHA-256 repositories and rejects line 0; ranges past the end say so', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const dir = tmp('gloss-test-')
   const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
   g('init', '-q', '--object-format=sha256', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
   writeFileSync(join(dir, 'f.js'), 'a\nb\n'); g('add', '.'); g('commit', '-qm', 'add')
@@ -1024,7 +1024,7 @@ test('show -g names the commit it searched and points to an earlier gloss with t
 // A repo with one commit and uncommitted work: a modified, an untracked and
 // an ignored file.
 function wipRepo(): { dir: string; g: (...args: string[]) => string } {
-  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const dir = tmp('gloss-test-')
   const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe' })
   g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
   writeFileSync(join(dir, '.gitignore'), '*.log\n')
@@ -1082,7 +1082,7 @@ test('there is nothing to snapshot without uncommitted changes', () => {
 
 test('the post-commit hook adopts the wip gloss, split across commits, and clears the snapshot', () => {
   const { dir, g } = wipRepo()
-  const bin = mkdtempSync(join(tmpdir(), 'gloss-bin-'))
+  const bin = tmp('gloss-bin-')
   writeFileSync(join(bin, 'git-gloss'), `#!/bin/sh\nexec "${process.execPath}" "${BIN}" "$@"\n`, { mode: 0o755 })
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` }
   gloss(dir, ['init', '--hooks'])
@@ -1215,7 +1215,7 @@ test('a range header counts stale glosses', () => {
 
 // A git-gloss on PATH for hooks: this checkout's CLI.
 function hookEnv(): NodeJS.ProcessEnv {
-  const bin = mkdtempSync(join(tmpdir(), 'gloss-bin-'))
+  const bin = tmp('gloss-bin-')
   writeFileSync(join(bin, 'git-gloss'), `#!/bin/sh\nexec "${process.execPath}" "${BIN}" "$@"\n`, { mode: 0o755 })
   return { ...process.env, PATH: `${bin}:${process.env.PATH}` }
 }
@@ -1247,7 +1247,7 @@ test('pushing shares only glosses of commits the remote has or receives; dry run
 
 test('init --hooks leaves a shared core.hooksPath alone', () => {
   const dir = repo()
-  const shared = mkdtempSync(join(tmpdir(), 'gloss-hooks-'))
+  const shared = tmp('gloss-hooks-')
   execFileSync('git', ['config', 'core.hooksPath', shared], { cwd: dir })
   const r = gloss(dir, ['init', '--hooks'])
   assert.match(r.out, /outside this repository, so other repositories may share it/)
@@ -1260,7 +1260,7 @@ test('init --hooks leaves a shared core.hooksPath alone', () => {
 })
 
 test('after a partial adopt, a new snapshot keeps the rest of the wip gloss for the next commit', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const dir = tmp('gloss-test-')
   const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe' })
   g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
   for (const f of ['a', 'b', 'c']) writeFileSync(join(dir, f), `${f}\n`)
@@ -1279,7 +1279,7 @@ test('after a partial adopt, a new snapshot keeps the rest of the wip gloss for 
 })
 
 test('a hunk split across commits gets a warning, even from the hook', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const dir = tmp('gloss-test-')
   const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe' })
   g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
   writeFileSync(join(dir, 'f'), '1\n2\n3\n4\n5\n6\n7\n8\n'); g('add', '.'); g('commit', '-qm', 'base')
@@ -1294,7 +1294,7 @@ test('a hunk split across commits gets a warning, even from the hook', () => {
 })
 
 test('snapshots work without a git identity; adopt refuses wip as its target', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const dir = tmp('gloss-test-')
   const env = { ...process.env, HOME: dir, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }
   const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe', env })
   g('init', '-q', '-b', 'main'); writeFileSync(join(dir, 'f'), 'a\n')
@@ -1309,7 +1309,7 @@ test('snapshots work without a git identity; adopt refuses wip as its target', (
 
 test('each linked worktree has its own snapshot', () => {
   const { dir, g } = wipRepo()
-  const other = join(mkdtempSync(join(tmpdir(), 'gloss-wt-')), 'wt')
+  const other = join(tmp('gloss-wt-'), 'wt')
   g('worktree', 'add', '-q', other, '-b', 'other')
   gloss(dir, ['hunks', 'wip'])
   const mine = g('rev-parse', 'refs/worktree/gloss/wip').trim()
@@ -1326,7 +1326,7 @@ test('a backwards range gets its own error', () => {
 })
 
 test('changes shifted by an earlier commit are not mistaken for a split hunk', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'gloss-test-'))
+  const dir = tmp('gloss-test-')
   const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe' })
   g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
   const lines = Array.from({ length: 30 }, (_, i) => `l${i}`)

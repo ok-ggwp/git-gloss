@@ -1,12 +1,31 @@
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { onCleanup, tmp } from './tmp.ts'
+
+// One dir for the profile and one for Chromium's own org.chromium.* scratch
+// (via TMPDIR), both under the tmp() root. Chromium makes a unix socket at
+// <TMPDIR>/org.chromium.Chromium.XXXXXX/SingletonSocket and aborts ("Socket
+// path too long") past 108 bytes, so a long TMPDIR must never reach it: when the
+// path would pass 90 bytes it gets a short dir of its own in /tmp instead.
+function sandbox() {
+  const profile = tmp('c-')
+  let scratch = tmp('t-')
+  if (`${scratch}/org.chromium.Chromium.XXXXXX/SingletonSocket`.length > 90) {
+    const short = mkdtempSync('/tmp/g-')
+    onCleanup(() => rmSync(short, { recursive: true, force: true }))
+    scratch = short
+  }
+  return { flag: `--user-data-dir=${profile}`, env: { ...process.env, TMPDIR: scratch } }
+}
 
 export const chromium = ['chromium', 'google-chrome-stable', 'google-chrome'].find((b) => spawnSync('which', [b]).status === 0)
 
 // The page's DOM after its scripts ran, from plain `chromium --dump-dom`: no
 // WebSocket needed, so it works on any Node. Pass the URL (with any #hash).
 export function dumpDom(url: string, opts: { flags?: string[]; timeout?: number } = {}): string {
-  return execFileSync(chromium!, ['--headless=new', '--disable-gpu', '--no-sandbox', ...(opts.flags ?? []), '--dump-dom', url], {
-    encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: opts.timeout ?? 60000,
+  const box = sandbox()
+  return execFileSync(chromium!, ['--headless=new', '--disable-gpu', '--no-sandbox', box.flag, ...(opts.flags ?? []), '--dump-dom', url], {
+    env: box.env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: opts.timeout ?? 60000,
   })
 }
 
@@ -52,7 +71,11 @@ export async function browse(
   opts: { scheme?: 'light' | 'dark'; flags?: string[]; initScript?: string } = {},
 ) {
   const port = 9300 + Math.floor(Math.random() * 600)
-  const chrome = spawn(chromium!, ['--headless=new', '--no-sandbox', '--disable-gpu', ...(opts.flags ?? []), `--remote-debugging-port=${port}`, 'about:blank'], { stdio: 'ignore' })
+  const box = sandbox()
+  const chrome = spawn(chromium!, ['--headless=new', '--no-sandbox', '--disable-gpu', box.flag, ...(opts.flags ?? []), `--remote-debugging-port=${port}`, 'about:blank'], { stdio: 'ignore', env: box.env })
+  const exited = new Promise<void>((r) => chrome.once('exit', () => r()))
+  // If the test process dies mid-run, kill Chromium before its profile is removed.
+  const forget = onCleanup(() => { chrome.kill('SIGKILL') })
   const list = async (): Promise<{ id: string; type: string; webSocketDebuggerUrl: string }[]> => (await fetch(`http://127.0.0.1:${port}/json`)).json()
   const ready = async (evaluate: Evaluate) => {
     for (let i = 0; i < 50 && !(await evaluate('!!document.querySelector("main .commit")')); i++) await sleep(100)
@@ -91,5 +114,9 @@ export async function browse(
   } finally {
     for (const ws of sockets) ws.close()
     chrome.kill()
+    const gone = () => chrome.exitCode !== null || chrome.signalCode !== null
+    await Promise.race([exited, sleep(5000)])
+    if (!gone()) { chrome.kill('SIGKILL'); await Promise.race([exited, sleep(5000)]) }
+    if (gone()) forget()
   }
 }

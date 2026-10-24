@@ -109,6 +109,7 @@ the network: a sync makes up to six round trips, and the pre-push hook runs one.
 
 ## Review process (how we check changes)
 
+- Tests clean up their /tmp dirs and Chromium profiles via test/tmp.ts; a long TMPDIR is handled (Chromium's scratch moves to a short /tmp dir past 90 bytes; test/browser.test.ts guards it); reviews/subagents should still set TMPDIR to a per-job dir (2026-10-24).
 - [ ] Add an adversarial stage for high-impact groups: a reviewer with the
   source that must produce and run a working exploit or failing test, not an
   opinion. Findings only count if reproduced. Targets: untrusted text (the

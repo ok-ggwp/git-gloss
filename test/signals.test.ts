@@ -1,9 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { tmp } from './tmp.ts'
 import { parseDiff } from '../src/diff.ts'
 import { matchGlob } from '../src/glob.ts'
 import { DEFAULTS, mergeConfig, RepoConfig } from '../src/config.ts'
@@ -19,7 +19,7 @@ function gloss(cwd: string, args: string[], input?: string) {
 }
 
 function repo(files: Record<string, string> = { 'app.js': 'run()\n', 'util.js': 'export const a = 1\n' }) {
-  const dir = mkdtempSync(join(tmpdir(), 'signals-test-'))
+  const dir = tmp('signals-test-')
   const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe' }).trim()
   g('init', '-q', '-b', 'main')
   g('config', 'user.email', 't@example.com')

@@ -1,9 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { tmp } from './tmp.ts'
 
 const BIN = join(import.meta.dirname, '..', 'bin', 'git-gloss.js')
 
@@ -14,7 +14,7 @@ function gloss(cwd: string, args: string[], input?: string) {
 
 // A repo whose commits can be glossed as they're made.
 function repo() {
-  const dir = mkdtempSync(join(tmpdir(), 'carry-test-'))
+  const dir = tmp('carry-test-')
   const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe' }).trim()
   g('init', '-q', '-b', 'main')
   g('config', 'user.email', 't@example.com')
@@ -226,7 +226,7 @@ test('a source whose gloss can\'t be read is named, not passed off as unglossed 
 // A repo with git-gloss's hooks installed, running this checkout's git-gloss.
 function hooked() {
   const r = repo()
-  const bin = mkdtempSync(join(tmpdir(), 'gloss-bin-'))
+  const bin = tmp('gloss-bin-')
   writeFileSync(join(bin, 'git-gloss'), `#!/bin/sh\nexec "${process.execPath}" "${BIN}" "$@"\n`, { mode: 0o755 })
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, GIT_EDITOR: 'true' }
   const run = (...args: string[]) => {
@@ -326,7 +326,7 @@ test('--find recognises commits a server rebased (same author and author date, s
 })
 
 test('sync glosses a squash merge made on the server and shares it', () => {
-  const origin = mkdtempSync(join(tmpdir(), 'carry-origin-'))
+  const origin = tmp('carry-origin-')
   execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin])
   const { dir, g, write, commit } = repo()
   g('remote', 'add', 'origin', origin)
@@ -341,7 +341,7 @@ test('sync glosses a squash merge made on the server and shares it', () => {
   assert.equal(gloss(dir, ['sync']).code, 0)
 
   // The server: squash the branch onto main with its own message, delete the branch.
-  const server = mkdtempSync(join(tmpdir(), 'carry-server-'))
+  const server = tmp('carry-server-')
   execFileSync('git', ['clone', '-q', origin, server])
   const s = (...args: string[]) => execFileSync('git', ['-c', 'user.name=GitHub', '-c', 'user.email=gh@example.com', ...args], { cwd: server, stdio: 'pipe' })
   s('merge', '-q', '--squash', 'origin/feat')
@@ -404,7 +404,7 @@ test('a wip group dropped by a new snapshot can be restored, even after git gc',
 })
 
 test('the gloss that loses a sync conflict is still listed by versions', () => {
-  const origin = mkdtempSync(join(tmpdir(), 'carry-origin-'))
+  const origin = tmp('carry-origin-')
   execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin])
   const a = repo()
   a.write('app.js', ['function main() {', '  run()', '  one()', '}'])
@@ -412,7 +412,7 @@ test('the gloss that loses a sync conflict is still listed by versions', () => {
   a.g('remote', 'add', 'origin', origin)
   a.g('push', '-q', '-u', 'origin', 'main')
   assert.equal(gloss(a.dir, ['sync']).code, 0)
-  const b = mkdtempSync(join(tmpdir(), 'carry-b-'))
+  const b = tmp('carry-b-')
   execFileSync('git', ['clone', '-q', origin, b])
   execFileSync('git', ['config', 'user.email', 'b@example.com'], { cwd: b })
   execFileSync('git', ['config', 'user.name', 'B'], { cwd: b })
@@ -455,7 +455,7 @@ test('versions ignores git moving notes into fan-out directories', () => {
 })
 
 test('sync checks a commit again once the glosses it came from arrive', () => {
-  const origin = mkdtempSync(join(tmpdir(), 'carry-origin-'))
+  const origin = tmp('carry-origin-')
   execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin])
   const { dir, g, write, commit } = repo()
   write('base.js', ['x'])

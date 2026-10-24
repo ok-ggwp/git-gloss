@@ -1,9 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { tmp } from './tmp.ts'
 import { browse, chromium, dumpDom, press, skipBrowse, sleep } from './browser.ts'
 import { Annotation, noteFormat } from '../src/schema.ts'
 import { combineAttention } from '../src/attention.ts'
@@ -16,7 +16,7 @@ function gloss(cwd: string, args: string[], input?: string) {
 }
 
 function repo() {
-  const dir = mkdtempSync(join(tmpdir(), 'attn-test-'))
+  const dir = tmp('attn-test-')
   const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe' }).trim()
   g('init', '-q', '-b', 'main')
   g('config', 'user.email', 't@example.com')
