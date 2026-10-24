@@ -153,6 +153,23 @@ export function ratingProblems(a: Annotation, an: Analysis): RatingProblems {
     if (!g.impact || !f || impactRank(f.floor) <= impactRank('module') || impactRank(g.impact) >= impactRank(f.floor)) continue
     warnings.push(`group "${g.id}" is rated impact "${g.impact}" but its floor is "${f.floor}" (${f.why.join('; ') || 'computed from the diff'}); raise it, or say why in impact_reason`)
   }
+  // Every group but a pure rename or reformat should say how far it reaches.
+  // A mechanical group on a floor signal (lockfile, config, CI, sensitive path)
+  // is not pure; plain module is the baseline for source files.
+  const unrated: string[] = []
+  const floored: string[] = []
+  for (const g of a.groups) {
+    if (g.impact) continue
+    const f = an.groups.get(g.id)
+    const signal = !!f && impactRank(f.floor) > impactRank('module')
+    if (g.necessity === 'mechanical' && !signal) continue
+    unrated.push(`"${g.id}"`)
+    if (signal) floored.push(`${g.id}: floor ${f!.floor}: ${f!.why.join('; ') || 'computed from the diff'}`)
+  }
+  if (unrated.length) {
+    const names = unrated.slice(0, 10).join(', ') + (unrated.length > 10 ? ` and ${unrated.length - 10} more` : '')
+    warnings.push(`no impact rated on group ${names}${floored.length ? ` (${floored.join('; ')})` : ''}; rate impact on every group except a mechanical one on plain source (floor module or below), see the gloss skill`)
+  }
   let underrated: string | null = null
   const att = a.attention
   if (att && attentionRank(att.level) < attentionRank(an.floor) && !att.override_reason) {
