@@ -1,19 +1,12 @@
-import { readFileSync } from 'node:fs'
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import { GlossError, WIP_REF, gitTry, resolveCommits } from '../git.ts'
+import { createServer, type Server, type ServerResponse } from 'node:http'
+import { GlossError, WIP_REF, git, gitTry, resolveCommits } from '../git.ts'
 import { buildPageData } from '../html/data.ts'
 import { escapeHtml, renderPage } from '../html/page.ts'
-import { listLog, listRefs } from './browse.ts'
-
-const asset = (name: string) => readFileSync(new URL(name, import.meta.url), 'utf8')
+import { listRefs } from './browse.ts'
 
 // A range page loads and lays out every commit in it, so a huge one would hang
 // the browser. Narrowing it is a better answer than a spinner.
 export const MAX_RANGE_COMMITS = 200
-
-// The shell page loads only its own script and style, and may frame only
-// /view pages. Those carry their own policy: an inline script with a nonce.
-const SHELL_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-src 'self'; base-uri 'none'; form-action 'none'"
 
 class BadRequest extends GlossError {}
 
@@ -29,11 +22,6 @@ function revParam(url: URL, name: string, required = true): string | null {
   return v
 }
 
-const intParam = (url: URL, name: string, fallback: number, min: number, max: number) => {
-  const n = Number(url.searchParams.get(name) ?? fallback)
-  return Number.isInteger(n) && n >= min ? Math.min(n, max) : fallback
-}
-
 function send(res: ServerResponse, status: number, type: string, body: string, headers: Record<string, string> = {}): void {
   res.writeHead(status, {
     'content-type': `${type}; charset=utf-8`,
@@ -46,10 +34,69 @@ function send(res: ServerResponse, status: number, type: string, body: string, h
   res.end(body)
 }
 
-const sendJson = (res: ServerResponse, data: unknown) => send(res, 200, 'application/json', JSON.stringify(data))
+// The page may not be framed by anyone: it shows the code of your commits.
+const PAGE_HEADERS = { 'content-security-policy': "frame-ancestors 'none'" }
 
-function viewPage(url: URL): string {
-  const rev = revParam(url, 'rev')!
+function errorPage(res: ServerResponse, status: number, message: string): void {
+  send(res, status, 'text/html', `<!doctype html><meta charset="utf-8"><meta name="color-scheme" content="light dark"><pre style="white-space:pre-wrap;font:14px/1.5 system-ui;padding:16px">${escapeHtml(message)}</pre><p style="font:14px/1.5 system-ui;padding:0 16px"><a href="/">Back to the default view</a></p>`, { 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'" })
+}
+
+// The commits of `head` the page shows when nothing else is chosen: those
+// beyond `base` (when a page can show them all), or else the newest one (as a sha, so a branch called "wip"
+// doesn't mean the snapshot).
+function defaultRev(head: string | null, base: string | null): string | null {
+  if (!head) return null
+  if (base) {
+    // A range beyond what a page shows would only be an error page: show the newest commit.
+    const n = Number(git(['rev-list', '--count', '--end-of-options', `${base}..${head}`, '--']).trim())
+    if (n > 0 && n <= MAX_RANGE_COMMITS) return `${base}..${head}`
+  }
+  return gitTry(['rev-parse', '--verify', '--quiet', `${head}^{commit}`])?.trim() || null
+}
+
+// The page for ?rev=&head=&base=. head and base only fill the pickers and
+// choose the default rev; the rev alone decides which commits are shown.
+function deskPage(url: URL, res: ServerResponse): void {
+  const refs = listRefs()
+  const known = new Set([...refs.branches, ...refs.remotes])
+  const wantHead = revParam(url, 'head', false)
+  const wantBase = revParam(url, 'base', false)
+  let rev = revParam(url, 'rev', false)
+  // The default base goes with the default branch.
+  const baseFor = (head: string | null) => (head === refs.defaultBase ? null : refs.defaultBase)
+  // A link or bookmark may name a branch that has since been deleted or
+  // renamed: use the usual choice instead, and say so.
+  let head = wantHead && known.has(wantHead) ? wantHead : null
+  const fallback = refs.current || refs.defaultBase || refs.branches[0] || null
+  let base: string | null
+  let notice: string | null = null
+  if (wantHead && !head) {
+    head = fallback
+    base = baseFor(head)
+    notice = `Branch \u201c${wantHead}\u201d no longer exists; showing ${head ?? 'the default'} instead.`
+  } else if (wantBase && !known.has(wantBase)) {
+    head ??= fallback
+    base = null
+    notice = `The branch to compare with, \u201c${wantBase}\u201d, no longer exists; showing the newest commit of ${head ?? 'the default'}.`
+  } else if (head) {
+    base = wantBase
+  } else {
+    head = fallback
+    base = wantBase ?? baseFor(head)
+  }
+  if (!rev) {
+    // Opening with nothing chosen shows the uncommitted work, if snapshotted;
+    // choosing a branch shows that branch.
+    const wip = !wantHead && !wantBase && gitTry(['rev-parse', '--verify', '--quiet', WIP_REF])
+    rev = wip ? 'wip' : defaultRev(head, base)
+    if (!rev) throw new GlossError(head ? `${head} has no commits to show` : 'there are no branches to show; pass ?rev= to view a commit')
+    if (!notice) {
+      const p = new URLSearchParams({ rev })
+      if (head) p.set('head', head)
+      if (base) p.set('base', base)
+      return send(res, 302, 'text/plain', 'redirecting', { location: `/?${p}` })
+    }
+  }
   // "wip" is the latest snapshot of uncommitted work. The server never takes
   // one (that is `git gloss hunks wip`): browsing doesn't change anything.
   const target = rev === 'wip' ? gitTry(['rev-parse', '--verify', '--quiet', WIP_REF])?.trim() : rev
@@ -58,23 +105,14 @@ function viewPage(url: URL): string {
   if (shas.length > MAX_RANGE_COMMITS) {
     throw new GlossError(`${rev} has ${shas.length} commits; a page shows at most ${MAX_RANGE_COMMITS}. Pick a narrower range.`)
   }
-  return renderPage(buildPageData(shas, range, merges))
+  const data = buildPageData(shas, range, merges)
+  data.ary = { repo: refs.repo, branches: refs.branches, remotes: refs.remotes, defaultBase: refs.defaultBase, head, base, rev, notice }
+  send(res, 200, 'text/html', renderPage(data), PAGE_HEADERS)
 }
 
-function route(req: IncomingMessage, res: ServerResponse, url: URL): void {
-  const shell = (name: string, type: string) => send(res, 200, type, asset(name), type === 'text/html' ? { 'content-security-policy': SHELL_CSP } : {})
-  switch (url.pathname) {
-    case '/': return shell('./index.html', 'text/html')
-    case '/ary.js': return shell('./client.js', 'text/javascript')
-    case '/ary.css': return shell('./style.css', 'text/css')
-    case '/api/refs': return sendJson(res, listRefs())
-    case '/api/log':
-      return sendJson(res, listLog(revParam(url, 'head')!, revParam(url, 'base', false), intParam(url, 'limit', 100, 1, 500), intParam(url, 'skip', 0, 0, 1e6), (url.searchParams.get('q') ?? '').slice(0, 200)))
-    case '/view':
-      // The page may only be framed by the shell, not by another site.
-      return send(res, 200, 'text/html', viewPage(url), { 'content-security-policy': "frame-ancestors 'self'" })
-    default: return send(res, 404, 'text/plain', 'not found')
-  }
+function route(res: ServerResponse, url: URL): void {
+  if (url.pathname === '/') return deskPage(url, res)
+  send(res, 404, 'text/plain', 'not found')
 }
 
 export function createAry(port: () => number): Server {
@@ -87,18 +125,14 @@ export function createAry(port: () => number): Server {
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'text/plain', 'read-only', { allow: 'GET, HEAD' })
     const url = new URL(req.url ?? '/', 'http://localhost')
     try {
-      route(req, res, url)
+      route(res, url)
     } catch (err) {
       if (!(err instanceof GlossError)) {
         console.error(err)
         return send(res, 500, 'text/plain', 'internal error')
       }
       const status = err instanceof BadRequest ? 400 : 422
-      if (url.pathname === '/view') {
-        send(res, status, 'text/html', `<!doctype html><meta charset="utf-8"><meta name="color-scheme" content="light dark"><pre style="white-space:pre-wrap;font:14px/1.5 system-ui;padding:16px">${escapeHtml(err.message)}</pre>`, { 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'" })
-      } else {
-        send(res, status, 'application/json', JSON.stringify({ error: err.message }))
-      }
+      errorPage(res, status, err.message)
     }
   })
 }

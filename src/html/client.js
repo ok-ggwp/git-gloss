@@ -466,6 +466,10 @@
 
   // ---- the detail pane ----
   var topEl = el('header', 'top')
+  // Served by `git gloss ary`: the branch pickers (src/ary/picker.js, included
+  // ahead of this script only then) live in the top bar. Built once, since
+  // the bar is rebuilt on every change of filter.
+  var aryEl = data.ary ? aryBar(data.ary, el, add) : null
   var railEl = el('aside', 'rail')
   railEl.setAttribute('aria-label', multi ? 'Commits in the range' : 'Groups in review order')
   var mainEl = el('main', 'main')
@@ -753,7 +757,7 @@
   function renderTop() {
     var c = commits[state.ci]
     topEl.textContent = ''
-    add(topEl, el('span', 'brand', 'git gloss'))
+    add(topEl, el('span', 'brand', 'git gloss'), aryEl)
     if (multi) {
       var glossed = commits.filter(function (x) { return x.glossed }).length
       var vetted = commits.filter(function (x) {
@@ -1091,8 +1095,12 @@
 
   // ---- start ----
   var desk = add(el('div', 'desk'), topEl, body)
+  // The rail sticks below the top bar, whose height varies (the pickers wrap).
+  function measureTop() { desk.style.setProperty('--top-h', topEl.offsetHeight + 'px') }
   app.textContent = ''
   app.appendChild(desk)
+  measureTop()
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(measureTop).observe(topEl)
   if (multi) {
     var first = commitOrder()[0]
     state.ci = first

@@ -33,7 +33,7 @@ ${asset('./style.css')}
 <div id="app"><noscript>This page needs JavaScript to render the gloss.</noscript></div>
 <script type="application/json" id="gloss-data">${embedJson(data)}</script>
 <script nonce="${nonce}">
-${asset('./client.js')}
+${data.ary ? asset('../ary/picker.js') + '\n' : ''}${asset('./client.js')}
 </script>
 </body>
 </html>

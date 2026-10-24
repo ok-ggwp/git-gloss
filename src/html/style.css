@@ -119,13 +119,38 @@ kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); 
 .track { width: 120px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
 .track i { display: block; height: 100%; width: 0; background: var(--accent); }
 
+/* Branch pickers and revision box in the top bar, only when served by `git gloss ary` */
+.ary-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; min-width: 0; }
+.ary-repo { color: var(--muted); font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
+.ary-field { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.ary-notice { flex-basis: 100%; margin: 0; padding: 6px 10px; border-radius: 8px; border: 1px dashed var(--warn); font-size: 13px; color: var(--ink); }
+.combo { position: relative; }
+.combo-btn, .combo-panel input, .ary-rev input { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; min-height: 36px; padding: 4px 12px; font-size: 13px; }
+.combo-btn { position: relative; max-width: 220px; padding-right: 28px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 12.5px; }
+.combo-btn::after { content: "▾"; position: absolute; right: 10px; color: var(--muted); }
+.combo-btn:hover { background: var(--accent-soft); }
+.combo-panel { position: absolute; z-index: 10; left: 0; top: calc(100% + 4px); width: 300px; max-width: calc(100vw - 32px); display: grid; gap: 6px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); box-shadow: 0 8px 24px rgb(0 0 0 / 0.25); }
+.combo-panel[hidden] { display: none; }
+.combo-panel input { width: 100%; }
+.combo-list { max-height: min(50vh, 320px); overflow: auto; }
+.combo-group { margin-top: 8px; padding: 10px 8px 4px; border-top: 1px solid var(--line); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink); }
+.combo-group:first-child { margin-top: 0; padding-top: 4px; border-top: 0; }
+.combo-group .count { margin-left: 6px; color: var(--muted); font-weight: 400; }
+.combo-item { display: block; width: 100%; text-align: left; border: 0; background: none; border-radius: 6px; padding: 5px 8px 5px 20px; font-family: var(--mono); font-size: 12.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combo-item:hover, .combo-item.active { background: var(--accent-soft); }
+.combo-item[aria-selected="true"] { color: var(--accent); font-weight: 600; }
+.combo-more { padding: 6px 8px; color: var(--muted); font-size: 12.5px; }
+.ary-rev input { width: 220px; max-width: 100%; font-family: var(--mono); font-size: 12.5px; }
+
 /* Body: rail above the pane when narrow, beside it from 900px */
 .body { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; }
 @media (min-width: 900px) {
   /* the rail's panel colour runs the full height, however tall the top bar is */
   .body { grid-template-columns: 360px minmax(0, 1fr); background: linear-gradient(90deg, var(--panel) 359px, var(--line) 359px 360px, transparent 360px); }
   .body.range { grid-template-columns: 400px minmax(0, 1fr); background: linear-gradient(90deg, var(--panel) 399px, var(--line) 399px 400px, transparent 400px); }
-  .rail { position: sticky; top: 0; max-height: 100vh; overflow: auto; overscroll-behavior: contain; border-bottom: 0; border-right: 1px solid var(--line); }
+  /* the bar stays put and the rail fits in what is left (--top-h is measured by the script) */
+  .top { position: sticky; top: 0; z-index: 5; }
+  .rail { position: sticky; top: var(--top-h, 0px); max-height: calc(100vh - var(--top-h, 0px)); overflow: auto; overscroll-behavior: contain; border-bottom: 0; border-right: 1px solid var(--line); }
 }
 .rail { background: var(--panel); border-bottom: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; }
 .main { min-width: 0; padding: 20px 16px 48px; }

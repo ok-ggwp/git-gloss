@@ -109,6 +109,21 @@ export type PageData = {
   impact: { name: Impact; help: string }[]
   commits: CommitData[]
   generated: string
+  // Only when served by `git gloss ary`: what the branch pickers in the top bar show.
+  ary?: AryData
+}
+
+export type AryData = {
+  repo: string
+  branches: string[]
+  remotes: string[]
+  defaultBase: string | null
+  // What is selected: the pickers' values and the revision box.
+  head: string | null
+  base: string | null
+  rev: string
+  // Said when a head or base in the URL no longer exists.
+  notice: string | null
 }
 
 // The lines to show for a selection: the @@ header, then the slice, with

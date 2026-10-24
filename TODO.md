@@ -55,9 +55,17 @@ The brief is `gloss-review.md` (kept outside the repo; consider adding it under
 
 - [ ] Merge the `feature/review-desk` work (see the branch or the commit that
   replaced this line) and delete the worktree and `~/.cache/claude-gloss-review`.
-- [ ] Restyle the `ary` shell to match, and move its branch and base pickers
-  into the desk's top bar so there is one sidebar and one header. Today the page
-  inside `ary` shows three columns and two header bars.
+- [ ] Show whether the wip snapshot is stale (the old ary list warned; the desk
+  does not) — dropped by the ary restyle.
+- [ ] `ary` no longer has a way to browse single commits of a range over 200
+  commits except typing a narrower revision.
+- [ ] `ary` lost searching commits by message or author (the old sidebar
+  search), with no replacement.
+- [ ] In a repo with no local branches and a detached HEAD, `/` returns 422 and
+  the error page's "Back to the default view" link loops (fall back to
+  `rev=HEAD`, or render the pickers).
+- [ ] `ary` has no way to get back to the wip snapshot from the pickers; consider
+  a 'wip' entry in the revision field's hint or a link.
 - [ ] Polish: the narrow rail wraps awkwardly in the reviews rows; a filter
   that hides the open group leaves it showing in the pane; changing a filter on
   a range's commit overview rebuilds the pane, so the scroll position can jump.
