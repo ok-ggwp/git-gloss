@@ -52,6 +52,13 @@ export const ATTENTION_HELP: Record<AttentionLevel, string> = {
   'must-read': 'Read line by line before approving',
 }
 
+// Notes come from anyone who can push to the remote, and the readers cost more
+// than linear in the groups (the page lists, for each group, the groups it
+// shares lines with) and spread lists into function calls. Real glosses have
+// a few dozen groups; these are far above that.
+export const MAX_GROUPS = 500
+export const MAX_ITEMS = 500
+
 export const Group = z.object({
   id: z
     .string()
@@ -94,7 +101,7 @@ export const Attention = z.object({
     .max(3)
     .optional()
     .describe('One to three group ids to look at first'),
-  reasons: z.array(z.string()).optional().describe('Short reasons for the level'),
+  reasons: z.array(z.string()).max(MAX_ITEMS).optional().describe('Short reasons for the level'),
   override_reason: z.string().optional().describe('Why the level is lower than the change would suggest, if it is'),
 })
 
@@ -104,12 +111,13 @@ export const Annotation = z.object({
   version: z.literal(1).default(1),
   task: z.string().min(1).describe('The task or request these changes were made for'),
   summary: z.string().optional().describe('One or two sentences on the overall change'),
-  groups: z.array(Group).min(1),
+  groups: z.array(Group).min(1).max(MAX_GROUPS),
   alternatives: z
     .array(z.object({ option: z.string(), rejected_because: z.string() }))
+    .max(MAX_ITEMS)
     .optional()
     .describe('Approaches considered and why they were not taken'),
-  risks: z.array(z.string()).optional().describe('Known risks or open questions'),
+  risks: z.array(z.string()).max(MAX_ITEMS).optional().describe('Known risks or open questions'),
   attention: Attention.optional().describe('How much attention a human reviewer should give this change'),
   author: z
     .object({

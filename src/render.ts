@@ -1,3 +1,4 @@
+import { plain } from './plain.ts'
 import { spawnSync } from 'node:child_process'
 import { styleText } from 'node:util'
 import type { Hunk } from './diff.ts'
@@ -88,7 +89,7 @@ export const termWidth = () => Math.min(process.stdout.columns || 100, 120)
 export function wrap(text: string, width: number): string[] {
   const lines: string[] = []
   let line = ''
-  for (const word of text.split(/\s+/).filter(Boolean)) {
+  for (const word of plain(text).split(/\s+/).filter(Boolean)) {
     if (line && line.length + 1 + word.length > width) { lines.push(line); line = word }
     else line = line ? `${line} ${word}` : word
   }
@@ -108,7 +109,7 @@ export function hunkLabel(h: Hunk, lines: Set<number> | null = null): string {
   const range = h.newLines || h.oldLines
     ? `-${h.oldStart},${h.oldLines} +${h.newStart},${h.newLines}`
     : 'file header'
-  const file = h.oldFile && h.oldFile !== h.file ? `${h.oldFile} → ${h.file}` : h.file
+  const file = plain(h.oldFile && h.oldFile !== h.file ? `${h.oldFile} → ${h.file}` : h.file)
   const s = sliceStats(h, lines)
   return `${style('bold', refLabel(h.id, lines))}  ${file}  ${style('dim', range)}  ${style('green', `+${s.added}`)} ${style('red', `-${s.removed}`)}`
 }

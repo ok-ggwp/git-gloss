@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { commitSubject, gitTry, GlossError, resolveCommits } from '../git.ts'
-import { addReviews, checkBy, checkDecision, MAX_DECISION_LINE, decisionSummary, plain, readDecisions, readReviews, reviewStatus, stamp, statusPhrase, verdictOf, type DecisionRecord, type ReviewRecord } from '../reviews.ts'
+import { addReviews, checkBy, checkDecision, MAX_DECISION_LINE, MAX_FINDINGS, MAX_REVIEW_LINE, decisionSummary, readDecisions, readReviews, reviewStatus, stamp, statusPhrase, verdictOf, type DecisionRecord, type ReviewRecord } from '../reviews.ts'
+import { plain } from '../plain.ts'
 import { page, style } from '../render.ts'
 
 export const usage = 'reviews [<commit> | <range> | wip] [--stamp | --record]   the reviews recorded for commits, with their findings and what was decided about them\n  reviews <target> --decide <review-id> --finding <text> --outcome <fixed|follow-up|rejected|accepted> [--note <text>] [--by <name>]\n  reviews <target> --decide <review-id> --complete   the arbiter is done; --stamp, --record and --decide are for tools'
@@ -37,6 +38,8 @@ export function run(argv: string[]): number {
       }
       if (!Array.isArray(seen?.lines) || !Array.isArray(seen?.groups)) throw new GlossError(`--record: the stamp for ${sha.slice(0, 12)} has no lines or groups`)
     }
+    // Readers skip what is over these limits, so a record that is would vanish: refuse it here instead.
+    if (input.findings.length > MAX_FINDINGS) throw new GlossError(`--record: the findings are too long (${input.findings.length} characters; readers skip reports over ${MAX_FINDINGS / 1024} KiB); shorten the report`)
     const id = randomUUID()
     const at = new Date().toISOString()
     for (const [sha, seen] of Object.entries(input.stamp)) {
@@ -46,6 +49,7 @@ export function run(argv: string[]): number {
         target: input.target, lines: seen.lines, groups: seen.groups, findings: input.findings,
         ...(verdictOf(input.findings) ? { verdict: verdictOf(input.findings) } : {}),
       }
+      if (JSON.stringify(record).length > MAX_REVIEW_LINE) throw new GlossError(`--record: the record for ${sha.slice(0, 10)} is over ${MAX_REVIEW_LINE / 1024 / 1024} MiB with its stamp, which readers skip; review fewer changed lines at a time`)
       addReviews(sha, [record])
     }
     const n = Object.keys(input.stamp).length

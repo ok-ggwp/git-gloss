@@ -1,6 +1,6 @@
 import { servesOf, type Annotation } from './schema.ts'
 import type { Hunk } from './diff.ts'
-import { changedCount, parseRef, refLabel, selections, uncovered, type Claim } from './selection.ts'
+import { changedCount, claimsProblem, parseRef, refLabel, selections, uncovered, type Claim } from './selection.ts'
 
 export type ValidationResult = { errors: string[]; uncovered: string[] }
 
@@ -63,6 +63,9 @@ export function validate(annotation: Annotation, hunks: Hunk[]): ValidationResul
       queue.push(...servesOf(byId.get(id) ?? { serves: 'task' }).filter((t) => t !== 'task'))
     }
   }
+
+  const tooMany = claimsProblem(claims, hunks)
+  if (tooMany) errors.push(tooMany)
 
   return { errors, uncovered: uncovered(hunks, claims).map((u) => refLabel(u.hunk.id, u.lines)) }
 }

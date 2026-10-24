@@ -51,6 +51,20 @@ function shareable(remote: string, pushing: string[]): Set<string> {
   return new Set(git(['rev-list', ...starts, '--']).split('\n').filter(Boolean))
 }
 
+// The fetched ref is the remote's to set: it must be a commit before notes
+// code (or an update-ref onto our own notes ref) touches it.
+function checkTracking(remote: string, ref: string, tracking: string): void {
+  if (gitTry(['rev-parse', '-q', '--verify', `${tracking}^{commit}`]) === null) {
+    gitTry(['update-ref', '-d', tracking])
+    throw new GitError(`${remote}'s ${ref} is not a notes commit; ignoring it (nothing was changed here)`)
+  }
+}
+
+function fetchTracking(remote: string, ref: string, tracking: string): void {
+  git(['fetch', '-q', remote, `+${ref}:${tracking}`])
+  checkTracking(remote, ref, tracking)
+}
+
 const PUSH_REF = 'refs/notes/gloss-sync-tmp'
 
 type Outcome = { fetched: number; pushed: number; withheld: number; conflicts: string[] }
@@ -60,7 +74,7 @@ type Outcome = { fetched: number; pushed: number; withheld: number; conflicts: s
 function round(remote: string, pushing: string[], carried: string[]): Outcome | null {
   const tracking = `refs/notes/remotes/${remote}/gloss`
   const remoteHas = gitTry(['ls-remote', '--exit-code', remote, NOTES_REF]) !== null
-  if (remoteHas) git(['fetch', '-q', remote, `+${NOTES_REF}:${tracking}`])
+  if (remoteHas) fetchTracking(remote, NOTES_REF, tracking)
 
   const local = noteList(NOTES_REF)
   const theirs = remoteHas ? noteList(tracking) : new Map<string, string>()
@@ -154,7 +168,7 @@ const REVIEWS_PUSH_REF = 'refs/notes/gloss-reviews-sync-tmp'
 function syncReviews(remote: string, pushing: string[]): { fetched: number; pushed: number } | null {
   const tracking = `refs/notes/remotes/${remote}/gloss-reviews`
   const remoteHas = gitTry(['ls-remote', '--exit-code', remote, REVIEWS_REF]) !== null
-  if (remoteHas) git(['fetch', '-q', remote, `+${REVIEWS_REF}:${tracking}`])
+  if (remoteHas) fetchTracking(remote, REVIEWS_REF, tracking)
   const before = noteList(REVIEWS_REF)
   const theirs = remoteHas ? noteList(tracking) : new Map<string, string>()
   if (remoteHas) {

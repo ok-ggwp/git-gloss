@@ -152,3 +152,23 @@ export function uncovered(hunks: Hunk[], claims: Claim[]): Uncovered[] {
   }
   return out
 }
+
+// Every group's page carries the lines it claims, and building it costs more
+// than linear in them: measured, 200,000 claimed lines build in about half a
+// second, 1,000,000 in 3 to 10 s, 5,000,000 in over a minute. Sharing a hunk
+// between a few dozen groups is normal (one per dependency in a lockfile); the
+// budget is far above that, and a gloss may always claim 5 times the diff.
+export const MAX_CLAIMED_LINES = 500_000
+const MAX_CLAIM_FACTOR = 5
+
+// A message for a gloss whose groups claim too many lines, or null. Used when a
+// gloss is written and when it is read, so `add` never writes one readers refuse.
+export function claimsProblem(claims: Claim[], hunks: Hunk[]): string | null {
+  let total = 0
+  for (const h of hunks) total += changedCount(h)
+  let claimed = 0
+  for (const c of claims) claimed += c.lines ? c.lines.size : changedCount(c.hunk)
+  const limit = Math.max(MAX_CLAIMED_LINES, MAX_CLAIM_FACTOR * total)
+  if (claimed <= limit) return null
+  return `the groups claim ${claimed} changed lines in all (the commit has ${total}; at most ${limit} are allowed): give each group only the lines it explains (h1:1-40) instead of the whole hunk, or use fewer groups on the same hunk`
+}

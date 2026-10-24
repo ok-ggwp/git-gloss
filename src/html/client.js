@@ -62,7 +62,7 @@
     return { level: null, source: 'unrated' }
   }
   function fileCount(c) {
-    var seen = {}
+    var seen = Object.create(null)
     c.groups.forEach(function (g) { g.hunks.forEach(function (h) { seen[h.file] = true }) })
     c.unannotated.forEach(function (h) { seen[h.file] = true })
     return Object.keys(seen).length
@@ -72,7 +72,7 @@
   var readCache = {}
   function readSet(c) {
     if (!readCache[c.sha]) {
-      var s = {}
+      var s = Object.create(null) // no prototype: a group id like "constructor" must not read as already read
       try {
         var raw = window.sessionStorage.getItem('git-gloss:read:' + c.sha)
         if (raw) JSON.parse(raw).forEach(function (id) { s[id] = true })
@@ -278,6 +278,8 @@
 
   // ---- markdown: a small subset, built as DOM nodes (never parsed as HTML) ----
   var ALNUM = /[A-Za-z0-9]/
+  // Review text is untrusted and unbounded: no emphasis or link may reach further than this.
+  var MAX_SPAN = 500
   function inline(parent, s) {
     var i = 0, buf = ''
     function flush() { if (buf) { parent.appendChild(text(buf)); buf = '' } }
@@ -290,12 +292,13 @@
         j = s.indexOf('**', i + 2)
         if (j > i + 2) { flush(); parent.appendChild(inline(el('strong'), s.slice(i + 2, j))); i = j + 2; continue }
       } else if (ch === '*' && s.charAt(i + 1) && !/[\s*]/.test(s.charAt(i + 1)) && (i === 0 || !ALNUM.test(s.charAt(i - 1)))) {
-        for (j = i + 2; j < s.length; j++) {
+        // Looks no further than MAX_SPAN: an unclosed marker would otherwise re-read the rest of the text each time (quadratic).
+        for (j = i + 2; j < s.length && j < i + MAX_SPAN; j++) {
           if (s.charAt(j) === '*' && !/\s/.test(s.charAt(j - 1)) && !ALNUM.test(s.charAt(j + 1)) && s.charAt(j + 1) !== '*') break
         }
-        if (j < s.length) { flush(); parent.appendChild(inline(el('em'), s.slice(i + 1, j))); i = j + 1; continue }
+        if (j < s.length && j < i + MAX_SPAN) { flush(); parent.appendChild(inline(el('em'), s.slice(i + 1, j))); i = j + 1; continue }
       } else if (ch === '[') {
-        m = /^\[([^\]]+)\]\(([^)\s]+)\)/.exec(s.slice(i))
+        m = /^\[([^\]]{1,200})\]\(([^)\s]{1,400})\)/.exec(s.slice(i, i + MAX_SPAN))
         if (m) { flush(); inline(parent, m[1]); parent.appendChild(el('span', 'muted', ' (' + m[2] + ')')); i += m[0].length; continue }
       }
       buf += ch
@@ -566,7 +569,7 @@
     var order = c.order
     var hunkN = g.hunks.length
     var files = []
-    var perFile = {}
+    var perFile = Object.create(null)
     g.hunks.forEach(function (h) {
       if (!perFile[h.file]) { perFile[h.file] = 0; files.push(h.file) }
       perFile[h.file]++

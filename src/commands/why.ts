@@ -1,3 +1,4 @@
+import { plain } from '../plain.ts'
 import { parseArgs } from 'node:util'
 import { blameRange, commitSubject, lineHistory, type BlameResult } from '../git.ts'
 import { loadGloss, type LoadedGloss } from '../loader.ts'
@@ -178,8 +179,8 @@ export function run(argv: string[]): number {
   const renderStep = (s: Step, label: string, older: boolean) => {
     // Where the lines were in an older commit: after edits or a file rename
     // that differs from the query.
-    const then = older || s.file !== file ? style('dim', `  (${s.file}:${formatRanges(s.lines)} then)`) : ''
-    out.push(`${label}${style('yellow', s.commit.slice(0, 10))} ${s.subject}${then}`)
+    const then = older || s.file !== file ? style('dim', `  (${plain(s.file)}:${formatRanges(s.lines)} then)`) : ''
+    out.push(`${label}${style('yellow', s.commit.slice(0, 10))} ${plain(s.subject)}${then}`)
     if (!s.gloss) { out.push(style('dim', '  no gloss for this commit')); return }
     out.push(...field('task:', s.gloss.note.annotation.task))
     for (const w of s.gloss.warnings) out.push(style(['bold', 'red'], `  ⚠ ${w}`))

@@ -6,17 +6,120 @@ current: remove an item when it ships, and say where a new one came from.
 "Verified" means someone ran it and saw it. "Read" means it comes from reading
 the code only.
 
-## Security: do these before the next release
+## Untrusted input: audit of 2026-10-24
 
-- [ ] Look at the other places untrusted text enters: notes fetched from a
-  remote (huge or malformed JSON), the `ary` server's host check and request
-  handling, and the paths `html -o` will write to. See "Review process".
+Threat model: a collaborator or a compromised remote pushes notes refs, branch
+names or commit text; the victim runs git-gloss, `git gloss ary` or opens an
+html page. Every finding below was reproduced (a test or script run, seen
+failing) before it was fixed. The tests are in `test/untrusted.test.ts`.
+
+1. Notes from a remote (gloss, review and decision notes). Tried: one-line
+   notes of 40 MB, 1.5 to 2 million levels of nesting, 300,000 hunks or risks,
+   50,000 groups, 30 MB strings, `__proto__` and `constructor` keys, on `show`,
+   `reviews`, `signals`, `hunks`, `html`.
+   - Fixed, review records had no size cap. A report over 256 KiB, or a record
+     line over 8 MiB, is now skipped with a warning (once per commit) on stderr;
+     `reviews --record` refuses both, so what it writes is readable. The line
+     limit is generous on purpose: the stamp holds a 16-character key per changed
+     line (16,000 changed lines make a 300 KB line, a real review), and JSON.parse
+     reads 32 MB in 0.08 s. Tests: "a review line over the size cap", "a review
+     of a commit with 16,000 changed lines", "a review line of 10 MB".
+   - Fixed, a gloss with 300,000 risks crashed `show` with a stack trace
+     (spread into a call), and 8,000 groups made `html` run out of memory (the
+     page was quadratic in groups: 50,000 groups ran over 60 s). Groups, risks,
+     alternatives and attention reasons are now capped at 500 (`schema.ts`). Test: "absurdly many groups or risks".
+   - Fixed, 500 groups all claiming one 20,000-line hunk made `html` run over
+     40 s and would write a page of gigabytes. Measured (`html`, one hunk shared
+     by many groups): 200,000 claimed lines 0.5 s, 800,000 3.4 s, 1,000,000 3 to
+     10 s, 5,000,000 over 60 s; `show` stays under 0.5 s. A gloss may now claim at
+     most max(500,000, 5 x the diff's changed lines): 7 or 50 groups sharing a
+     4,000-line hunk read fine. One function (`claimsProblem`, `selection.ts`)
+     checks it in `add` (so it never writes what readers refuse) and in the loader,
+     with a message that says to claim narrower lines or use fewer groups. The
+     per-group hunk-reference cap was removed (a one-group gloss of 600 files is
+     legitimate; 500,000 references took 1 s). Tests: "many groups claiming the
+     same big hunk", "groups sharing one big hunk", "one group over a change to
+     600 files".
+   - Fixed, terminal escape sequences (OSC 52 clipboard write, title, screen
+     clear, conceal) in gloss text (task, intents, notes, risks) and in file
+     names reached the terminal through `show`, `why`, `hunks` and `signals`.
+     `readNote` strips them from gloss text (so adopt and carry copy the cleaned text; chosen over cleaning at every print site, which are many), and file names are cleaned where they are printed (hunk labels, `signals`, `why`), never in the parsed data, which must still match git. Tests: "escape sequences", "a file name with a tab".
+   - Fixed, `sync` set `refs/notes/gloss` to whatever the remote's ref pointed
+     at; a tree made `git gloss add` fail ("not a commit") until the ref was
+     deleted by hand. It now refuses a fetched notes ref that is not a commit.
+     Test: "sync does not adopt".
+   - Not exploitable: deep nesting (the readers fail cleanly in under a second),
+     `__proto__` keys (zod drops them), huge strings (linear, 1 to 2 s for 60 MB),
+     many hunk references (1 s). Test: "deeply nested or prototype-keyed notes".
+2. Rendering in the html page and the desk. The markdown renderer builds DOM
+   nodes and never parses HTML; there is no `innerHTML` anywhere.
+   - Fixed, review text of 450 KB (`*a *a *a ...`, `[[[[`, `[a](x[a](x`) froze the
+     page for 68 s: the emphasis and link scans re-read the rest of the text at
+     every marker (quadratic). Spans are now limited to 500 characters (links:
+     200 text, 400 target); the same note renders in under 3 s. Test: "markdown
+     that is quadratic to scan".
+   - Fixed, a group called `constructor` showed as already read (the read marks
+     were a plain object), so a gloss could hide a group from the progress
+     count. File-name counters had the same flaw. They have no prototype now.
+     Test: "hostile text from commits, notes and reviews stays text".
+   - Not exploitable (same test and "hostile branch names and query values"):
+     `javascript:`, `data:`, `vbscript:`, mixed-case, entity and image links
+     stay text; `</script>`, `<img onerror>` and attribute injection in commit
+     subjects, authors, file names, gloss text, review fields, review stages
+     (used in an element id), branch names and `?head=`/`?base=` notices. No
+     handler ran, no element was made, every `a` is a `#` link, the page did not
+     navigate. The page's CSP (`default-src 'none'`, nonce) is the second line.
+3. The `ary` server.
+   - Fixed, `GET //[` (a browser page can send it with `fetch`) made
+     `new URL` throw outside the handler's try, which ended the whole server
+     with a stack trace. Test: "ary survives request targets that are not URLs".
+   - Not exploitable (test: "ary answers only its own host names"): Host
+     variants (`127.0.0.1.evil.com`, `localhost.`, other port, leading zero,
+     userinfo, IPv6, empty, missing, HTTP/1.0, duplicate Host) get 403 or 400;
+     upper case is accepted on purpose. POST, OPTIONS (no CORS headers), TRACE,
+     PUT, DELETE, PATCH get 405; HEAD works. Query values that start with `-`,
+     contain NUL, or look like `--output=` are refused or reach git after
+     `--end-of-options`; nothing was written. `@{1}`, `:/x`, `^{/x}`, `!`,
+     `:(top)`, CR LF in a value, a 20 KB URL (431) and `/../` paths are harmless.
+     Error pages escape what they echo, have `default-src 'none'`, `nosniff`
+     and a charset; pages have `frame-ancestors 'none'` and `no-store`.
+   - Measured, not fixed: every request runs git synchronously, so one heavy
+     page blocks all others. A 190-commit range took 10.8 s and a trivial 404
+     asked meanwhile waited 10.6 s; 5 such requests took 53 s. Any web page can
+     send them (a no-cors GET to 127.0.0.1 passes the host check). Local DoS only.
+     Follow-up: run git asynchronously, or allow one heavy request at a time and
+     cache the page per revision.
+4. `html -o` and the default path. Not exploitable: the default file name is made
+   of commit ids only (`<10 hex>[..<10 hex>].html`), never of a ref name, so
+   branch names like `a/b/c` cannot add a path separator or `..` (they are
+   resolved by git first, and `..` is not legal in a ref name); the directory is
+   created 0700. Test: "html writes its default file". Not a boundary: `-o` and
+   `XDG_CACHE_HOME` are the user's; a symlink planted at the default path needs
+   write access to the user's own cache directory.
+5. `sync` and git arguments. Every revision from a query, note or message reaches
+   git after `--end-of-options` or a hex check (`origins.ts` only passes matches of
+   `[0-9a-f]{7,64}`); `-L` and `blame` take the file as one argument or after
+   `--`; the remote name must be one of `git remote`. Fixed, see above: the fetched
+   notes ref check.
+   - Reproduced, not fixed: the refspec `init` adds, `+refs/notes/gloss*:refs/notes/remotes/origin/gloss*`,
+     lets a remote that publishes `refs/notes/gloss/x` and later `refs/notes/gloss`
+     break every `git fetch` (exit 128, "cannot lock ref ... exists; cannot create") and `git gloss sync` ("some local refs could
+     not be updated") until the user runs `git remote prune origin`. The glob is
+     there on purpose (a plain refspec fails while the remote has no notes).
+     Follow-up: one glob-free refspec per ref, with a migration in `init`, or
+     delete a conflicting tracking ref before the fetch in `sync`.
+
+Follow-ups, real but left alone:
+- [ ] Code lines in a diff are printed as they are (`show -g`, `--diff`, `hunks`),
+  as `git diff` does; a commit that contains escape sequences reaches the terminal.
+- [ ] A refused gloss (too many claims, over the caps) fails the whole `html` or
+  `show` of a range; skip that commit with a warning instead, as for an unglossed one.
+- Fixed in the same audit: a review stage named `constructor` or `__proto__` printed `undefined` in the verdict phrase (a plain-object lookup).
+- [ ] No cap on a note's total size (all costs are linear in it: 60 MB took 1 to 2 s).
+- [ ] Not tried: `adopt`, `carry` and `versions` end to end with a hostile note
+  (they use the same readers); catastrophic regexes in `rev=HEAD^{/...}` (git's own).
 
 ## Release
-
-- [ ] Bump the git-gloss dependency in git-gud (it bundles 0.2.0 and cannot read
-  format-4 glosses, so `git gud review` refuses them). Until then, reviews need a
-  copy of git-gud pointed at the current build.
 
 - [ ] A timed-out pattern now counts as matching every line (fails closed) and
   warns on stderr, but the 250 ms budget is wall-clock, so on a loaded machine a
@@ -96,7 +199,6 @@ and a verdict, so a reader cannot tell "3 fixed, 2 deferred" from "5 ignored".
 
 - [ ] Phase 4: update the `gg-deliver` and gloss skills so the arbiter records
   decisions.
-- [ ] Cap the size of review lines read from notes (`readReviews` parses any length; only decision lines are capped).
 - [ ] `plain()` misses the bidi marks U+200E, U+200F and U+061C (README says control characters are removed; say so).
 - [ ] The decision reader and writer disagree on `complete` lines (the reader accepts a `note` on one; the writer refuses it), and `isDecisionLine` requires `decision` to be the first key, so a valid hand-written line with another key order is dropped silently. Parse, then check `decision === 1`. From the honesty review of the decision records.
 - [ ] The html Reviews view does not show decisions yet.

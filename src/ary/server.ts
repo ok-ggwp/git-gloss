@@ -123,8 +123,10 @@ export function createAry(port: () => number): Server {
     const allowed = [`127.0.0.1:${port()}`, `localhost:${port()}`]
     if (!allowed.includes((req.headers.host ?? '').toLowerCase())) return send(res, 403, 'text/plain', `forbidden host: this server answers to ${allowed.join(' and ')} (it listens on this machine only; through an SSH tunnel, forward the same port number)`)
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'text/plain', 'read-only', { allow: 'GET, HEAD' })
-    const url = new URL(req.url ?? '/', 'http://localhost')
     try {
+      // A request target need not be a URL ("//[" is not), and a throw here would end the process.
+      let url: URL
+      try { url = new URL(req.url ?? '/', 'http://localhost') } catch { throw new BadRequest('not a valid request target') }
       route(res, url)
     } catch (err) {
       if (!(err instanceof GlossError)) {

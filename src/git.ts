@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Annotation, NOTE_FORMAT, type GlossNote } from './schema.ts'
 import { parsePath, unquote } from './diff.ts'
+import { plain } from './plain.ts'
 
 export const NOTES_REF = 'refs/notes/gloss'
 // Glosses of uncommitted work (wip snapshots) live in their own notes ref,
@@ -225,6 +226,13 @@ function rawNote(ref: string, sha: string): string | null {
   }
 }
 
+function cleanStrings<T>(v: T): T {
+  if (typeof v === 'string') return plain(v, true) as T
+  if (Array.isArray(v)) return v.map(cleanStrings) as T
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, cleanStrings(x)])) as T
+  return v
+}
+
 export function readNote(sha: string): GlossNote | null {
   // A commit's gloss, or a wip snapshot's (they are never the same object).
   const raw = rawNote(NOTES_REF, sha) ?? rawNote(WIP_NOTES_REF, sha)
@@ -248,7 +256,9 @@ export function readNote(sha: string): GlossNote | null {
   if (![1, 2, 3, 4].includes(data?.gloss as number) || !Array.isArray(data.hunks) || !annotation.success) {
     throw new GlossError(`${at} is malformed; replace it with \`git gloss add --force\``)
   }
-  return { ...(data as GlossNote), annotation: annotation.data }
+  // The gloss's text is shown in a terminal, and a note can come from anyone
+  // who can push to the remote: no escape sequences or control characters get through.
+  return { ...(data as GlossNote), annotation: cleanStrings(annotation.data) }
 }
 
 export function writeNote(sha: string, note: GlossNote, ref: string = NOTES_REF): void {

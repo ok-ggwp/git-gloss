@@ -1,3 +1,4 @@
+import { plain } from '../plain.ts'
 import { parseArgs } from 'node:util'
 import { loadConfig } from '../config.ts'
 import { commitDiff, diffBetween, git, GitError, resolveCommit, workingDiff } from '../git.ts'
@@ -21,9 +22,9 @@ export function summaryLines(sig: ChangeSignals, max = 6): string[] {
   const out = [style('bold', 'signals:') + ` floor attention = ${style(['bold', ATTENTION_STYLE[sig.floor.attention]], sig.floor.attention)}`]
   const files = sig.files.filter((f) => impactRank(f.floor) >= impactRank('shared'))
     .sort((a, b) => impactRank(b.floor) - impactRank(a.floor) || a.file.localeCompare(b.file))
-  for (const f of files.slice(0, max)) out.push(`  ${(f.floor + ':').padEnd(10)} ${f.file}${f.why.length ? ` (${f.why.join('; ')})` : ''}`)
+  for (const f of files.slice(0, max)) out.push(`  ${(f.floor + ':').padEnd(10)} ${plain(f.file)}${f.why.length ? ` (${plain(f.why.join('; '))})` : ''}`)
   if (files.length > max) out.push(`  ... and ${files.length - max} more at shared or above (git gloss signals)`)
-  for (const r of sig.floor.reasons.filter((r) => / files changed /.test(r))) out.push(`  large:     ${r}`)
+  for (const r of sig.floor.reasons.filter((r) => / files changed /.test(r))) out.push(`  large:     ${plain(r)}`)
   if (sig.floor.reasons.includes(CONFIG_EDIT_NOTE)) out.push(`  note:      ${CONFIG_EDIT_NOTE}`)
   out.push(`  stats: ${statsLine(sig.stats)}`)
   return out
@@ -32,16 +33,16 @@ export function summaryLines(sig: ChangeSignals, max = 6): string[] {
 function detailLines(sig: ChangeSignals, label: string): string[] {
   const out = [style('bold', `signals for ${label}:`) + ` floor attention = ${style(['bold', ATTENTION_STYLE[sig.floor.attention]], sig.floor.attention)}` +
     style('dim', `  (floor impact: ${sig.floor.impact})`)]
-  for (const r of sig.floor.reasons) out.push(`  why: ${r}`)
+  for (const r of sig.floor.reasons) out.push(`  why: ${plain(r)}`)
   out.push(`  stats: ${statsLine(sig.stats)}`)
 
   const notable = sig.hunks.filter((h) => impactRank(h.floor) > impactRank('module') || h.hits.length)
   if (notable.length) out.push('', style('bold', 'hunks with signals'))
   for (const h of notable) {
-    out.push(`  ${style('bold', h.id.padEnd(5))} ${impactTag(h.floor, 11)} ${h.file}` +
-      style('dim', `  [${h.classes.join(', ') || 'no class'}]${h.why.length ? ' ' + h.why.join('; ') : ''}`))
+    out.push(`  ${style('bold', h.id.padEnd(5))} ${impactTag(h.floor, 11)} ${plain(h.file)}` +
+      style('dim', `  [${h.classes.join(', ') || 'no class'}]${h.why.length ? ' ' + plain(h.why.join('; ')) : ''}`))
     for (const x of h.hits.slice(0, 8)) {
-      out.push(`        ${h.id}:${x.line} ${x.sign} ${x.class} pattern "${x.name}"${x.damped ? style('dim', ' (damped: test, docs or lockfile path)') : ''}  ${style('dim', x.text)}`)
+      out.push(`        ${h.id}:${x.line} ${x.sign} ${x.class} pattern "${x.name}"${x.damped ? style('dim', ' (damped: test, docs or lockfile path)') : ''}  ${style('dim', plain(x.text))}`)
     }
     if (h.hits.length > 8) out.push(style('dim', `        ... ${h.hits.length - 8} more hits (--json)`))
   }
@@ -50,9 +51,9 @@ function detailLines(sig: ChangeSignals, label: string): string[] {
 
   if (sig.dependencies.length) out.push('', style('bold', 'dependency changes'))
   for (const d of sig.dependencies) {
-    out.push(`  ${d.file} (${d.kind}${d.format ? `, parsed as ${d.format}` : d.kind === 'lockfile' ? ', no version detail for this format' : ''})`)
+    out.push(`  ${plain(d.file)} (${d.kind}${d.format ? `, parsed as ${d.format}` : d.kind === 'lockfile' ? ', no version detail for this format' : ''})`)
     for (const b of d.bumps.slice(0, 20)) {
-      const what = b.kind === 'bump' ? `${b.name} ${b.from} -> ${b.to}` : b.kind === 'added' ? `+ ${b.name} ${b.to}` : `- ${b.name} ${b.from}`
+      const what = plain(b.kind === 'bump' ? `${b.name} ${b.from} -> ${b.to}` : b.kind === 'added' ? `+ ${b.name} ${b.to}` : `- ${b.name} ${b.from}`)
       out.push(`    ${what}${b.unrelated ? style('yellow', '  (transitive: no manifest change names it)') : ''}`)
     }
     if (d.bumps.length > 20) out.push(style('dim', `    ... ${d.bumps.length - 20} more (--json)`))

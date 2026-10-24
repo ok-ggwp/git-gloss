@@ -6,7 +6,8 @@ import { loadGloss, type LoadedGloss, type LoadedGroup } from '../loader.ts'
 import { impactRank } from '../attention.ts'
 import { showsImpact, tryAnalyze } from '../floor.ts'
 import { IMPACT, NECESSITY, isImpact, isNecessity, type Group, type Impact, type Necessity } from '../schema.ts'
-import { current, decisionSummary, plain, readDecisions, readReviews, reviewStatus, statusPhrase, verdict, type StageStatus } from '../reviews.ts'
+import { current, decisionSummary, readDecisions, readReviews, reviewStatus, statusPhrase, verdict, type StageStatus } from '../reviews.ts'
+import { plain } from '../plain.ts'
 import {
   attentionBlock, colorDiff, derivedImpactTag, field, groupHeader, hunkLabel, IMPACT_W, impactTag, necessityWord, noteFooter, page, style, termWidth, wrap,
 } from '../render.ts'

@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util'
+import { plain } from '../plain.ts'
 import { commitDiff, commitSubject, isWipSnapshot, resolveCommits } from '../git.ts'
 import { parseDiff, type Hunk } from '../diff.ts'
 import { refLabel, sliceText } from '../selection.ts'
@@ -20,7 +21,7 @@ function fenced(lang: string, body: string): string {
 const q = (s: string) => JSON.stringify(s)
 
 const hunkLine = (h: Hunk) =>
-  `- ${h.id} ${h.oldFile && h.oldFile !== h.file ? `${h.oldFile} → ` : ''}${h.file} ` +
+  `- ${h.id} ${plain(h.oldFile && h.oldFile !== h.file ? `${h.oldFile} → ${h.file}` : h.file)} ` +
   `(-${h.oldStart},${h.oldLines} +${h.newStart},${h.newLines}, +${h.added} -${h.removed})`
 
 // The material for one commit: its gloss and the code under each group, or,
@@ -28,9 +29,9 @@ const hunkLine = (h: Hunk) =>
 function commitMaterial(sha: string, gloss: LoadedGloss | null): string[] {
   if (!gloss) {
     return [
-      `## Commit ${sha.slice(0, 10)}: ${commitSubject(sha)}`,
+      `## Commit ${sha.slice(0, 10)}: ${plain(commitSubject(sha))}`,
       'This commit has no gloss. Review its changes as unexplained.',
-      fenced('diff', parseDiff(commitDiff(sha)).map((h) => `# ${h.file}\n${h.text}`).join('\n')),
+      fenced('diff', parseDiff(commitDiff(sha)).map((h) => `# ${plain(h.file)}\n${h.text}`).join('\n')),
     ]
   }
   const a = gloss.note.annotation
@@ -58,7 +59,7 @@ function commitMaterial(sha: string, gloss: LoadedGloss | null): string[] {
   const sections = [
     isWipSnapshot(sha)
       ? `## Uncommitted work (snapshot ${sha.slice(0, 10)})\n\nThese changes are not committed yet; the author glossed them before committing.`
-      : `## Commit ${sha.slice(0, 10)}: ${gloss.subject}`,
+      : `## Commit ${sha.slice(0, 10)}: ${plain(gloss.subject)}`,
     ...gloss.warnings.map((w) => `> **Warning from git-gloss:** ${w}`),
     `**Task (author's statement):** ${q(a.task)}`,
     ...(a.summary ? [`**Summary (author's statement):** ${q(a.summary)}`] : []),

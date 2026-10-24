@@ -1,7 +1,7 @@
-import { commitDiff, commitSubject, readNote } from './git.ts'
+import { commitDiff, commitSubject, GlossError, readNote } from './git.ts'
 import { parseDiff, type Hunk } from './diff.ts'
 import type { GlossNote, Group, HunkLocation } from './schema.ts'
-import { changedCount, selections, uncovered, type Claim, type Uncovered } from './selection.ts'
+import { changedCount, claimsProblem, selections, uncovered, type Claim, type Uncovered } from './selection.ts'
 
 // ok: the commit's diff still has this hunk, unchanged.
 // changed: same location, different content (e.g. the note was carried onto an amended commit).
@@ -84,6 +84,9 @@ export function loadGloss(sha: string): LoadedGloss | null {
   }))
 
   const claims = groups.flatMap((g) => g.hunks.flatMap((h): Claim[] => (h.current ? [{ hunk: h.current, lines: h.lines }] : [])))
+  // Readers refuse what `add` refuses (see claimsProblem).
+  const tooMany = claimsProblem(claims, current)
+  if (tooMany) throw new GlossError(`the gloss on ${sha.slice(0, 10)} is refused: ${tooMany}`)
   const unannotated = uncovered(current, claims)
 
   const bad = [...resolved.values()].filter((h) => h.status !== 'ok').length

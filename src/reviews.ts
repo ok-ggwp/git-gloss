@@ -3,6 +3,7 @@ import { commitDiff, git, gitTry, GlossError, readNote } from './git.ts'
 import { parseDiff, type Hunk } from './diff.ts'
 import type { Annotation, Group } from './schema.ts'
 import { bodyLines } from './selection.ts'
+import { plain } from './plain.ts'
 
 // Reviews of commits (by git-gud, or anything else that records them), kept
 // beside the glosses so a reader can see whether a gloss was checked. One JSON
@@ -90,11 +91,27 @@ export function stamp(sha: string): { lines: string[]; groups: string[] } {
   return { lines: lineKeys(parseDiff(commitDiff(sha))), groups }
 }
 
+// What a review record may hold, for readers and for `--record`. The line
+// carries a stamp of one 16-character key per changed line, so it can be large
+// for a large change (16,000 changed lines make about 300 KB) without being
+// junk: measured, JSON.parse reads 32 MB in under 0.1 s. So the line is only
+// bounded generously (8 MiB, about 440,000 changed lines), and the report text,
+// which is what gets rendered and printed, is bounded on its own.
+export const MAX_REVIEW_LINE = 8 * 1024 * 1024
+export const MAX_FINDINGS = 256 * 1024
+const warnedLong = new Set<string>()
+
 export function readReviews(sha: string): ReviewRecord[] {
   const raw = gitTry(['notes', '--ref', REVIEWS_REF, 'show', sha])
   if (!raw) return []
   // A rebase can join a note onto one with the same lines; each counts once.
-  return [...new Set(raw.split('\n'))].flatMap((line) => {
+  const kept: string[] = []
+  let skipped = 0
+  for (const l of new Set(raw.split('\n'))) {
+    if (l.length <= MAX_REVIEW_LINE) kept.push(l)
+    else if (!isDecisionLine(l)) skipped++
+  }
+  const records = kept.flatMap((line) => {
     try {
       const r = JSON.parse(line)
       // Records arrive from other machines; skip any that aren't whole.
@@ -105,6 +122,7 @@ export function readReviews(sha: string): ReviewRecord[] {
       // Everything shown later may reach a terminal: clean it once, here. The
       // id stays as written, since decisions refer to it.
       if (!ok) return []
+      if (r.findings.length > MAX_FINDINGS) { skipped++; return [] }
       const one = (v: string) => plain(v)
       return [{
         ...r, at: one(r.at), stage: one(r.stage), agent: one(r.agent), target: one(r.target), findings: plain(r.findings, true),
@@ -114,6 +132,12 @@ export function readReviews(sha: string): ReviewRecord[] {
       return []
     }
   })
+  // Said once per commit, though several readers ask for the same note.
+  if (skipped && !warnedLong.has(sha)) {
+    warnedLong.add(sha)
+    console.error(`warning: skipped ${skipped} review record${skipped === 1 ? '' : 's'} on ${sha.slice(0, 10)} with a report over ${MAX_FINDINGS / 1024} KiB or a line over ${MAX_REVIEW_LINE / 1024 / 1024} MiB`)
+  }
+  return records
 }
 
 export const OUTCOMES = ['fixed', 'follow-up', 'rejected', 'accepted'] as const
@@ -186,16 +210,6 @@ export function decisionSummary(ds: DecisionRecord[], complete = ds.some((d) => 
   const n = counts.reduce((a, [, c]) => a + c, 0)
   if (!n) return complete ? 'none · complete' : 'none yet'
   return `${complete ? counts.map(([o, c]) => `${c} ${o}`).join(', ') : `${n} decided`} · ${complete ? 'complete' : 'not marked complete'}`
-}
-
-// Text from a note is shown in a terminal: no escape sequences or other
-// control characters get through. Newlines and tabs stay when `multiline`.
-export function plain(text: string, multiline = false): string {
-  return text
-    // OSC (ended by BEL or ESC \) and CSI sequences, then any lone ESC and control characters (newline and tab kept when multiline).
-    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?/g, '')
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]?/g, '')
-    .replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g, (c) => (multiline && (c === '\n' || c === '\t') ? c : ' '))
 }
 
 // Adds records (reviews or decisions) to a commit's note, keeping each line once. Several
@@ -332,7 +346,7 @@ export function statusPhrase(s: StageStatus): string {
     return `${s.stage}: ${never ? 'reviewed before it was glossed' : 'gloss changed since review'} (${who})`
   }
   const v = verdict(s)
-  const words = WORDS[s.stage] ?? WORDS.default
+  const words = Object.hasOwn(WORDS, s.stage) ? WORDS[s.stage] : WORDS.default
   return `${s.stage}: ${v === 'clean' ? words.clean : v === 'issues' ? words.issues : 'reviewed'} (${who}` +
     `${earlierIssues(s) ? '; an earlier review found issues' : ''})`
 }
