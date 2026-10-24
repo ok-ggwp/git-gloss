@@ -1,0 +1,379 @@
+{
+  "gloss": 4,
+  "commit": "e4dd53ecb39f04fd49bd232f2e40a7e4e8691f24",
+  "created_at": "2026-10-24T09:15:37.076Z",
+  "annotation": {
+    "version": 1,
+    "task": "Harden config: a repo's .gloss/config.json must not hang git-gloss or let a change lower its own floor (TODO.md security items 1-2)",
+    "summary": "Pattern matching runs under a vm time budget and fails closed on a timeout; config is read from the base branch (defaults and a warning when there is none) instead of the working tree; editing the config is always rated sensitive and says so in signals, hunks and add.",
+    "groups": [
+      {
+        "id": "safe-match",
+        "intent": "Match patterns under a 250ms vm budget; a timed-out pattern counts as matching",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A catastrophic regex such as (a+)+$ stalls signals, show, add, hunks and html for over 40s; without failing closed, a padded line could switch a trusted pattern off",
+        "evidence": "test/signals.test.ts 'a catastrophic regex ... counts as a hit', 'padding a line cannot switch a trusted pattern off', 'padding a line does not hide a hit'",
+        "impact": "sensitive",
+        "impact_reason": "guards the floor computation against untrusted config regexes",
+        "hunks": [
+          "h11",
+          "h12:3",
+          "h13"
+        ]
+      },
+      {
+        "id": "trusted-config",
+        "intent": "Read the config from the base branch; with no base, use defaults and warn",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A change can reclassify its own paths (src/auth/** as docs) and lower its own floor",
+        "evidence": "test/signals.test.ts 'the config comes from the base branch', 'with no base branch the config is not read'",
+        "impact": "sensitive",
+        "impact_reason": "decides which paths and patterns set the floor that stops under-rating",
+        "hunks": [
+          "h6",
+          "h8"
+        ]
+      },
+      {
+        "id": "config-sensitive",
+        "intent": "Always rate .gloss/config.json sensitive, whatever the base config says",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A commit made on the base branch (whose own config is read) could reclassify its own paths unflagged; a config edit would not be rated sensitive",
+        "evidence": "test/signals.test.ts 'editing the config is itself flagged', 'a base config that replaces the sensitive paths still rates a config edit sensitive', 'mergeConfig does not mutate the built-in defaults'",
+        "impact": "sensitive",
+        "impact_reason": "a config edit changes how every later change is rated",
+        "hunks": [
+          "h7"
+        ]
+      },
+      {
+        "id": "config-edit-note",
+        "intent": "Say in signals, hunks and add that a config edit was not used to rate its own change",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Item 2's warning is missing: a change editing .gloss/config.json is rated sensitive but nothing says its edit was not applied",
+        "evidence": "test/signals.test.ts 'a change that edits the config says its own edit was not used to rate it'",
+        "impact": "module",
+        "hunks": [
+          "h4",
+          "h5",
+          "h9",
+          "h10",
+          "h12:1-2",
+          "h14",
+          "h15"
+        ]
+      },
+      {
+        "id": "tests",
+        "intent": "Hostile-input tests and fixtures that commit config to the base",
+        "necessity": "supporting",
+        "serves": [
+          "safe-match",
+          "trusted-config",
+          "config-sensitive",
+          "config-edit-note"
+        ],
+        "removal_impact": "None of the three behaviours would be tested, and existing config tests would write config the new reader ignores",
+        "hunks": [
+          "h16",
+          "h17",
+          "h18",
+          "h19",
+          "h20",
+          "h21",
+          "h22",
+          "h23"
+        ]
+      },
+      {
+        "id": "docs",
+        "intent": "Document where config is read from and the matching limits; update TODO.md",
+        "necessity": "supporting",
+        "serves": [
+          "safe-match",
+          "trusted-config"
+        ],
+        "removal_impact": "Users would not know a working-tree config edit is ignored until it reaches the base branch",
+        "hunks": [
+          "h1",
+          "h2",
+          "h3"
+        ]
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Reject catastrophic-looking patterns up front",
+        "rejected_because": "Heuristics miss cases and reject safe patterns; a time budget bounds every pattern"
+      },
+      {
+        "option": "A worker thread for matching",
+        "rejected_because": "A vm timeout interrupts the regex in-process with no message passing"
+      },
+      {
+        "option": "An opt-in flag to read the working-tree config while iterating",
+        "rejected_because": "Adds a choice; committing the config to the base is a small cost"
+      }
+    ],
+    "risks": [
+      "A timed-out pattern counts as matching every line, so a slow pattern on a loaded machine can raise the floor on one run and not another; the hit does not say a timeout caused it (TODO.md follow-up)",
+      "A hostile config already on the base branch can still disable patterns or the config-path rule (extends:false); base-branch config is trusted by design",
+      "For a commit made directly on main, the base is HEAD itself, so that commit's own config edit applies; it is rated sensitive but not ignored",
+      "New config only takes effect once on the base branch; a repo with none of origin/main, main, origin/master, master gets the defaults and a warning",
+      "Trust is anchored to the checked-out HEAD's merge base, not to the commit being reviewed, and a branch sees the config as of its fork point",
+      "The 250ms budget covers a whole hunk's lines for one pattern, so a very large hunk (millions of lines) can time out on a harmless pattern and raise the floor; it fails closed",
+      "Hits are now emitted class-first, then pattern, then line, so the order in signals --json differs from before; nothing in the repo depends on it"
+    ],
+    "attention": {
+      "level": "must-read",
+      "focus": [
+        "trusted-config",
+        "safe-match"
+      ],
+      "reasons": [
+        "config.ts matches its own secret patterns",
+        "trusted-config changes which config decides the floor"
+      ]
+    },
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-sonnet-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 183,
+      "oldLines": 7,
+      "newStart": 183,
+      "newLines": 7,
+      "hash": "0a19e134dd4ae39d"
+    },
+    {
+      "id": "h2",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 8,
+      "oldLines": 21,
+      "newStart": 8,
+      "newLines": 6,
+      "hash": "7f5bd1249dbda815"
+    },
+    {
+      "id": "h3",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 39,
+      "oldLines": 6,
+      "newStart": 24,
+      "newLines": 13,
+      "hash": "0c6f9251ef6954d0"
+    },
+    {
+      "id": "h4",
+      "file": "src/commands/signals.ts",
+      "oldFile": "src/commands/signals.ts",
+      "oldStart": 2,
+      "oldLines": 7,
+      "newStart": 2,
+      "newLines": 7,
+      "hash": "3db0c0ea8861afbc"
+    },
+    {
+      "id": "h5",
+      "file": "src/commands/signals.ts",
+      "oldFile": "src/commands/signals.ts",
+      "oldStart": 24,
+      "oldLines": 6,
+      "newStart": 24,
+      "newLines": 7,
+      "hash": "63f96a460d96c43a"
+    },
+    {
+      "id": "h6",
+      "file": "src/config.ts",
+      "oldFile": "src/config.ts",
+      "oldStart": 1,
+      "oldLines": 5,
+      "newStart": 1,
+      "newLines": 3,
+      "hash": "e588583ff6f166ed"
+    },
+    {
+      "id": "h7",
+      "file": "src/config.ts",
+      "oldFile": "src/config.ts",
+      "oldStart": 137,
+      "oldLines": 6,
+      "newStart": 135,
+      "newLines": 8,
+      "hash": "8a63a27d05599f08"
+    },
+    {
+      "id": "h8",
+      "file": "src/config.ts",
+      "oldFile": "src/config.ts",
+      "oldStart": 148,
+      "oldLines": 30,
+      "newStart": 148,
+      "newLines": 52,
+      "hash": "a2521df1e3ad4e6b"
+    },
+    {
+      "id": "h9",
+      "file": "src/floor.ts",
+      "oldFile": "src/floor.ts",
+      "oldStart": 3,
+      "oldLines": 7,
+      "newStart": 3,
+      "newLines": 7,
+      "hash": "5bb2f99ddc127c73"
+    },
+    {
+      "id": "h10",
+      "file": "src/floor.ts",
+      "oldFile": "src/floor.ts",
+      "oldStart": 143,
+      "oldLines": 6,
+      "newStart": 143,
+      "newLines": 7,
+      "hash": "ee0ea46ff5ff5140"
+    },
+    {
+      "id": "h11",
+      "file": "src/safe-match.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 28,
+      "hash": "fad7e63b979f5cde"
+    },
+    {
+      "id": "h12",
+      "file": "src/signals.ts",
+      "oldFile": "src/signals.ts",
+      "oldStart": 3,
+      "oldLines": 8,
+      "newStart": 3,
+      "newLines": 9,
+      "hash": "5ceebc48c42c5234"
+    },
+    {
+      "id": "h13",
+      "file": "src/signals.ts",
+      "oldFile": "src/signals.ts",
+      "oldStart": 129,
+      "oldLines": 13,
+      "newStart": 130,
+      "newLines": 14,
+      "hash": "3d2018c056239102"
+    },
+    {
+      "id": "h14",
+      "file": "src/signals.ts",
+      "oldFile": "src/signals.ts",
+      "oldStart": 289,
+      "oldLines": 6,
+      "newStart": 291,
+      "newLines": 9,
+      "hash": "410a1d804074b3f2"
+    },
+    {
+      "id": "h15",
+      "file": "src/signals.ts",
+      "oldFile": "src/signals.ts",
+      "oldStart": 340,
+      "oldLines": 5,
+      "newStart": 345,
+      "newLines": 6,
+      "hash": "f6458796c0134736"
+    },
+    {
+      "id": "h16",
+      "file": "test/signals.test.ts",
+      "oldFile": "test/signals.test.ts",
+      "oldStart": 6,
+      "oldLines": 7,
+      "newStart": 6,
+      "newLines": 7,
+      "hash": "69d227bc5e69f063"
+    },
+    {
+      "id": "h17",
+      "file": "test/signals.test.ts",
+      "oldFile": "test/signals.test.ts",
+      "oldStart": 29,
+      "oldLines": 9,
+      "newStart": 29,
+      "newLines": 15,
+      "hash": "0f7d181f7404aba0"
+    },
+    {
+      "id": "h18",
+      "file": "test/signals.test.ts",
+      "oldFile": "test/signals.test.ts",
+      "oldStart": 307,
+      "oldLines": 7,
+      "newStart": 313,
+      "newLines": 7,
+      "hash": "6c087e89222d2818"
+    },
+    {
+      "id": "h19",
+      "file": "test/signals.test.ts",
+      "oldFile": "test/signals.test.ts",
+      "oldStart": 422,
+      "oldLines": 8,
+      "newStart": 428,
+      "newLines": 8,
+      "hash": "e692b743b9678878"
+    },
+    {
+      "id": "h20",
+      "file": "test/signals.test.ts",
+      "oldFile": "test/signals.test.ts",
+      "oldStart": 439,
+      "oldLines": 7,
+      "newStart": 445,
+      "newLines": 7,
+      "hash": "b0a3cf1aa0de4272"
+    },
+    {
+      "id": "h21",
+      "file": "test/signals.test.ts",
+      "oldFile": "test/signals.test.ts",
+      "oldStart": 484,
+      "oldLines": 7,
+      "newStart": 490,
+      "newLines": 6,
+      "hash": "0ca44c00c42f366a"
+    },
+    {
+      "id": "h22",
+      "file": "test/signals.test.ts",
+      "oldFile": "test/signals.test.ts",
+      "oldStart": 519,
+      "oldLines": 17,
+      "newStart": 524,
+      "newLines": 22,
+      "hash": "cfde5b09c4dee081"
+    },
+    {
+      "id": "h23",
+      "file": "test/signals.test.ts",
+      "oldFile": "test/signals.test.ts",
+      "oldStart": 581,
+      "oldLines": 3,
+      "newStart": 591,
+      "newLines": 89,
+      "hash": "c4a3379ed379eaef"
+    }
+  ]
+}
