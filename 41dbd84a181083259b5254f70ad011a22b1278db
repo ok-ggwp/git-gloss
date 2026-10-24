@@ -1,0 +1,86 @@
+{
+  "gloss": 4,
+  "commit": "41dbd84a181083259b5254f70ad011a22b1278db",
+  "created_at": "2026-10-24T21:20:23.299Z",
+  "annotation": {
+    "version": 1,
+    "task": "Warn on add when a non-pure-mechanical group has no impact rated",
+    "groups": [
+      {
+        "id": "warn",
+        "intent": "Warn, never refuse, naming groups with no impact",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "add stays silent about unrated groups",
+        "impact": "module",
+        "hunks": [
+          "h2"
+        ]
+      },
+      {
+        "id": "test",
+        "intent": "Cover the impact warning cases",
+        "necessity": "supporting",
+        "serves": "warn",
+        "removal_impact": "The warning is untested",
+        "impact": "local",
+        "hunks": [
+          "h3"
+        ]
+      },
+      {
+        "id": "readme",
+        "intent": "Document the impact warning",
+        "necessity": "supporting",
+        "serves": "warn",
+        "removal_impact": "Users would not know add warns about it",
+        "impact": "local",
+        "hunks": [
+          "h1"
+        ]
+      }
+    ],
+    "risks": [
+      "Authors may write filler impact: local to silence the warning (accepted).",
+      "The unrated warning is skipped when add already has other errors (ratingProblems runs only without errors)."
+    ],
+    "attention": {
+      "level": "look",
+      "focus": [
+        "warn"
+      ]
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 202,
+      "oldLines": 7,
+      "newStart": 202,
+      "newLines": 7,
+      "hash": "34c4642909bfadd0"
+    },
+    {
+      "id": "h2",
+      "file": "src/floor.ts",
+      "oldFile": "src/floor.ts",
+      "oldStart": 153,
+      "oldLines": 6,
+      "newStart": 153,
+      "newLines": 23,
+      "hash": "548db2ef9fc437b7"
+    },
+    {
+      "id": "h3",
+      "file": "test/impactwarn.test.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 89,
+      "hash": "0125f0e68dc96f06"
+    }
+  ]
+}
