@@ -52,6 +52,11 @@ function withReview() {
   return { ...r, id, sha: r.g('rev-parse', 'HEAD') }
 }
 
+test('reviews prints each review id, so an arbiter can pass it to --decide', () => {
+  const { dir, id } = withReview()
+  assert.match(gloss(dir, ['reviews']).out, new RegExp(`, id ${id}`))
+})
+
 test('a decision round-trips: --decide, then reviews and show summarise it; --complete closes the review', () => {
   const { dir, id } = withReview()
   assert.match(gloss(dir, ['reviews']).out, /decisions on this review: none yet/)

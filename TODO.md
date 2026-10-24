@@ -193,8 +193,7 @@ git-gloss versions without it copy only review records through adopt and carry
 and drop decision lines. The reason for it: a review record holds the report
 and a verdict, so a reader cannot tell "3 fixed, 2 deferred" from "5 ignored".
 
-- [ ] Phase 4: update the `gg-deliver` and gloss skills so the arbiter records
-  decisions.
+- [ ] Update the personal `gg-deliver` skill (in ~/.claude/skills, not in this repo) so its arbiter records decisions with `git gloss reviews --decide`; do it after the release that has decision records is published, since it breaks in projects on older versions.
 - [ ] `plain()` misses the bidi marks U+200E, U+200F and U+061C (README says control characters are removed; say so).
 - [ ] The decision reader and writer disagree on `complete` lines (the reader accepts a `note` on one; the writer refuses it), and `isDecisionLine` requires `decision` to be the first key, so a valid hand-written line with another key order is dropped silently. Parse, then check `decision === 1`. From the honesty review of the decision records.
 - [ ] The html Reviews view does not show decisions yet.
