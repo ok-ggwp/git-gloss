@@ -2,10 +2,10 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { commitSubject, gitTry, GlossError, resolveCommits } from '../git.ts'
-import { addReviews, reviewStatus, stamp, statusPhrase, verdictOf, type ReviewRecord } from '../reviews.ts'
+import { addReviews, checkBy, checkDecision, MAX_DECISION_LINE, decisionSummary, plain, readDecisions, readReviews, reviewStatus, stamp, statusPhrase, verdictOf, type DecisionRecord, type ReviewRecord } from '../reviews.ts'
 import { page, style } from '../render.ts'
 
-export const usage = 'reviews [<commit> | <range> | wip] [--stamp | --record]   the reviews recorded for commits, with their findings; --stamp and --record are for review tools'
+export const usage = 'reviews [<commit> | <range> | wip] [--stamp | --record]   the reviews recorded for commits, with their findings and what was decided about them\n  reviews <target> --decide <review-id> --finding <text> --outcome <fixed|follow-up|rejected|accepted> [--note <text>] [--by <name>]\n  reviews <target> --decide <review-id> --complete   the arbiter is done; --stamp, --record and --decide are for tools'
 
 type Stamped = Record<string, { lines: string[]; groups: string[] }>
 
@@ -17,7 +17,10 @@ export function run(argv: string[]): number {
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
-    options: { stamp: { type: 'boolean' }, record: { type: 'boolean' } },
+    options: {
+      stamp: { type: 'boolean' }, record: { type: 'boolean' }, decide: { type: 'string' }, finding: { type: 'string' },
+      outcome: { type: 'string' }, note: { type: 'string' }, complete: { type: 'boolean' }, by: { type: 'string' },
+    },
   })
 
   if (values.record) {
@@ -51,6 +54,37 @@ export function run(argv: string[]): number {
   }
 
   const { shas } = resolveCommits(positionals[0] ?? 'HEAD')
+  if (values.decide !== undefined) {
+    const id = values.decide
+    if (values.complete) {
+      if (values.finding !== undefined || values.outcome !== undefined || values.note !== undefined) {
+        throw new GlossError('--complete marks the review as arbitrated; it takes no --finding, --outcome or --note')
+      }
+    } else checkDecision(values)
+    // Every commit of the target holding that review gets the decision.
+    const holders = shas.filter((sha) => readReviews(sha).some((r) => r.id === id))
+    if (!holders.length) {
+      const known = [...new Set(shas.flatMap(readReviews).map((r) => r.id))]
+      throw new GlossError(`no review ${id} on ${positionals[0] ?? 'HEAD'}` + (known.length ? ` (reviews there: ${plain(known.join(', '))})` : ' (it has no reviews)'))
+    }
+    const by = values.by !== undefined ? values.by.trim() : gitTry(['config', 'user.name'])?.trim() || 'unknown'
+    checkBy(by)
+    const record: DecisionRecord = {
+      decision: 1, review: id, at: new Date().toISOString(), by,
+      ...(values.complete ? { complete: true } : {
+        finding: values.finding!.trim(), outcome: values.outcome as DecisionRecord['outcome'],
+        ...(values.note ? { note: values.note } : {}),
+      }),
+    }
+    // Control characters are written as 6-byte escapes, so check the line itself against the reader's cap.
+    if (JSON.stringify(record).length > MAX_DECISION_LINE) throw new GlossError('that decision is too long to record: the finding and note, as written, exceed what readers accept; shorten them')
+    for (const sha of holders) addReviews(sha, [record])
+    console.log(`recorded ${values.complete ? 'the review as complete' : `"${record.finding}": ${record.outcome}`} on ${holders.length} commit${holders.length === 1 ? '' : 's'}`)
+    return 0
+  }
+  for (const k of ['finding', 'outcome', 'note', 'complete', 'by'] as const) {
+    if (values[k] !== undefined) throw new GlossError(`--${k} goes with --decide <review-id>`)
+  }
   if (values.stamp) {
     console.log(JSON.stringify(Object.fromEntries(shas.map((sha) => [sha, stamp(sha)]))))
     return 0
@@ -59,13 +93,21 @@ export function run(argv: string[]): number {
   const out: string[] = []
   for (const sha of shas) {
     const statuses = reviewStatus(sha)
-    out.push(`${style('yellow', sha.slice(0, 10))} ${style('bold', commitSubject(sha))}`)
+    const decisions = readDecisions(sha)
+    out.push(`${style('yellow', sha.slice(0, 10))} ${style('bold', plain(commitSubject(sha)))}`)
     if (!statuses.length) { out.push(style('dim', '  no reviews recorded'), ''); continue }
     for (const s of statuses) {
       out.push(`  ${statusPhrase(s)}`)
       for (const r of s.reviews) {
         out.push('', style('dim', `  ── ${r.stage} by ${r.agent}${r.model ? `:${r.model}` : ''}${r.mode ? ` (${r.mode})` : ''}, ${r.at.slice(0, 16).replace('T', ' ')}, of ${r.target}`))
         out.push(...r.findings.trim().split('\n').map((l) => `  ${l}`))
+        const ds = decisions.filter((d) => d.review === r.id)
+        if (r.verdict !== 'clean' || ds.length) {
+          out.push('', `  decisions on this review: ${decisionSummary(ds)}`)
+          for (const d of ds.filter((d) => d.outcome).sort((a, b) => a.at.localeCompare(b.at))) {
+            out.push(`    ${d.outcome}: ${plain(d.finding!)}${d.note ? ` — ${plain(d.note)}` : ''} ${style('dim', `(${plain(d.by)}, ${plain(d.at).slice(0, 10)})`)}`)
+          }
+        }
       }
       out.push('')
     }

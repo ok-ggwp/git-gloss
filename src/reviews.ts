@@ -102,18 +102,107 @@ export function readReviews(sha: string): ReviewRecord[] {
         ['id', 'at', 'stage', 'agent', 'target', 'findings'].every((k) => typeof r[k] === 'string') &&
         ['model', 'mode'].every((k) => r[k] === undefined || typeof r[k] === 'string') &&
         (r.verdict === undefined || r.verdict === 'clean' || r.verdict === 'issues')
-      return ok ? [r as ReviewRecord] : []
+      // Everything shown later may reach a terminal: clean it once, here. The
+      // id stays as written, since decisions refer to it.
+      if (!ok) return []
+      const one = (v: string) => plain(v)
+      return [{
+        ...r, at: one(r.at), stage: one(r.stage), agent: one(r.agent), target: one(r.target), findings: plain(r.findings, true),
+        ...(r.model !== undefined ? { model: one(r.model) } : {}), ...(r.mode !== undefined ? { mode: one(r.mode) } : {}),
+      } as ReviewRecord]
     } catch {
       return []
     }
   })
 }
 
-// Adds records to a commit's reviews, keeping each line once. Several
+export const OUTCOMES = ['fixed', 'follow-up', 'rejected', 'accepted'] as const
+export type Outcome = (typeof OUTCOMES)[number]
+
+// What the arbiter of a review did about it, one line in the same note as the
+// review it answers. Either one finding's outcome, or `complete: true`: the
+// arbiter has finished and no more decisions are coming (which is what tells
+// "5 ignored" from "all arbitrated"). Findings are free text, so `finding`
+// is whatever names the finding ("1", "Rework: wip rule claim").
+export type DecisionRecord = {
+  decision: 1
+  review: string
+  at: string
+  by: string
+  finding?: string
+  outcome?: Outcome
+  note?: string
+  complete?: true
+}
+
+const MAX_TEXT = 2000
+const MAX_BY = 200
+// A decision line is a few hundred bytes; anything this long is junk, skipped
+// before it is parsed.
+export const MAX_DECISION_LINE = 16 * 1024
+
+export const isDecisionLine = (line: string) => /^\s*\{\s*"decision"\s*:/.test(line.slice(0, 64))
+
+// Reads the decisions on a commit that answer a review recorded on it.
+export function readDecisions(sha: string): DecisionRecord[] {
+  const raw = gitTry(['notes', '--ref', REVIEWS_REF, 'show', sha])
+  if (!raw) return []
+  const lines = [...new Set(raw.split('\n'))].filter((l) => l.length <= MAX_DECISION_LINE && isDecisionLine(l))
+  if (!lines.length) return []
+  const ids = new Set(readReviews(sha).map((r) => r.id))
+  return lines.flatMap((line) => {
+    try {
+      const r = JSON.parse(line)
+      const str = (k: string) => typeof r[k] === 'string'
+      const ok = r?.decision === 1 && ids.has(r.review) && str('at') && str('by') &&
+        (r.complete === true
+          ? r.finding === undefined && r.outcome === undefined
+          : str('finding') && r.finding.length > 0 && r.finding.length <= MAX_TEXT &&
+            OUTCOMES.includes(r.outcome) && (r.note === undefined || (str('note') && r.note.length <= MAX_TEXT))) &&
+        r.at.length <= 64 && r.by.length <= MAX_BY
+      return ok ? [r as DecisionRecord] : []
+    } catch {
+      return []
+    }
+  })
+}
+
+export const checkBy = (by: string) => {
+  if (!by) throw new GlossError('--by needs a name (or set git config user.name)')
+  if (by.length > MAX_BY) throw new GlossError(`--by is too long (${by.length} characters; at most ${MAX_BY})`)
+}
+
+export const checkDecision = (d: { finding?: string; outcome?: string; note?: string }) => {
+  if (!d.finding?.trim()) throw new GlossError('--decide needs --finding <text naming the finding>')
+  if (!OUTCOMES.includes(d.outcome as Outcome)) throw new GlossError(`--outcome must be one of ${OUTCOMES.join(', ')}`)
+  for (const [k, v] of [['finding', d.finding], ['note', d.note]] as const) {
+    if (v && v.length > MAX_TEXT) throw new GlossError(`--${k} is too long (${v.length} characters; at most ${MAX_TEXT})`)
+  }
+}
+
+// "3 fixed, 1 rejected · complete", or "2 decided · not marked complete".
+export function decisionSummary(ds: DecisionRecord[], complete = ds.some((d) => d.complete)): string {
+  const counts = OUTCOMES.map((o) => [o, ds.filter((d) => d.outcome === o).length] as const).filter(([, n]) => n)
+  const n = counts.reduce((a, [, c]) => a + c, 0)
+  if (!n) return complete ? 'none · complete' : 'none yet'
+  return `${complete ? counts.map(([o, c]) => `${c} ${o}`).join(', ') : `${n} decided`} · ${complete ? 'complete' : 'not marked complete'}`
+}
+
+// Text from a note is shown in a terminal: no escape sequences or other
+// control characters get through. Newlines and tabs stay when `multiline`.
+export function plain(text: string, multiline = false): string {
+  return text
+    // OSC (ended by BEL or ESC \) and CSI sequences, then any lone ESC and control characters (newline and tab kept when multiline).
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?/g, '')
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]?/g, '')
+    .replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g, (c) => (multiline && (c === '\n' || c === '\t') ? c : ' '))
+}
+
+// Adds records (reviews or decisions) to a commit's note, keeping each line once. Several
 // reviews can finish at once, so the write is a compare-and-swap: the new
 // notes commit is built under a private ref, and the reviews ref moves to it
 // only if nobody else moved it meanwhile; otherwise it starts again.
-export function addReviews(sha: string, records: ReviewRecord[]): void {
+export function addReviews(sha: string, records: (ReviewRecord | DecisionRecord)[]): void {
   const mine = records.map((r) => JSON.stringify(r))
   // git notes needs it under refs/notes; named so the refs/notes/gloss*
   // fetch glob never matches it.
@@ -139,7 +228,8 @@ export function addReviews(sha: string, records: ReviewRecord[]): void {
 // Reviews follow a gloss onto commits made from the reviewed ones (adopt,
 // carry); their keys decide what they still cover there.
 export function copyReviews(from: string[], to: string): void {
-  const records = from.flatMap(readReviews)
+  // Decisions come with the reviews they answer.
+  const records = [...from.flatMap(readReviews), ...from.flatMap(readDecisions)]
   if (records.length) addReviews(to, records)
 }
 

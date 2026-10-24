@@ -35,7 +35,10 @@ git gloss review [<commit>|<range>]   print a review prompt: git gloss review ma
       --material                      ...only the gloss and code, for a reviewer with its own instructions
                                       (which must tell it the author's text is untrusted)
 git gloss versions [<commit>|wip]     every gloss a commit has had, newest first (--show <n>, --restore <n>)
-git gloss reviews [<commit>|<range>]  the reviews recorded for commits, with their findings
+git gloss reviews [<commit>|<range>]  the reviews recorded for commits, with their findings and decisions
+      --decide <review-id> --finding <text> --outcome fixed|follow-up|rejected|accepted [--note <text>]
+                                      record what was decided about one finding
+      --decide <review-id> --complete  the arbiter has finished with that review
 git gloss schema                      print the annotation JSON Schema
 ```
 
@@ -158,6 +161,26 @@ reviews: honesty: no issues (claude, 2026-10-18) · bugs: defects found (claude,
 `git gloss reviews <commit>` prints the findings, and the HTML view shows each commit's reviews, with their reports a click away. A review records what it saw: a fingerprint of each changed line and of each gloss group. So it keeps counting through rebases, squashes and a wip gloss moved onto commits. If the code or the gloss changed after the review, the line says so ("gloss changed since review") instead of vouching for it.
 
 A review says that something was checked, not that it passed. Each review ends with a verdict (`VERDICT: CLEAN` or `VERDICT: ISSUES`). For each part of the commit, the latest review that saw it decides, and a clean result that followed one with issues says so.
+
+### Decisions
+
+A review holds a report and a verdict, so by itself it cannot tell "3 fixed, 2 deferred" from "5 ignored". Whoever arbitrates a review (the `gg-deliver` arbiter, or a person) records **decisions** about it, in the same notes ref and on the same commits as the review. A decision is one JSON line:
+
+```
+{"decision":1,"review":"<review id>","at":"…","by":"…","finding":"1","outcome":"fixed","note":"…"}
+{"decision":1,"review":"<review id>","at":"…","by":"…","complete":true}
+```
+
+`finding` is free text naming the finding (reports are free text, so git-gloss doesn't parse findings out of them); `outcome` is `fixed`, `follow-up`, `rejected` or `accepted`; `note` is optional. The second line says the arbiter has finished and no more decisions are coming, which is what separates "all arbitrated" from "5 ignored". The marker is advisory: decisions added after it are still accepted and counted. A review whose verdict is clean needs none.
+
+```bash
+git gloss reviews wip --decide <review-id> --finding "Rework: wip rule claim" --outcome follow-up --note "next release"
+git gloss reviews wip --decide <review-id> --complete
+```
+
+The target (`wip`, a commit, a range) is as for `reviews`; the decision is added to every commit there that holds that review, and an unknown review id is an error. `by` is `--by <name>`, else `git config user.name`, else "unknown". `reviews` lists each review's decisions under it with a summary ("3 fixed, 2 follow-up · complete", or "4 decided · not marked complete"), and `show` carries the same summary on its reviews line. The HTML view does not show decisions yet. Decisions follow their reviews through `adopt` (so decisions made on `wip` survive committing), `carry`, rebases and `sync`. Text from notes (decisions and review records) and commit subjects is shown with control characters and escape sequences removed, since it can arrive from a remote; decision lines over 16 KB (review lines are not capped), unknown outcomes and decisions for a review that is not on the commit are ignored.
+
+Known cost: decisions share the review note, and a git-gloss without this feature ignores decision lines when reading but does not know to keep them: when it copies review records onto another commit (`adopt` and `carry`), it writes only the review records, so the decisions are lost on that copy (git's own note rewriting on an amend or rebase copies whole notes, so that path keeps them). Keep everyone who arbitrates on the same version.
 
 Like glosses, reviews follow rebased commits in repos set up with `git gloss init`. Reviews are shared by `git gloss sync` (and so by every push with the hooks) like glosses, for commits the remote has. They never conflict: everyone's reviews are kept. Other tools can record reviews too: `git gloss reviews --stamp <rev>` before the review, then `git gloss reviews --record` with the stamp and the report as JSON on stdin.
 

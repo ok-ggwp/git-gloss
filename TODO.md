@@ -88,18 +88,18 @@ The brief is `gloss-review.md` (kept outside the repo; consider adding it under
 
 ## Recording what was decided about each review finding
 
-Scoped, not started. Today a review record holds the report and a verdict, so a
-reader cannot tell "3 fixed, 2 deferred" from "5 ignored".
+Phases 1 to 3 are built: decision records, `reviews --decide`, shown in
+`reviews` and `show`, and carried by adopt, carry and sync. Known cost:
+git-gloss versions without it copy only review records through adopt and carry
+and drop decision lines. The reason for it: a review record holds the report
+and a verdict, so a reader cannot tell "3 fixed, 2 deferred" from "5 ignored".
 
-- [ ] Phase 1: a `decision` record in the same notes ref (`{decision: 1, review,
-  at, by, finding, outcome: fixed|follow-up|rejected|accepted, note?}`),
-  validation, and `git gloss reviews --decide <review-id> --finding … --outcome …
-  [--complete]`. Older readers must ignore the lines. Known cost: old versions
-  copy review records through rebases and would drop lines they do not know.
-- [ ] Phase 2: show decisions in `show`, `reviews` and the Reviews view of `html`.
-- [ ] Phase 3: decisions follow adopt, carry and squash like reviews do.
 - [ ] Phase 4: update the `gg-deliver` and gloss skills so the arbiter records
   decisions.
+- [ ] Cap the size of review lines read from notes (`readReviews` parses any length; only decision lines are capped).
+- [ ] `plain()` misses the bidi marks U+200E, U+200F and U+061C (README says control characters are removed; say so).
+- [ ] The decision reader and writer disagree on `complete` lines (the reader accepts a `note` on one; the writer refuses it), and `isDecisionLine` requires `decision` to be the first key, so a valid hand-written line with another key order is dropped silently. Parse, then check `decision === 1`. From the honesty review of the decision records.
+- [ ] The html Reviews view does not show decisions yet.
 - [ ] Phase 5 (git-gud, other repo): structured findings, so "N still open" can
   be computed.
 

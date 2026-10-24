@@ -6,7 +6,7 @@ import { loadGloss, type LoadedGloss, type LoadedGroup } from '../loader.ts'
 import { impactRank } from '../attention.ts'
 import { showsImpact, tryAnalyze } from '../floor.ts'
 import { IMPACT, NECESSITY, isImpact, isNecessity, type Group, type Impact, type Necessity } from '../schema.ts'
-import { current, reviewStatus, statusPhrase, verdict, type StageStatus } from '../reviews.ts'
+import { current, decisionSummary, plain, readDecisions, readReviews, reviewStatus, statusPhrase, verdict, type StageStatus } from '../reviews.ts'
 import {
   attentionBlock, colorDiff, derivedImpactTag, field, groupHeader, hunkLabel, IMPACT_W, impactTag, necessityWord, noteFooter, page, style, termWidth, wrap,
 } from '../render.ts'
@@ -111,12 +111,12 @@ export function run(argv: string[]): number {
     out.push('', style('dim', '─'.repeat(Math.min(termWidth(), 60))))
     const gloss = glosses[i]
     if (!gloss) {
-      out.push(`${style('yellow', sha.slice(0, 10))} ${style('bold', commitSubject(sha))}`, style('dim', 'no gloss for this commit'))
+      out.push(`${style('yellow', sha.slice(0, 10))} ${style('bold', plain(commitSubject(sha)))}`, style('dim', 'no gloss for this commit'))
       return
     }
     // An --only filter can leave a commit with nothing to show; say so and move on.
     out.push(...(renderCommit(sha, gloss, values, only, false) ??
-      [`${style('yellow', sha.slice(0, 10))} ${style('bold', gloss.subject)}`, style('dim', `no ${only?.names.join('/')} groups`)]))
+      [`${style('yellow', sha.slice(0, 10))} ${style('bold', plain(gloss.subject))}`, style('dim', `no ${only?.names.join('/')} groups`)]))
   })
   if (glossed) out.push('', style('dim', 'One commit in detail: git gloss show <commit> --full   (or -g <group> for its code)'))
   page(out.join('\n'))
@@ -135,7 +135,14 @@ function reviewsLine(sha: string): string {
   const statuses = reviewStatus(sha)
   if (!statuses.length) return style('dim', 'reviews: none recorded')
   const color = (s: StageStatus) => (!current(s) || verdict(s) === 'issues' ? 'yellow' : verdict(s) === 'clean' ? 'green' : 'dim')
-  return `reviews: ${statuses.map((s) => style(color(s), statusPhrase(s))).join(style('dim', ' · '))}` +
+  // What was decided about the reviews that found something (or didn't say);
+  // a commit with only clean reviews has nothing to decide.
+  const open = readReviews(sha).filter((r) => r.verdict !== 'clean')
+  const decisions = readDecisions(sha).filter((d) => open.some((r) => r.id === d.review))
+  const decided = open.length
+    ? ` ${style('dim', '·')} decisions: ${decisionSummary(decisions, open.every((r) => decisions.some((d) => d.review === r.id && d.complete)))}`
+    : ''
+  return `reviews: ${statuses.map((s) => style(color(s), statusPhrase(s))).join(style('dim', ' · '))}${decided}` +
     style('dim', `   (findings: git gloss reviews ${sha.slice(0, 7)})`)
 }
 
@@ -145,7 +152,7 @@ function renderCommit(sha: string, gloss: LoadedGloss, values: ShowOptions, only
 
   const a = gloss.note.annotation
   const short = sha.slice(0, 7)
-  const out: string[] = [`${style('yellow', sha.slice(0, 10))} ${style('bold', gloss.subject)}`]
+  const out: string[] = [`${style('yellow', sha.slice(0, 10))} ${style('bold', plain(gloss.subject))}`]
   out.push(...field('task:', a.task, 0))
   if (a.summary) out.push(...field('summary:', a.summary, 0))
   for (const w of gloss.warnings) out.push(...field('⚠', w, 0).map((l) => style('red', l)))
