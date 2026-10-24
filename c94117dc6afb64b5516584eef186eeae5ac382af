@@ -1,0 +1,674 @@
+{
+  "gloss": 4,
+  "commit": "c94117dc6afb64b5516584eef186eeae5ac382af",
+  "created_at": "2026-10-24T14:12:28.417Z",
+  "annotation": {
+    "version": 1,
+    "task": "Audit the remaining untrusted-input boundaries adversarially; fix only what was reproduced",
+    "summary": "Each fix was written test-first and seen failing; boundaries that were not exploitable have small guard tests. TODO.md records every boundary's result.",
+    "groups": [
+      {
+        "id": "markdown-bound",
+        "intent": "Bound emphasis and link scans so hostile review text cannot freeze the page",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A 450 KB review froze the page for 68 s (quadratic scans)",
+        "evidence": "test/untrusted.test.ts 'markdown that is quadratic to scan'",
+        "impact": "module",
+        "hunks": [
+          "h26",
+          "h27"
+        ]
+      },
+      {
+        "id": "proto-free-maps",
+        "intent": "Read marks and file counters have no prototype, so a group called constructor is not pre-read",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A gloss could make a group count as already read",
+        "impact": "module",
+        "hunks": [
+          "h24",
+          "h25",
+          "h28"
+        ]
+      },
+      {
+        "id": "review-cap",
+        "intent": "Bound review records: report 256 KiB, line 8 MiB; --record refuses what readers would skip",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Huge review lines are parsed and printed whole; --record could write a record readers then hide",
+        "impact": "module",
+        "hunks": [
+          "h8",
+          "h9",
+          "h10",
+          "h36",
+          "h37",
+          "h38"
+        ]
+      },
+      {
+        "id": "note-limits",
+        "intent": "Cap list sizes and total claimed lines, checked by add and by readers",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "300k risks crash show; 500 groups on one big hunk hang html for over 40 s; add could write what readers refuse",
+        "impact": "contract",
+        "impact_reason": "note schema now rejects over-size notes that readers once accepted",
+        "hunks": [
+          "h29",
+          "h30",
+          "h41",
+          "h42",
+          "h43",
+          "h44",
+          "h45",
+          "h46"
+        ]
+      },
+      {
+        "id": "terminal-clean",
+        "intent": "Strip escape sequences from gloss text and file names when read",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A pushed gloss or file name can emit OSC 52 and screen-clearing codes in show, why, hunks",
+        "impact": "sensitive",
+        "impact_reason": "note text could write the clipboard or rewrite the screen via OSC/CSI",
+        "hunks": [
+          "h4",
+          "h5",
+          "h6",
+          "h7",
+          "h11",
+          "h12",
+          "h13",
+          "h14",
+          "h15",
+          "h19",
+          "h20",
+          "h21",
+          "h22",
+          "h23",
+          "h31",
+          "h32",
+          "h33",
+          "h34",
+          "h35",
+          "h39"
+        ]
+      },
+      {
+        "id": "ary-url-crash",
+        "intent": "Answer 400 for an unparseable request target instead of ending the server",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "GET //[ from any web page kills ary",
+        "impact": "module",
+        "hunks": [
+          "h3"
+        ]
+      },
+      {
+        "id": "sync-tracking",
+        "intent": "Refuse a fetched notes ref that is not a commit",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "One sync from a hostile remote breaks git gloss add until the ref is deleted",
+        "impact": "sensitive",
+        "impact_reason": "sync could point refs/notes/gloss at a tree the remote chose",
+        "hunks": [
+          "h16",
+          "h17",
+          "h18"
+        ]
+      },
+      {
+        "id": "audit-tests",
+        "intent": "Tests for each reproduced finding and guards for boundaries found safe",
+        "necessity": "supporting",
+        "serves": [
+          "markdown-bound",
+          "proto-free-maps",
+          "review-cap",
+          "note-limits",
+          "terminal-clean",
+          "ary-url-crash",
+          "sync-tracking",
+          "stage-lookup"
+        ],
+        "removal_impact": "No regression guard; host check, option refusal, escaping, default path and nesting checks would be unguarded",
+        "hunks": [
+          "h47"
+        ]
+      },
+      {
+        "id": "audit-todo",
+        "intent": "Record each boundary result and follow-ups in TODO.md; drop done items",
+        "necessity": "supporting",
+        "serves": [
+          "review-cap",
+          "note-limits",
+          "ary-url-crash",
+          "sync-tracking"
+        ],
+        "removal_impact": "The audit's results and unfixed findings (ary blocking, fetch refspec glob) would be lost",
+        "hunks": [
+          "h1",
+          "h2"
+        ]
+      },
+      {
+        "id": "stage-lookup",
+        "intent": "Look a review stage up in the verdict words without prototype hits",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A stage called constructor or __proto__ prints 'undefined' in the verdict phrase",
+        "impact": "local",
+        "hunks": [
+          "h40"
+        ]
+      }
+    ],
+    "risks": [
+      "ary still blocks on synchronous git; fetch refspec glob DoS left unfixed (in TODO.md)",
+      "Gloss text is cleaned at read (readNote), so adopt and carry copy the cleaned text into notes; file names are cleaned only where printed",
+      "sync's check only requires the fetched ref to be a commit, not a notes tree",
+      "Markdown spans over 500 chars and link targets over 400 chars render as plain text (accepted trade-off, no boundary test)",
+      "Caps (500 groups/risks/alternatives/reasons, claimed lines max(500,000, 5x diff)) are judgement calls from measurements in TODO.md; a legitimate gloss above them now fails as malformed, and add refuses it with advice to claim narrower lines",
+      "A review record over the limits (report over 256 KiB, line over 8 MiB) is dropped with only a stderr warning, which can change a stage's displayed verdict (fail-open); --record now refuses to write one",
+      "readReviews exempts decision-looking lines from the size warning (they are short; a long one is dropped silently)",
+      "Cleaning gloss text at read changes the group keys that review stamps use for glosses containing CR, C1 controls or bidi marks, so reviews recorded earlier on such a gloss show 'gloss changed since review'; git-gud's bundled copy stamps with its own build"
+    ],
+    "attention": {
+      "level": "must-read",
+      "focus": [
+        "terminal-clean",
+        "note-limits",
+        "sync-tracking"
+      ],
+      "reasons": [
+        "security change on untrusted input from remotes",
+        "note-limits changes what notes readers accept",
+        "terminal-clean and sync-tracking guard against remote-chosen content"
+      ]
+    },
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-sonnet-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 6,
+      "oldLines": 18,
+      "newStart": 6,
+      "newLines": 121,
+      "hash": "a2e83fdf6828c003"
+    },
+    {
+      "id": "h2",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 96,
+      "oldLines": 7,
+      "newStart": 199,
+      "newLines": 6,
+      "hash": "9d889b8d0eb92bb4"
+    },
+    {
+      "id": "h3",
+      "file": "src/ary/server.ts",
+      "oldFile": "src/ary/server.ts",
+      "oldStart": 123,
+      "oldLines": 8,
+      "newStart": 123,
+      "newLines": 10,
+      "hash": "36bff93ccfee0af3"
+    },
+    {
+      "id": "h4",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 1,
+      "oldLines": 4,
+      "newStart": 1,
+      "newLines": 5,
+      "hash": "c75bc711f0328d6e"
+    },
+    {
+      "id": "h5",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 20,
+      "oldLines": 7,
+      "newStart": 21,
+      "newLines": 7,
+      "hash": "777fc8ba0002ef33"
+    },
+    {
+      "id": "h6",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 28,
+      "oldLines": 9,
+      "newStart": 29,
+      "newLines": 9,
+      "hash": "f9d83eaf3574ff64"
+    },
+    {
+      "id": "h7",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 58,
+      "oldLines": 7,
+      "newStart": 59,
+      "newLines": 7,
+      "hash": "b41f207827d53474"
+    },
+    {
+      "id": "h8",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 2,
+      "oldLines": 7,
+      "newStart": 2,
+      "newLines": 8,
+      "hash": "67ed4a12eb915488"
+    },
+    {
+      "id": "h9",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 37,
+      "oldLines": 6,
+      "newStart": 38,
+      "newLines": 8,
+      "hash": "2ce2e20afd5ab328"
+    },
+    {
+      "id": "h10",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 46,
+      "oldLines": 6,
+      "newStart": 49,
+      "newLines": 7,
+      "hash": "738436ea6d4f15b0"
+    },
+    {
+      "id": "h11",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 6,
+      "oldLines": 7,
+      "newStart": 6,
+      "newLines": 8,
+      "hash": "672968ef2321a28e"
+    },
+    {
+      "id": "h12",
+      "file": "src/commands/signals.ts",
+      "oldFile": "src/commands/signals.ts",
+      "oldStart": 1,
+      "oldLines": 3,
+      "newStart": 1,
+      "newLines": 4,
+      "hash": "41afb1436f9d6d11"
+    },
+    {
+      "id": "h13",
+      "file": "src/commands/signals.ts",
+      "oldFile": "src/commands/signals.ts",
+      "oldStart": 21,
+      "oldLines": 9,
+      "newStart": 22,
+      "newLines": 9,
+      "hash": "77832763877bcb77"
+    },
+    {
+      "id": "h14",
+      "file": "src/commands/signals.ts",
+      "oldFile": "src/commands/signals.ts",
+      "oldStart": 32,
+      "oldLines": 16,
+      "newStart": 33,
+      "newLines": 16,
+      "hash": "89591f5917e303d7"
+    },
+    {
+      "id": "h15",
+      "file": "src/commands/signals.ts",
+      "oldFile": "src/commands/signals.ts",
+      "oldStart": 50,
+      "oldLines": 9,
+      "newStart": 51,
+      "newLines": 9,
+      "hash": "a1b76d8d33823da2"
+    },
+    {
+      "id": "h16",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 51,
+      "oldLines": 6,
+      "newStart": 51,
+      "newLines": 20,
+      "hash": "0dd25fa246ea18ab"
+    },
+    {
+      "id": "h17",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 60,
+      "oldLines": 7,
+      "newStart": 74,
+      "newLines": 7,
+      "hash": "3b0c3945d2802cac"
+    },
+    {
+      "id": "h18",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 154,
+      "oldLines": 7,
+      "newStart": 168,
+      "newLines": 7,
+      "hash": "604a1efb29e26745"
+    },
+    {
+      "id": "h19",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 1,
+      "oldLines": 3,
+      "newStart": 1,
+      "newLines": 4,
+      "hash": "8dc4b0df71493960"
+    },
+    {
+      "id": "h20",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 178,
+      "oldLines": 8,
+      "newStart": 179,
+      "newLines": 8,
+      "hash": "9b7c1d97e78ffafe"
+    },
+    {
+      "id": "h21",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 4,
+      "oldLines": 6,
+      "newStart": 4,
+      "newLines": 7,
+      "hash": "48eae476a08485b7"
+    },
+    {
+      "id": "h22",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 225,
+      "oldLines": 6,
+      "newStart": 226,
+      "newLines": 13,
+      "hash": "7c8c68f4a641fb01"
+    },
+    {
+      "id": "h23",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 248,
+      "oldLines": 7,
+      "newStart": 256,
+      "newLines": 9,
+      "hash": "80b391c04b542a87"
+    },
+    {
+      "id": "h24",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 62,
+      "oldLines": 7,
+      "newStart": 62,
+      "newLines": 7,
+      "hash": "65eaadab5dbf1a47"
+    },
+    {
+      "id": "h25",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 72,
+      "oldLines": 7,
+      "newStart": 72,
+      "newLines": 7,
+      "hash": "c60fc9e642501570"
+    },
+    {
+      "id": "h26",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 278,
+      "oldLines": 6,
+      "newStart": 278,
+      "newLines": 8,
+      "hash": "5e0208345c5c4606"
+    },
+    {
+      "id": "h27",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 290,
+      "oldLines": 12,
+      "newStart": 292,
+      "newLines": 13,
+      "hash": "b91b790dab42ec65"
+    },
+    {
+      "id": "h28",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 566,
+      "oldLines": 7,
+      "newStart": 569,
+      "newLines": 7,
+      "hash": "ad66ec821931228d"
+    },
+    {
+      "id": "h29",
+      "file": "src/loader.ts",
+      "oldFile": "src/loader.ts",
+      "oldStart": 1,
+      "oldLines": 7,
+      "newStart": 1,
+      "newLines": 7,
+      "hash": "ee7df091d3e4006d"
+    },
+    {
+      "id": "h30",
+      "file": "src/loader.ts",
+      "oldFile": "src/loader.ts",
+      "oldStart": 84,
+      "oldLines": 6,
+      "newStart": 84,
+      "newLines": 9,
+      "hash": "5753a51a0f1b871e"
+    },
+    {
+      "id": "h31",
+      "file": "src/plain.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 9,
+      "hash": "af16b0d300be566b"
+    },
+    {
+      "id": "h32",
+      "file": "src/render.ts",
+      "oldFile": "src/render.ts",
+      "oldStart": 1,
+      "oldLines": 3,
+      "newStart": 1,
+      "newLines": 4,
+      "hash": "64558273d99203cc"
+    },
+    {
+      "id": "h33",
+      "file": "src/render.ts",
+      "oldFile": "src/render.ts",
+      "oldStart": 88,
+      "oldLines": 7,
+      "newStart": 89,
+      "newLines": 7,
+      "hash": "172666a2e77339f4"
+    },
+    {
+      "id": "h34",
+      "file": "src/render.ts",
+      "oldFile": "src/render.ts",
+      "oldStart": 108,
+      "oldLines": 7,
+      "newStart": 109,
+      "newLines": 7,
+      "hash": "18ea629c9f218d79"
+    },
+    {
+      "id": "h35",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 3,
+      "oldLines": 6,
+      "newStart": 3,
+      "newLines": 7,
+      "hash": "c3c5114d5e8d2ef0"
+    },
+    {
+      "id": "h36",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 90,
+      "oldLines": 11,
+      "newStart": 91,
+      "newLines": 27,
+      "hash": "5672d65b0e0430be"
+    },
+    {
+      "id": "h37",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 105,
+      "oldLines": 6,
+      "newStart": 122,
+      "newLines": 7,
+      "hash": "d98a1c9441b04faa"
+    },
+    {
+      "id": "h38",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 114,
+      "oldLines": 6,
+      "newStart": 132,
+      "newLines": 12,
+      "hash": "4b5c39133a866eca"
+    },
+    {
+      "id": "h39",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 188,
+      "oldLines": 16,
+      "newStart": 212,
+      "newLines": 6,
+      "hash": "56534ee37f1d2455"
+    },
+    {
+      "id": "h40",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 332,
+      "oldLines": 7,
+      "newStart": 346,
+      "newLines": 7,
+      "hash": "76250b4e8dea299b"
+    },
+    {
+      "id": "h41",
+      "file": "src/schema.ts",
+      "oldFile": "src/schema.ts",
+      "oldStart": 52,
+      "oldLines": 6,
+      "newStart": 52,
+      "newLines": 13,
+      "hash": "ff8747274c5a5fca"
+    },
+    {
+      "id": "h42",
+      "file": "src/schema.ts",
+      "oldFile": "src/schema.ts",
+      "oldStart": 94,
+      "oldLines": 7,
+      "newStart": 101,
+      "newLines": 7,
+      "hash": "e2a85a702bac1c8f"
+    },
+    {
+      "id": "h43",
+      "file": "src/schema.ts",
+      "oldFile": "src/schema.ts",
+      "oldStart": 104,
+      "oldLines": 12,
+      "newStart": 111,
+      "newLines": 13,
+      "hash": "b619bc8d5322f5cd"
+    },
+    {
+      "id": "h44",
+      "file": "src/selection.ts",
+      "oldFile": "src/selection.ts",
+      "oldStart": 152,
+      "oldLines": 3,
+      "newStart": 152,
+      "newLines": 23,
+      "hash": "32fa78961e314dd8"
+    },
+    {
+      "id": "h45",
+      "file": "src/validate.ts",
+      "oldFile": "src/validate.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "5622935d67b13488"
+    },
+    {
+      "id": "h46",
+      "file": "src/validate.ts",
+      "oldFile": "src/validate.ts",
+      "oldStart": 64,
+      "oldLines": 6,
+      "newStart": 64,
+      "newLines": 9,
+      "hash": "71c17fa5ad336004"
+    },
+    {
+      "id": "h47",
+      "file": "test/untrusted.test.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 556,
+      "hash": "4a1f70cbe52dd91a"
+    }
+  ]
+}
