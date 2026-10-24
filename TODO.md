@@ -172,7 +172,7 @@ The brief is `gloss-review.md` (kept outside the repo; consider adding it under
   a filter chosen in one commit still hides groups after opening another (the
   filter button counts are per commit, so labels and rows can disagree). Reset
   the filters when the open commit changes, or keep them per commit.
-- [ ] Timing assertions flake when the full suite runs in parallel: the signals performance test, the untrusted markdown test (3 s budget) and the hostile decision text test (3 s) fail on a loaded machine and pass alone. Give them headroom or measure CPU time instead of wall time. Seen three times on 2026-10-24.
+- [ ] Timing assertions flake when the full suite runs in parallel: the signals performance test, the untrusted markdown test (3 s budget) and the hostile decision text test (3 s) and the Reviews pane decisions test fail on a loaded machine and pass alone. Give them headroom or measure CPU time instead of wall time. Seen three times on 2026-10-24.
 - [ ] The browser tests skip on Node 20 (no global `WebSocket`) and the skip is
   silent, so a Node 20 CI would lose all browser coverage without failing.
 - [ ] Performance: every hunk of the selected group is now built eagerly (the old
