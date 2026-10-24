@@ -10,4 +10,4 @@ rmSync(new URL('dist', root), { recursive: true, force: true })
 // typescript/package.json is exported; its bin (a node script) sits beside it.
 const tsc = new URL('bin/tsc', pathToFileURL(createRequire(import.meta.url).resolve('typescript/package.json')))
 execFileSync(process.execPath, [fileURLToPath(tsc), '-p', 'tsconfig.build.json'], { cwd: root, stdio: 'inherit' })
-for (const asset of ['html/client.js', 'html/style.css', 'ary/client.js', 'ary/style.css', 'ary/index.html']) cpSync(new URL(`src/${asset}`, root), new URL(`dist/${asset}`, root))
+for (const asset of ['html/client.js', 'html/style.css', 'ary/picker.js']) cpSync(new URL(`src/${asset}`, root), new URL(`dist/${asset}`, root))

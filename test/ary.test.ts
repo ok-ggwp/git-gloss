@@ -6,6 +6,7 @@ import { Script } from 'node:vm'
 import { GitError, resolveCommit } from '../src/git.ts'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { browse, skipBrowse, sleep } from './browser.ts'
 import { tmp } from './tmp.ts'
 
 const BIN = join(import.meta.dirname, '..', 'bin', 'git-gloss.js')
@@ -50,112 +51,88 @@ async function withServer(dir: string, fn: (url: string, port: number) => Promis
   }
 }
 
-test('ary serves refs, a commit log with gloss status, and views', async () => {
+const dataOf = (page: string) => JSON.parse(/id="gloss-data">(.*?)<\/script>/s.exec(page)![1])
+
+test('ary serves the desk page itself, with the pickers\' data and no other assets', async () => {
   const { dir, sha } = repo()
   await withServer(dir, async (url) => {
-    const refs = await (await fetch(url + 'api/refs')).json() as any
-    assert.equal(refs.current, 'feature')
-    assert.equal(refs.defaultBase, 'main')
-    assert.deepEqual(refs.branches.map((b: any) => b.name).sort(), ['feature', 'main'])
-    assert.equal(refs.wip, null)
-
-    const log = await (await fetch(url + 'api/log?head=feature&base=main')).json() as any
-    assert.deepEqual(log.commits.map((c: any) => [c.sha, c.glossed]), [[sha[2], false], [sha[1], true]], 'newest first, with gloss status')
-    assert.equal(log.total, 2)
-    assert.equal(log.more, false)
-    const paged = await (await fetch(url + 'api/log?head=feature&limit=1')).json() as any
-    assert.equal(paged.commits.length, 1)
-    assert.equal(paged.more, true)
-    // limit=0 would be an empty page that says there is more, so Load more
-    // would loop; numbers out of range are ignored in favour of the defaults.
-    for (const bad of ['limit=0', 'limit=-5&skip=-1', 'limit=x']) {
-      const r = await (await fetch(url + `api/log?head=feature&${bad}`)).json() as any
-      assert.equal(r.commits.length, 3, bad)
-      assert.equal(r.more, false, bad)
-    }
-
-    const single = await fetch(url + `view?rev=${sha[1]}`)
-    assert.equal(single.status, 200)
-    assert.match(await single.text(), /id="gloss-data"/)
-    // A range shows its unglossed commits too, like `html <range>`.
-    const range = await (await fetch(url + 'view?rev=main..feature')).text()
-    assert.equal(JSON.parse(/id="gloss-data">(.*?)<\/script>/s.exec(range)![1]).commits.length, 2)
-
-    // Uncommitted work: shown once snapshotted, never snapshotted by browsing.
-    writeFileSync(join(dir, 'app.js'), 'd\n')
-    assert.equal((await (await fetch(url + 'api/refs')).json() as any).wip, null)
-    execFileSync(process.execPath, [BIN, 'hunks', 'wip'], { cwd: dir, stdio: 'pipe' })
-    const wip = await (await fetch(url + 'api/refs')).json() as any
-    assert.equal(wip.wip.glossed, false)
-    const page = await (await fetch(url + 'view?rev=wip')).text()
-    assert.equal(JSON.parse(/id="gloss-data">(.*?)<\/script>/s.exec(page)![1]).commits[0].sha, wip.wip.sha)
-  })
-})
-
-test('ary searches commits by message or author, within the range', async () => {
-  const { dir, sha } = repo()
-  const search = async (q: string, extra = '') =>
-    ((await (await fetch(url + `api/log?head=feature&q=${encodeURIComponent(q)}${extra}`)).json()) as any).commits.map((c: any) => c.sha)
-  let url = ''
-  await withServer(dir, async (u) => {
-    url = u
-    assert.deepEqual(await search('ONE'), [sha[1]], 'any case, message')
-    assert.deepEqual(await search('test'), [sha[2], sha[1], sha[0]], 'author, newest first')
-    assert.deepEqual(await search('test', '&base=main'), [sha[2], sha[1]], 'only the commits in the range')
-    assert.deepEqual(await search('nothing like it'), [])
-    assert.deepEqual(await search('--all'), [], 'text is a pattern, never an option')
-    assert.deepEqual(await search('o.e'), [], 'a literal, not a regexp')
-    assert.deepEqual(await search('t', '&limit=1&skip=1'), [sha[1]], 'pages')
-    const none = await (await fetch(u + 'api/log?head=feature&base=main&q=one')).json() as any
-    assert.equal(none.total, null, 'a search has no branch total')
-  })
-})
-
-test('ary serves its page and the assets the page names', async () => {
-  const { dir } = repo()
-  await withServer(dir, async (url) => {
-    const index = await fetch(url)
+    // No selection: redirected to the canonical URL (the head's default view).
+    const bare = await fetch(url, { redirect: 'manual' })
+    assert.equal(bare.status, 302)
+    assert.equal(bare.headers.get('location'), `/?rev=main..feature&head=feature&base=main`)
+    const index = await fetch(url + bare.headers.get('location')!.slice(1))
     assert.equal(index.status, 200)
     assert.match(index.headers.get('content-type')!, /text\/html/)
-    assert.match(index.headers.get('content-security-policy')!, /script-src 'self'/)
+    assert.equal(index.headers.get('cache-control'), 'no-store')
+    assert.equal(index.headers.get('x-content-type-options'), 'nosniff')
+    assert.match(index.headers.get('content-security-policy')!, /frame-ancestors 'none'/)
     const html = await index.text()
-    // Every file the page loads is served, with a type the browser will run.
-    const js = await fetch(url + 'ary.js')
-    assert.match(js.headers.get('content-type')!, /text\/javascript/)
-    const css = await fetch(url + 'ary.css')
-    assert.match(css.headers.get('content-type')!, /text\/css/)
-    assert.match(html, /<script src="\/ary\.js">/)
-    assert.match(html, /<link rel="stylesheet" href="\/ary\.css">/)
-    // The shell has no tests of its own; at least it must parse.
-    const script = await js.text()
-    assert.doesNotThrow(() => new Script(script))
-    assert.ok((await css.text()).length > 100)
+    // As strict as `html`'s page: no connections, no external files.
+    assert.match(html, /Content-Security-Policy" content="default-src 'none'; style-src 'nonce-[^']+'; script-src 'nonce-[^']+'"/)
+    assert.doesNotMatch(html, /connect-src|<script src|<link /)
+    const data = dataOf(html)
+    assert.equal(data.range, 'main..feature')
+    assert.equal(data.commits.length, 2, 'a range shows its unglossed commits too')
+    assert.deepEqual(data.ary, { repo: data.ary.repo, branches: ['feature', 'main'], remotes: [], defaultBase: 'main', head: 'feature', base: 'main', rev: 'main..feature', notice: null })
+    assert.match(html, /function aryBar/)
+    assert.doesNotThrow(() => new Script(/<script nonce="[^"]+">\n(.*?)<\/script>/s.exec(html)![1]))
+    // The old shell's routes are gone.
+    for (const gone of ['ary.js', 'ary.css', 'view?rev=HEAD', 'api/refs', 'api/log?head=feature']) assert.equal((await fetch(url + gone)).status, 404, gone)
+
+    // Choosing a branch (no rev) shows its range against the given base, or its newest commit.
+    const picked = await fetch(url + '?head=feature&base=main', { redirect: 'manual' })
+    assert.equal(picked.headers.get('location'), '/?rev=main..feature&head=feature&base=main')
+    const main = await fetch(url + '?head=main', { redirect: 'manual' })
+    assert.equal(main.status, 302)
+    assert.equal(main.headers.get('location'), `/?rev=${sha[0]}&head=main`)
+    const single = dataOf(await (await fetch(url + `?rev=${sha[1]}`)).text())
+    assert.equal(single.range, null)
+    assert.deepEqual([single.commits[0].sha, single.ary.head, single.ary.base], [sha[1], 'feature', 'main'], 'the pickers default to the checked-out branch')
+
+    // A branch that is gone: the usual one is shown, with a notice, not a redirect.
+    const gone = dataOf(await (await fetch(url + '?head=deleted&base=main', { redirect: 'manual' })).text())
+    assert.equal(gone.ary.head, 'feature')
+    assert.match(gone.ary.notice, /“deleted” no longer exists; showing feature/)
+    const nobase = dataOf(await (await fetch(url + `?rev=${sha[2]}&head=feature&base=deleted`)).text())
+    assert.equal(nobase.ary.base, null)
+    assert.match(nobase.ary.notice, /“deleted”, no longer exists; showing the newest commit of feature\./)
+    const tip = dataOf(await (await fetch(url + '?head=feature')).text())
+    assert.deepEqual([tip.commits.length, tip.commits[0].sha, tip.range, tip.ary.base], [1, sha[2], null, null], 'no base: a one-commit page for the tip')
+
+    // Uncommitted work: the default once snapshotted, never snapshotted by browsing.
+    writeFileSync(join(dir, 'app.js'), 'd\n')
+    assert.equal((await fetch(url + '?rev=wip')).status, 422)
+    assert.equal((await fetch(url, { redirect: 'manual' })).headers.get('location'), `/?rev=main..feature&head=feature&base=main`)
+    execFileSync(process.execPath, [BIN, 'hunks', 'wip'], { cwd: dir, stdio: 'pipe' })
+    assert.equal((await fetch(url, { redirect: 'manual' })).headers.get('location')?.slice(0, 13), '/?rev=wip&hea')
+    const wip = dataOf(await (await fetch(url + '?rev=wip')).text())
+    assert.equal(wip.commits[0].sha, execFileSync('git', ['rev-parse', 'refs/worktree/gloss/wip'], { cwd: dir, encoding: 'utf8' }).trim())
   })
 })
 
 test('ary refuses what it should', async () => {
   const { dir } = repo()
   await withServer(dir, async (url, port) => {
-    assert.equal((await fetch(url + 'view?rev=--output=x')).status, 400, 'an option is not a revision')
-    assert.equal((await fetch(url + 'api/log?head=nope')).status, 422)
-    const none = await fetch(url + 'view?rev=wip')
+    for (const q of ['rev=--output=x', 'head=--all', 'base=-x']) assert.equal((await fetch(url + '?' + q)).status, 400, `${q}: an option is not a revision`)
+    const none = await fetch(url + '?rev=wip')
     assert.equal(none.status, 422)
     assert.match(await none.text(), /no snapshot/)
-    assert.equal((await fetch(url + 'view')).status, 400)
+    assert.equal((await fetch(url + '?rev=nope')).status, 422)
     assert.equal((await fetch(url + 'nowhere')).status, 404)
-    assert.equal((await fetch(url + 'api/refs', { method: 'POST' })).status, 405)
+    assert.equal((await fetch(url, { method: 'POST' })).status, 405)
+    assert.equal((await fetch(url + '?rev=HEAD', { method: 'HEAD' })).status, 200)
     // DNS rebinding: a foreign Host header never reaches git. (fetch won't
     // set Host, so use a raw request.)
     const { request } = await import('node:http')
     const status = await new Promise<number>((resolve, reject) => {
-      request({ host: '127.0.0.1', port, path: '/api/refs', headers: { host: `evil.example:${port}` } }, (r) => { r.resume(); resolve(r.statusCode!) }).on('error', reject).end()
+      request({ host: '127.0.0.1', port, path: '/', headers: { host: `evil.example:${port}` } }, (r) => { r.resume(); resolve(r.statusCode!) }).on('error', reject).end()
     })
     assert.equal(status, 403)
     // Host names are case-insensitive; a client may send them as typed.
     const upper = await new Promise<number>((resolve, reject) => {
-      request({ host: '127.0.0.1', port, path: '/api/refs', headers: { host: `LocalHost:${port}` } }, (r) => { r.resume(); resolve(r.statusCode!) }).on('error', reject).end()
+      request({ host: '127.0.0.1', port, path: '/', headers: { host: `LocalHost:${port}` } }, (r) => { r.resume(); resolve(r.statusCode!) }).on('error', reject).end()
     })
-    assert.equal(upper, 200)
+    assert.equal(upper, 302, 'the default view')
     const hint = await new Promise<string>((resolve, reject) => {
       request({ host: '127.0.0.1', port, path: '/', headers: { host: `evil.example:${port}` } }, (r) => {
         let body = ''
@@ -166,7 +143,7 @@ test('ary refuses what it should', async () => {
     assert.match(hint, new RegExp(`127\\.0\\.0\\.1:${port} and localhost:${port}`), 'the refusal names what is allowed')
     assert.doesNotMatch(hint, /\[::1\]/, 'the server never listens on IPv6')
     // Hostile text in an error message is escaped, not parsed.
-    const bad = await (await fetch(url + 'view?rev=' + encodeURIComponent('<img src=x onerror=1>'))).text()
+    const bad = await (await fetch(url + '?rev=' + encodeURIComponent('<img src=x onerror=1>'))).text()
     assert.doesNotMatch(bad, /<img/)
   })
 })
@@ -178,9 +155,25 @@ test('ary refuses to render an oversized range', async () => {
     `commit refs/heads/big\ncommitter T <t@e> ${1700000000 + i} +0000\ndata 1\nx\n${i ? '' : 'from refs/heads/main\n'}\n`).join('')
   execFileSync('git', ['fast-import', '--quiet'], { cwd: dir, input: stream })
   await withServer(dir, async (url) => {
-    const r = await fetch(url + 'view?rev=main..big')
+    const r = await fetch(url + '?rev=main..big')
     assert.equal(r.status, 422)
     assert.match(await r.text(), /201 commits/)
+  })
+})
+
+test('choosing a branch far ahead of its base shows its newest commit, not an error page', async () => {
+  const { dir } = repo()
+  const stream = Array.from({ length: 201 }, (_, i) =>
+    `commit refs/heads/big\ncommitter T <t@e> ${1700000000 + i} +0000\ndata 1\nx\n${i ? '' : 'from refs/heads/main\n'}\n`).join('')
+  execFileSync('git', ['fast-import', '--quiet'], { cwd: dir, input: stream })
+  const tip = execFileSync('git', ['rev-parse', 'big'], { cwd: dir, encoding: 'utf8' }).trim()
+  await withServer(dir, async (url) => {
+    const r = await fetch(url + '?head=big&base=main')
+    assert.equal(r.status, 200, 'followed the redirect to a page')
+    assert.equal(new URL(r.url).searchParams.get('rev'), tip)
+    const data = dataOf(await r.text())
+    assert.deepEqual([data.commits.length, data.commits[0].sha, data.ary.head, data.ary.base], [1, tip, 'big', 'main'], 'the pickers stay')
+    assert.equal((await fetch(url + '?rev=main..big')).status, 422, 'an explicit oversized range is still refused')
   })
 })
 
@@ -223,12 +216,12 @@ test('the built package serves the ary page', async () => {
       child.stdout.on('data', (d) => { out += d; if (out.includes('\n')) resolve(out.split('\n')[0]) })
       child.on('exit', (code) => reject(new Error(`exited with ${code}: ${err}`)))
     })
-    assert.match(await (await fetch(url)).text(), /<script src="\/ary\.js">/)
-    assert.match(await (await fetch(url + 'ary.js')).text(), /function picker/)
-    assert.ok((await (await fetch(url + 'ary.css')).text()).includes('.combo'))
-    const view = await fetch(url + 'view?rev=HEAD')
-    assert.equal(view.status, 200, 'the HTML view needs its own assets too')
-    assert.match(await view.text(), /id="gloss-data"/)
+    const page = await fetch(url + '?rev=HEAD')
+    assert.equal(page.status, 200)
+    const html = await page.text()
+    assert.match(html, /id="gloss-data"/)
+    assert.match(html, /function picker/, 'the picker script is in the page')
+    assert.ok(html.includes('.combo-panel'), 'and its styles')
   } finally {
     child.kill()
   }
@@ -247,4 +240,96 @@ test('a revision that looks like an option is a bad revision, not a flag', () =>
   } finally {
     process.chdir(before)
   }
+})
+
+// Polls the page until the expression holds (a navigation in between is fine).
+async function until(evaluate: (js: string) => Promise<unknown>, js: string, what: string) {
+  for (let i = 0; i < 60; i++) {
+    if (await evaluate(`(() => { try { return !!(${js}) } catch (e) { return false } })()`)) return
+    await sleep(100)
+  }
+  assert.fail(`timed out waiting for ${what}`)
+}
+
+test('in a browser, the desk is the whole page and picking a branch loads that branch', { skip: skipBrowse }, async () => {
+  const { dir, sha } = repo()
+  await withServer(dir, async (url) => {
+    await browse(url + '?rev=main..feature&head=feature&base=main', async (evaluate) => {
+      assert.equal(await evaluate("document.querySelectorAll('header.top').length"), 1, 'one top bar')
+      assert.equal(await evaluate("document.querySelectorAll('iframe, aside.side').length"), 0, 'no frame, no second sidebar')
+      assert.equal(await evaluate("document.querySelectorAll('aside.rail').length"), 1, 'one rail')
+      const buttons = "[...document.querySelectorAll('header.top .combo-btn')].map(b => b.textContent)"
+      assert.deepEqual(await evaluate(buttons), ['feature', 'main'])
+      assert.equal(await evaluate("document.querySelector('header.top .ary-rev input').value"), 'main..feature')
+
+      // Open the Branch picker, search, pick "main" with the keyboard.
+      await evaluate("document.querySelector('header.top .combo-btn').click()")
+      await evaluate("(() => { const i = document.querySelector('.combo-panel:not([hidden]) input'); i.value = 'ma'; i.dispatchEvent(new Event('input')) })()")
+      assert.equal(await evaluate("[...document.querySelectorAll('.combo-panel:not([hidden]) .combo-item')].map(b => b.textContent).join()"), 'main', 'the search narrows the list')
+      await evaluate("document.querySelector('.combo-panel:not([hidden]) .combo-item').click()")
+      await until(evaluate, "location.search.includes('head=main')", 'the page for main')
+      await until(evaluate, "document.querySelector('header.top .combo-btn')?.textContent === 'main'", 'the picker showing main')
+      assert.equal(await evaluate("document.querySelectorAll('header.top').length"), 1, 'still one top bar')
+      assert.equal(await evaluate("document.querySelector('header.top .sha').textContent"), sha[0].slice(0, 7), 'main shows its newest commit')
+      assert.equal(await evaluate("document.querySelectorAll('header.top .combo-btn')[1].textContent"), '(none: just the newest commit)', 'main is compared with nothing')
+
+      // The revision box loads whatever is typed.
+      await evaluate(`(() => { const i = document.querySelector('.ary-rev input'); i.value = ${JSON.stringify(sha[1])}; i.form.requestSubmit() })()`)
+      await until(evaluate, `location.search.includes('rev=${sha[1]}')`, 'the typed revision')
+      await until(evaluate, `document.querySelector('header.top .sha')?.textContent === ${JSON.stringify(sha[1].slice(0, 7))}`, 'its page')
+    })
+  })
+})
+
+test('hostile branch names, revs and bases never run or break the page', { skip: skipBrowse }, async () => {
+  const { dir } = repo()
+  const payload = 'x</script><img/src=x/onerror=window.PWNED=1>'
+  execFileSync('git', ['branch', payload, 'feature'], { cwd: dir })
+  const q = encodeURIComponent(payload)
+  // The only </script that may appear is the page's own two.
+  const closers = (html: string) => (html.match(/<\/script/gi) ?? []).length
+  await withServer(dir, async (url) => {
+    for (const path of [`?rev=main..feature&head=${q}&base=main`, `?head=feature&base=${q}&rev=HEAD`, `?head=${q}&base=${q}`, `?rev=${q}`, `?rev=${q}&head=${q}&base=${q}`]) {
+      const r = await fetch(url + path, { redirect: 'manual' })
+      const html = await r.text()
+      assert.doesNotMatch(html, /<img/i, `${path}: no markup from the data`)
+      if (r.status === 200) assert.equal(closers(html), 2, `${path}: no </script from data`)
+      else assert.ok(r.status === 302 || r.status === 422, `${path}: ${r.status}`)
+    }
+    // A real branch with that name: the picker lists it literally.
+    await browse(url + `?rev=feature&head=${q}&base=main`, async (evaluate) => {
+      assert.equal(await evaluate("document.querySelector('header.top .combo-btn').textContent"), payload, 'the picker shows the literal text')
+      await evaluate("document.querySelector('header.top .combo-btn').click()")
+      assert.ok(await evaluate(`[...document.querySelectorAll('.combo-panel:not([hidden]) .combo-item')].some(b => b.textContent === ${JSON.stringify(payload)})`), 'and so does the list')
+      assert.equal(await evaluate("document.querySelectorAll('img').length"), 0, 'no element was made from it')
+      assert.equal(await evaluate("typeof window.PWNED"), 'undefined', 'no handler ran')
+    })
+    // A gone branch of that name: the notice shows it literally.
+    await browse(url + `?rev=feature&head=${q}gone&base=${q}gone`, async (evaluate) => {
+      assert.equal(await evaluate("document.querySelector('.ary-notice').textContent.includes(" + JSON.stringify(payload + 'gone') + ")"), true, 'the notice shows the literal text')
+      assert.equal(await evaluate("document.querySelectorAll('img').length"), 0)
+      assert.equal(await evaluate("typeof window.PWNED"), 'undefined')
+      assert.equal(await evaluate("document.querySelectorAll('header.top').length"), 1, 'the page is intact')
+    })
+  })
+})
+
+test('in a browser, the rail fits under a sticky top bar on wide screens (ary and html pages)', { skip: skipBrowse }, async () => {
+  const { dir, sha } = repo()
+  const out = join(dir, 'view.html')
+  execFileSync(process.execPath, [BIN, 'html', 'main..feature', '-o', out], { cwd: dir, stdio: 'pipe' })
+  const check = async (evaluate: (js: string) => Promise<unknown>, send: (m: string, p?: object) => Promise<any>, what: string) => {
+    await send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 300, deviceScaleFactor: 1, mobile: false })
+    for (const y of [0, 400]) {
+      await evaluate(`window.scrollTo(0, ${y})`)
+      await sleep(100)
+      assert.equal(await evaluate("document.querySelector('header.top').getBoundingClientRect().top"), 0, `${what}: top bar at the top (scroll ${y})`)
+      assert.equal(await evaluate('document.querySelector(".rail").getBoundingClientRect().bottom <= innerHeight'), true, `${what}: the whole rail is reachable (scroll ${y})`)
+    }
+  }
+  await withServer(dir, async (url) => {
+    await browse(url + '?rev=main..feature&head=feature&base=main', (evaluate, send) => check(evaluate, send, 'ary range'))
+    await browse(url + `?rev=${sha[2]}&head=feature&base=main`, (evaluate, send) => check(evaluate, send, 'ary commit'))
+  })
+  await browse(`file://${out}`, (evaluate, send) => check(evaluate, send, 'html range'))
 })

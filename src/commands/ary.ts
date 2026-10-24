@@ -3,11 +3,11 @@ import { createAry } from '../ary/server.ts'
 import { GlossError, git } from '../git.ts'
 import { openInBrowser } from './html.ts'
 
-export const usage = 'ary [--port <n>] [--no-open]   browse glosses of branches, commits and uncommitted work in a local web page'
+export const usage = 'ary [--port <n>] [--no-open]   browse glosses of branches, commits and uncommitted work in a local web page (the html view with branch pickers)'
 
 // Starts a read-only server on this machine and keeps running until stopped.
-// The browser page lists branches and commits and shows each selection with
-// the same view as `git gloss html`.
+// The browser page is the same view as `git gloss html`, with branch pickers
+// and a revision box in its top bar; each choice loads a new page.
 export function run(argv: string[]): number {
   const { values } = parseArgs({
     args: argv,
