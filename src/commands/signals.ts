@@ -2,7 +2,7 @@ import { parseArgs } from 'node:util'
 import { loadConfig } from '../config.ts'
 import { commitDiff, diffBetween, git, GitError, resolveCommit, workingDiff } from '../git.ts'
 import { parseDiff } from '../diff.ts'
-import { analyze, type ChangeSignals } from '../signals.ts'
+import { analyze, CONFIG_EDIT_NOTE, type ChangeSignals } from '../signals.ts'
 import { impactRank } from '../attention.ts'
 import { ATTENTION_STYLE, impactTag, page, style } from '../render.ts'
 
@@ -24,6 +24,7 @@ export function summaryLines(sig: ChangeSignals, max = 6): string[] {
   for (const f of files.slice(0, max)) out.push(`  ${(f.floor + ':').padEnd(10)} ${f.file}${f.why.length ? ` (${f.why.join('; ')})` : ''}`)
   if (files.length > max) out.push(`  ... and ${files.length - max} more at shared or above (git gloss signals)`)
   for (const r of sig.floor.reasons.filter((r) => / files changed /.test(r))) out.push(`  large:     ${r}`)
+  if (sig.floor.reasons.includes(CONFIG_EDIT_NOTE)) out.push(`  note:      ${CONFIG_EDIT_NOTE}`)
   out.push(`  stats: ${statsLine(sig.stats)}`)
   return out
 }

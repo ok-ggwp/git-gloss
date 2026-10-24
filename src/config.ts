@@ -1,5 +1,3 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { z } from 'zod'
 import { GlossError, gitTry } from './git.ts'
 import { globToRegExp } from './glob.ts'
@@ -137,6 +135,8 @@ export function mergeConfig(raw: z.infer<typeof RepoConfig> | undefined): Config
   for (const k of PATH_CLASSES) paths[k] = list(DEFAULTS.paths[k], raw?.paths?.[k], 'globs')
   const patterns = {} as Record<PatternClass, Pattern[]>
   for (const k of PATTERN_CLASSES) patterns[k] = list<RawPattern>(DEFAULTS.patterns[k], raw?.patterns?.[k], 'regexes').map(compile)
+  // Editing the config changes how every later change is rated; no repo config can drop this.
+  paths.sensitive = [...paths.sensitive, CONFIG_FILE]
   return { attention: { ...DEFAULTS.attention, ...raw?.attention }, paths, patterns }
 }
 
@@ -148,30 +148,52 @@ function gitInt(key: string): number | undefined {
   return Number(v)
 }
 
+// The config is read from the base branch, not the working tree: a change under
+// review must not be able to reclassify its own paths or add patterns that
+// lower its own floor. The base is the merge base of the checked-out HEAD (not
+// the commit under review) and the first of origin/main, main, origin/master,
+// master that shares history with it, so a long-lived branch sees the config as
+// of its fork point. With none of them there
+// is no trusted base, so the built-in defaults apply (with a warning), never
+// the change's own config. Editing the file in a change is itself flagged: it
+// is always a `sensitive` path.
+function trustedRef(): string | null {
+  // Full ref names, so a tag called "main" cannot stand in for the branch.
+  for (const b of ['refs/remotes/origin/main', 'refs/heads/main', 'refs/remotes/origin/master', 'refs/heads/master']) {
+    const mb = gitTry(['merge-base', 'HEAD', b])?.trim()
+    if (mb) return mb
+  }
+  console.error('warning: no base branch (origin/main, main, origin/master, master) found, so .gloss/config.json is not read; using the built-in defaults')
+  return null
+}
+
+function readRepoConfig(): z.infer<typeof RepoConfig> | undefined {
+  const ref = trustedRef()
+  const text = ref ? gitTry(['show', `${ref}:${CONFIG_FILE}`]) : null
+  if (text === null) return undefined
+  let json: unknown
+  try {
+    json = JSON.parse(text)
+  } catch (err) {
+    throw new ConfigError(`${CONFIG_FILE} is not valid JSON: ${(err as Error).message}`)
+  }
+  const parsed = RepoConfig.safeParse(json)
+  if (!parsed.success) throw new ConfigError(describe(CONFIG_FILE, parsed.error))
+  return parsed.data
+}
+
 // Per working directory, so a command over many commits resolves the repo once.
 const cache = new Map<string, Config>()
 export const resetConfigCache = () => cache.clear()
 
-// The effective config for the repository the process runs in. Throws
-// ConfigError (with the file and key) for a malformed repo config or git
-// setting. Memoised per working directory.
+// The effective config for the repository the process runs in (the repo file
+// as of the base branch, see trustedRef). Throws ConfigError (with the file
+// and key) for a malformed repo config or git setting. Memoised per working
+// directory.
 export function loadConfig(): Config {
   const hit = cache.get(process.cwd())
   if (hit) return hit
-  const root = gitTry(['rev-parse', '--show-toplevel'])?.trim() ?? ''
-  let raw: z.infer<typeof RepoConfig> | undefined
-  const file = root ? join(root, CONFIG_FILE) : ''
-  if (file && existsSync(file)) {
-    let json: unknown
-    try {
-      json = JSON.parse(readFileSync(file, 'utf8'))
-    } catch (err) {
-      throw new ConfigError(`${CONFIG_FILE} is not valid JSON: ${(err as Error).message}`)
-    }
-    const parsed = RepoConfig.safeParse(json)
-    if (!parsed.success) throw new ConfigError(describe(CONFIG_FILE, parsed.error))
-    raw = parsed.data
-  }
+  const raw = readRepoConfig()
   const config = mergeConfig(raw)
   const files = gitInt('largeChangeFiles')
   if (files !== undefined) config.attention.largeChangeFiles = files

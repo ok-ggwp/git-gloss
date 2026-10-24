@@ -183,7 +183,7 @@ Notes using these fields are format 4; a git-gloss that predates them refuses su
 
 ### Config
 
-The built-in defaults name no language, framework or tool, only common file names. A repo adds to them with `.gloss/config.json`, committed in that repo:
+The built-in defaults name no language, framework or tool, only common file names. A repo adds to them with `.gloss/config.json`, committed in that repo. The file is read from the base branch (the merge base of the checked-out `HEAD` and `origin/main`, `main`, `origin/master` or `master`, so a long-lived branch sees the config as of where it forked; a commit on the base branch itself reads its own config, flagged `sensitive` if it edits the file), never from the working tree, so a change cannot reclassify its own paths; a config edit only takes effect once it is on the base branch. With none of those branches the defaults apply, with a warning. Editing the file is itself always a `sensitive` path. A pattern that takes over 250 ms on a hunk is cut off and from then on counts as matching every changed line (with a warning), so a slow or padded line raises the floor and never lowers it:
 
 ```json
 {

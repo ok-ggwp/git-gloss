@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { parseDiff } from '../src/diff.ts'
 import { matchGlob } from '../src/glob.ts'
-import { mergeConfig, RepoConfig } from '../src/config.ts'
+import { DEFAULTS, mergeConfig, RepoConfig } from '../src/config.ts'
 import { analyze, pathClasses } from '../src/signals.ts'
 import { analyzeGroups, groupInputsFor, ratingProblems } from '../src/floor.ts'
 import type { Annotation } from '../src/schema.ts'
@@ -29,9 +29,15 @@ function repo(files: Record<string, string> = { 'app.js': 'run()\n', 'util.js': 
     writeFileSync(join(dir, file), text)
   }
   const commit = (msg: string) => { g('add', '-A'); g('commit', '-qm', msg); return g('rev-parse', 'HEAD') }
+  // The config is read from the base branch, so it must be committed to count.
+  const commitConfig = (text: string) => {
+    write('.gloss/config.json', text)
+    g('add', '.gloss/config.json')
+    g('commit', '-qm', 'config', '--', '.gloss/config.json')
+  }
   for (const [f, t] of Object.entries(files)) write(f, t)
   commit('base')
-  return { dir, g, write, commit, config: (c: object) => write('.gloss/config.json', JSON.stringify(c)) }
+  return { dir, g, write, commit, commitConfig, config: (c: object) => commitConfig(JSON.stringify(c)) }
 }
 
 const group = (id: string, hunks: string[], extra: object = {}) =>
@@ -307,7 +313,7 @@ test('config errors name the file and the key; add and signals fail clearly, not
     ['unknown class', { paths: { weird: ['x'] } }, /paths: .*"weird"/],
   ]
   for (const [name, content, re] of cases) {
-    r.write('.gloss/config.json', typeof content === 'string' ? content : JSON.stringify(content))
+    r.commitConfig(typeof content === 'string' ? content : JSON.stringify(content))
     for (const args of [['signals', 'HEAD'], ['hunks', 'HEAD']]) {
       const out = gloss(r.dir, args)
       if (args[0] === 'signals') { assert.equal(out.code, 1, name); assert.match(out.err, re, name); assert.doesNotMatch(out.err, /\bat .*\.ts:\d+/, 'no stack trace') }
@@ -422,8 +428,8 @@ test('show marks derived impact and attention; unrated remains where signals can
   assert.match(show, /mechanical +\(contract\) +lock/)
   assert.match(show, /impact in parentheses is derived/)
   // A malformed config: no signals, so unrated.
-  r.write('.gloss/config.json', '{ bad')
-  const bad = gloss(r.dir, ['show'])
+  r.commitConfig('{ bad')
+  const bad = gloss(r.dir, ['show', 'HEAD~1'])
   assert.match(bad.out, /attention: unrated/)
   assert.match(bad.err, /warning: signals unavailable/)
 })
@@ -439,7 +445,7 @@ test('hunks ends with the signals summary', () => {
   assert.match(tail, /^signals: floor attention = must-read$/m)
   assert.match(tail, /^ {2}sensitive: src\/devices\/gauge\.ts \(path: sensitive; pattern: device write\)$/m)
   assert.match(tail, /^ {2}contract: {2}package-lock\.json \(lockfile; transitive bump: some-pkg 7\.1\.0 -> 7\.1\.2\)$/m)
-  assert.match(tail, /^ {2}stats: 4 files, 4 hunks, \+\d+ -\d+, 0 test files/m)
+  assert.match(tail, /^ {2}stats: 3 files, 3 hunks, \+\d+ -\d+, 0 test files/m)
   assert.doesNotMatch(gloss(r.dir, ['hunks', 'wip', '--json']).out, /signals/, '--json is unchanged')
 })
 
@@ -484,7 +490,6 @@ test('fixture: CI chore with a lockfile that also bumps an unrelated package -> 
 test('fixture: bug fixes with a configured device write -> must-read; the untested group is flagged', () => {
   const r = repo({ 'src/shared-lib/service.ts': 'export const f = () => 1\n', 'src/devices/gauge.ts': 'set(x)\n', 'src/ui/label.ts': 'export const t = "Sav"\n', 'src/devices/gauge.test.ts': 'test(1)\n' })
   r.config({ paths: { shared: ['src/shared-lib/**'] }, patterns: { sensitive: [sensitiveDevice] } })
-  r.commit('config')
   r.write('src/shared-lib/service.ts', 'export const f = () => 2\n')
   r.write('src/devices/gauge.ts', 'device.write(brightness)\n')
   r.write('src/ui/label.ts', 'export const t = "Save"\n')
@@ -519,17 +524,22 @@ test('fixture: a lint gate over many files; a configured event pattern flags the
   for (let i = 0; i < 60; i++) files[`src/c${i}.ts`] = `const a${i} = 1\n`
   files['src/button.ts'] = "events.emit('pressed')\n"
   files['src/menu.ts'] = "events.emit('opened')\n"
-  const r = repo(files)
-  for (let i = 0; i < 60; i++) r.write(`src/c${i}.ts`, `const a${i} = 1;\n`)
-  r.write('src/button.ts', "events.emit('press')\n")
-  r.write('src/menu.ts', "events.emit('open')\n")
-  r.commit('lint')
-  const plain = JSON.parse(gloss(r.dir, ['signals', 'HEAD', '--json']).out)
+  const lint = (withConfig: boolean) => {
+    const r = repo(files)
+    if (withConfig) r.config({ patterns: { contract: [{ regex: 'events\\.emit\\(', name: 'component event' }] } })
+    for (let i = 0; i < 60; i++) r.write(`src/c${i}.ts`, `const a${i} = 1;\n`)
+    r.write('src/button.ts', "events.emit('press')\n")
+    r.write('src/menu.ts', "events.emit('open')\n")
+    r.commit('lint')
+    return r
+  }
+  const r0 = lint(false)
+  const plain = JSON.parse(gloss(r0.dir, ['signals', 'HEAD', '--json']).out)
   assert.equal(plain.stats.files, 62)
   assert.equal(plain.floor.attention, 'careful', 'many files alone make it careful')
   assert.equal(plain.hunks.flatMap((h: { hits: unknown[] }) => h.hits).length, 0, 'nothing flags the renames without a configured pattern')
 
-  r.config({ patterns: { contract: [{ regex: 'events\\.emit\\(', name: 'component event' }] } })
+  const r = lint(true)
   const sig = JSON.parse(gloss(r.dir, ['signals', 'HEAD', '--json']).out)
   assert.equal(sig.floor.attention, 'careful')
   assert.equal(sig.floor.impact, 'contract')
@@ -580,4 +590,90 @@ test('a pattern with the g or y flag still hits every changed line', () => {
   const hits = analyze(hs, cfg).hunks[0].hits
   assert.equal(hits.filter((x) => x.name === 'device write').length, 3)
   assert.equal(hits.filter((x) => x.name === 'sticky').length, 3, 'y is dropped too, so it matches anywhere in the line')
+})
+
+// ---- hostile config ----
+
+test('a catastrophic regex in the config is cut off and counts as a hit, not run to completion', () => {
+  const r = repo({ 'app.js': 'run()\n' })
+  r.config({ patterns: { sensitive: ['(a+)+$'] } })
+  r.write('app.js', `${'a'.repeat(40)}!\n`)
+  const t = Date.now()
+  const out = gloss(r.dir, ['signals', 'wip', '--json'])
+  assert.equal(out.code, 0)
+  assert.ok(Date.now() - t < 10_000, 'finishes well inside the time the pattern would need')
+  assert.match(out.err, /took over \d+ms and is treated as matching/)
+  assert.equal(JSON.parse(out.out).floor.impact, 'sensitive', 'a timed-out pattern fails closed')
+})
+
+test('padding a line does not hide a hit from the patterns', () => {
+  const r = repo({ 'app.js': 'run()\n' })
+  r.config({ patterns: { sensitive: ['password'] } })
+  r.write('app.js', `${'x'.repeat(5000)} password\n`)
+  assert.equal(JSON.parse(gloss(r.dir, ['signals', 'wip', '--json']).out).floor.impact, 'sensitive')
+})
+
+test('with no base branch the config is not read at all, not taken from the change', () => {
+  const r = repo({ 'src/auth/login.js': 'check()\n' })
+  r.g('branch', '-m', 'trunk')
+  r.g('checkout', '-q', '-b', 'feature')
+  r.write('.gloss/config.json', JSON.stringify({ paths: { docs: ['src/auth/**'] } }))
+  r.write('src/auth/login.js', 'skip()\n')
+  r.commit('reclassify')
+  const out = gloss(r.dir, ['signals', 'HEAD', '--json'])
+  assert.match(out.err, /no base branch .* using the built-in defaults/)
+  assert.equal(JSON.parse(out.out).hunks.find((h: { file: string }) => h.file === 'src/auth/login.js').floor, 'sensitive')
+})
+
+test('the config comes from the base branch: neither the working tree nor the change itself can lower its own floor', () => {
+  const r = repo({ 'src/auth/login.js': 'check()\n' })
+  r.g('checkout', '-q', '-b', 'feature')
+  // A change that reclassifies its own path as docs, uncommitted...
+  r.write('.gloss/config.json', JSON.stringify({ paths: { docs: ['src/auth/**'] } }))
+  r.write('src/auth/login.js', 'skip()\n')
+  let sig = JSON.parse(gloss(r.dir, ['signals', 'wip', '--json']).out)
+  assert.equal(sig.floor.impact, 'sensitive', 'the working-tree config is ignored')
+  // ...and committed on the branch.
+  r.commit('reclassify')
+  sig = JSON.parse(gloss(r.dir, ['signals', 'HEAD', '--json']).out)
+  const auth = (s: { hunks: { file: string; floor: string }[] }) => s.hunks.find((h) => h.file === 'src/auth/login.js')!.floor
+  assert.equal(auth(sig), 'sensitive', 'the branch\'s own config does not apply to the branch')
+  assert.ok(sig.hunks.some((h: { file: string; floor: string }) => h.file === '.gloss/config.json' && h.floor === 'sensitive'), 'editing the config is itself flagged')
+})
+
+test('padding a line cannot switch a trusted pattern off for the other hunks', () => {
+  const r = repo({ 'a.js': 'a()\n', 'b.js': 'b()\n' })
+  r.config({ patterns: { sensitive: ['foo.*bar.*baz'] } })
+  r.write('a.js', `${'foo '.repeat(20000)}\n`)
+  r.write('b.js', 'foo bar baz\n')
+  const sig = JSON.parse(gloss(r.dir, ['signals', 'wip', '--json']).out)
+  assert.equal(sig.hunks.find((h: { file: string }) => h.file === 'b.js').floor, 'sensitive', 'the other hunk still hits')
+})
+
+test('a base config that replaces the sensitive paths still rates a config edit sensitive', () => {
+  const r = repo({ 'app.js': 'run()\n' })
+  r.config({ paths: { sensitive: { extends: false, globs: ['src/other/**'] } } })
+  r.write('.gloss/config.json', '{}')
+  const sig = JSON.parse(gloss(r.dir, ['signals', 'wip', '--json']).out)
+  assert.equal(sig.hunks.find((h: { file: string }) => h.file === '.gloss/config.json').floor, 'sensitive')
+})
+
+test('mergeConfig does not mutate the built-in defaults', () => {
+  const before = [...DEFAULTS.paths.sensitive]
+  mergeConfig(undefined)
+  mergeConfig(undefined)
+  assert.deepEqual(DEFAULTS.paths.sensitive, before)
+})
+
+test('a change that edits the config says its own edit was not used to rate it', () => {
+  const r = repo({ 'app.js': 'run()\n' })
+  r.write('.gloss/config.json', '{}')
+  r.write('app.js', 'run2()\n')
+  r.commit('edit config')
+  const sig = gloss(r.dir, ['signals', 'HEAD'])
+  assert.match(sig.out, /\.gloss\/config\.json is edited here; this change is rated with the base branch's config/)
+  assert.match(gloss(r.dir, ['hunks', 'HEAD']).out, /is edited here; this change is rated with the base branch's config/)
+  const groups = [group('all', ['h1', 'h2'])]
+  const add = gloss(r.dir, ...addArgs(['--dry-run'], groups, { level: 'must-read', focus: ['all'] }))
+  assert.match(add.err, /warning: .*is edited here; this change is rated with the base branch's config/)
 })

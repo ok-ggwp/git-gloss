@@ -8,21 +8,6 @@ the code only.
 
 ## Security: do these before the next release
 
-- [ ] **A repo's own config can hang git-gloss (verified).** `.gloss/config.json`
-  is read from the working tree, and its regexes run against every changed
-  line. A branch under review that ships `(a+)+$` makes `git gloss signals wip`
-  run for over 40 seconds (killed by a timeout; a harmless regex took 0.4s).
-  `add`, `hunks`, `show` and `html` all run the analysis, so a reviewer who
-  checks out such a branch is stalled. Denial of service only, but easy.
-  Options: run matching under a time budget (`vm` timeout or a worker),
-  cap the length of lines scanned, reject patterns that look catastrophic.
-- [ ] **The floor is computed with config the change's author controls (read).**
-  Because config comes from the checked-out tree, a change can reclassify its
-  own paths (for example mark `src/auth/**` as `test` or `docs`, which cap the
-  floor at local) and so lower the floor that is meant to stop under-rating.
-  Read config from a trusted ref (the base branch, or the merge base) rather
-  than the change under review, and show a warning when the change itself edits
-  `.gloss/config.json`.
 - [ ] Look at the other places untrusted text enters: notes fetched from a
   remote (huge or malformed JSON), the `ary` server's host check and request
   handling, and the paths `html -o` will write to. See "Review process".
@@ -38,6 +23,13 @@ the code only.
 - [ ] Bump the git-gloss dependency in git-gud (it bundles 0.2.0 and cannot read
   format-4 glosses, so `git gud review` refuses them). Until then, reviews need a
   copy of git-gud pointed at the current build.
+
+- [ ] A timed-out pattern now counts as matching every line (fails closed) and
+  warns on stderr, but the 250 ms budget is wall-clock, so on a loaded machine a
+  slow pattern can raise the floor on one run and not another, and the hit says
+  nothing about a timeout. Carry a "pattern timed out" marker into
+  `signals --json`, `show` and `html`. Found by the honesty and bugs reviews of the config hardening.
+- [ ] `readRepoConfig` turns any git failure into "no config" without a warning (a failing `git show` on an existing base ref, or a failing `merge-base` reported as "no base branch"). Distinguish "no file" from "git failed". From the honesty review of the config hardening.
 
 ## Attention and impact: the rest of the brief
 

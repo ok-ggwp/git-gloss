@@ -3,8 +3,9 @@ import type { Hunk } from './diff.ts'
 import { bodyLines } from './selection.ts'
 import type { AttentionLevel, Impact } from './schema.ts'
 import { attentionForImpact, impactRank, maxAttention, maxImpact } from './attention.ts'
-import { PATH_CLASSES, PATTERN_CLASSES, type Config, type PathClass, type PatternClass } from './config.ts'
+import { CONFIG_FILE, PATH_CLASSES, PATTERN_CLASSES, type Config, type PathClass, type PatternClass } from './config.ts'
 import { globToRegExp } from './glob.ts'
+import { matchLines } from './safe-match.ts'
 
 // Computed signals: what the diff itself says about how much attention it
 // deserves, from path globs and line patterns in the config (no knowledge of
@@ -129,13 +130,14 @@ export function hunkSignals(h: Hunk, cfg: Config): HunkSignals {
   const hits: PatternHit[] = []
   // Only added and removed lines: never context, never the @@ header.
   if (h.text.startsWith('@@') && (h.added || h.removed)) {
-    for (const l of bodyLines(h)) {
-      if (l.idx === null || l.kind === 'ctx' || l.kind === 'meta') continue
-      const text = l.raw.slice(1)
-      for (const c of PATTERN_CLASSES) {
-        for (const p of cfg.patterns[c]) {
-          if (p.re.test(text)) hits.push({ class: c, name: p.name, line: l.idx, sign: l.kind === 'add' ? '+' : '-', text: clip(text), damped })
-        }
+    const lines = bodyLines(h).filter((l) => l.idx !== null && l.kind !== 'ctx' && l.kind !== 'meta')
+    const texts = lines.map((l) => l.raw.slice(1))
+    for (const c of PATTERN_CLASSES) {
+      for (const p of cfg.patterns[c]) {
+        const found = matchLines(p.re, texts)
+        lines.forEach((l, i) => {
+          if (found[i]) hits.push({ class: c, name: p.name, line: l.idx as number, sign: l.kind === 'add' ? '+' : '-', text: clip(texts[i]), damped })
+        })
       }
     }
   }
@@ -289,6 +291,9 @@ function dependencyChanges(hs: Hunk[], sigs: HunkSignals[]): DependencyChange[] 
 
 // ---- the whole change ----
 
+// Said wherever the floor reasons are: the change's own edit is not what rated it.
+export const CONFIG_EDIT_NOTE = `${CONFIG_FILE} is edited here; this change is rated with the base branch's config, not this edit`
+
 export function analyze(hunks: Hunk[], cfg: Config): ChangeSignals {
   const sigs = hunks.map((h) => hunkSignals(h, cfg))
   const deps = dependencyChanges(hunks, sigs)
@@ -340,5 +345,6 @@ export function analyze(hunks: Hunk[], cfg: Config): ChangeSignals {
     attention = maxAttention(attention, 'careful')
     reasons.push(`${stats.files} files changed (more than ${cfg.attention.largeChangeFiles})`)
   }
+  if (files.has(CONFIG_FILE)) reasons.push(CONFIG_EDIT_NOTE)
   return { stats, hunks: sigs, files: fileList, dependencies: deps, floor: { impact, attention, reasons } }
 }

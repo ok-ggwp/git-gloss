@@ -3,7 +3,7 @@ import { ConfigError, loadConfig, type Config } from './config.ts'
 import type { LoadedGloss } from './loader.ts'
 import { attentionForImpact, attentionRank, impactRank, maxAttention, maxImpact, raise } from './attention.ts'
 import { servesOf, type Annotation, type AttentionLevel, type Group, type Impact } from './schema.ts'
-import { analyze, partFloor, type ChangeSignals, type HunkSignals } from './signals.ts'
+import { analyze, CONFIG_EDIT_NOTE, partFloor, type ChangeSignals, type HunkSignals } from './signals.ts'
 import { changedCount, selections } from './selection.ts'
 
 // What a group claims of the diff: whole hunks, or some of a hunk's changed lines.
@@ -143,6 +143,7 @@ export type RatingProblems = {
 
 export function ratingProblems(a: Annotation, an: Analysis): RatingProblems {
   const warnings: string[] = []
+  if (an.signals.floor.reasons.includes(CONFIG_EDIT_NOTE)) warnings.push(CONFIG_EDIT_NOTE)
   for (const g of a.groups) {
     const f = an.groups.get(g.id)
     // A floor of plain "module" is the baseline for source files, not a signal
