@@ -14,12 +14,6 @@ the code only.
 
 ## Release
 
-- [ ] Release git-gloss 0.4.0. `main` has formats and features that older
-  versions refuse to read (note format 4): readers at or below 0.3.0 report
-  "written by a newer git-gloss; upgrade to read it" on any gloss that uses
-  impact, impact_reason or attention. Say so in the release notes, and note that
-  one format-4 commit in a range makes an old `show <range>`, `html` and `ary`
-  fail for the whole range.
 - [ ] Bump the git-gloss dependency in git-gud (it bundles 0.2.0 and cannot read
   format-4 glosses, so `git gud review` refuses them). Until then, reviews need a
   copy of git-gud pointed at the current build.
