@@ -4,9 +4,10 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { chromium, dumpDom } from './browser.ts'
 import { parseDiff } from '../src/diff.ts'
 import { matchHunks } from '../src/loader.ts'
-import { pageLines } from '../src/html/data.ts'
+import { pageLines, reviewOrder } from '../src/html/data.ts'
 import { bodyLines, formatRanges, parseRef, slice } from '../src/selection.ts'
 
 const BIN = join(import.meta.dirname, '..', 'bin', 'git-gloss.js')
@@ -433,16 +434,11 @@ test('html cannot be broken out of by gloss text, diff content or the commit sub
   assert.ok(scripts.length > 0 && scripts.every((m) => m[1].includes(`nonce="${nonce}"`)), 'every executable script carries the nonce')
 })
 
-const chromium = ['chromium', 'google-chrome-stable', 'google-chrome']
-  .find((b) => spawnSync('which', [b]).status === 0)
-
 test('a hostile gloss renders as inert text in a real browser', { skip: !chromium && 'no Chromium found' }, () => {
   const dir = hostileRepo()
   const out = join(dir, 'view.html')
   gloss(dir, ['html', '-o', out])
-  const dom = execFileSync(chromium!, ['--headless=new', '--disable-gpu', '--no-sandbox', '--dump-dom', `file://${out}`], {
-    encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 60000,
-  })
+  const dom = dumpDom(`file://${out}#g-retry-core`)
   assert.doesNotMatch(dom, /<title>pwned/)
   assert.doesNotMatch(dom, /<img/)
   assert.match(dom, /class="intent">&lt;\/script&gt;/, 'the page rendered and shows the payload as text')
@@ -458,6 +454,25 @@ test('html shows missing hunks as placeholders and counts stale hunks against th
   assert.equal(g.stale, 1)
   assert.equal(g.total, 2)
   assert.deepEqual(g.hunks.map((h: { id: string; status: string }) => [h.id, h.status]), [['h1', 'ok'], ['h2', 'missing']])
+})
+
+test('reviewOrder: focus first, then impact (declared or derived), then size, ties keep their order', () => {
+  const g = (id: string, impact: string | undefined, size: number, derived?: string) =>
+    ({ id, impact, impact_derived: derived, added: size, removed: 0 }) as never
+  const groups = [g('a', 'local', 9), g('b', 'contract', 1), g('c', undefined, 5), g('d', 'contract', 4), g('e', undefined, 5, 'shared'), g('f', 'local', 9)]
+  assert.deepEqual(reviewOrder(groups), ['d', 'b', 'e', 'a', 'f', 'c'])
+  assert.deepEqual(reviewOrder(groups, ['c', 'a']), ['c', 'a', 'd', 'b', 'e', 'f'], 'focus order wins')
+  assert.deepEqual(reviewOrder(groups), reviewOrder(groups), 'deterministic')
+})
+
+test('the page renders and honours the #hash with localStorage disabled', { skip: !chromium && 'no Chromium found' }, () => {
+  const dir = repo()
+  gloss(dir, ['add'], annotation([retryCore, config]))
+  const out = join(dir, 'view.html')
+  gloss(dir, ['html', '-o', out])
+  const dom = dumpDom(`file://${out}#g-config`, { flags: ['--disable-local-storage'] })
+  assert.match(dom, /<h1 class="intent">/, 'rendered')
+  assert.match(dom, /<h1 class="intent">Make retry count configurable<\/h1>/, 'the group in the URL hash is the one shown')
 })
 
 test('the html client script is valid JavaScript', () => {

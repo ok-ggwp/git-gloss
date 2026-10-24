@@ -4,6 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { browse, skipBrowse } from './browser.ts'
 
 const BIN = join(import.meta.dirname, '..', 'bin', 'git-gloss.js')
 
@@ -151,41 +152,9 @@ test('the HTML view shows each commit\'s reviews, findings as text', () => {
   assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/, 'findings never land in the page as markup')
 })
 
-const chromium = ['chromium', 'google-chrome-stable', 'google-chrome'].find((b) => spawnSync('which', [b]).status === 0)
 
-// Drives headless Chromium over the DevTools protocol, so the test can click.
-async function browse(url: string, steps: (evaluate: (js: string) => Promise<unknown>) => Promise<void>) {
-  const port = 9300 + Math.floor(Math.random() * 600)
-  const { spawn } = await import('node:child_process')
-  const chrome = spawn(chromium!, ['--headless=new', '--no-sandbox', '--disable-gpu', `--remote-debugging-port=${port}`, 'about:blank'], { stdio: 'ignore' })
-  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-  try {
-    let targets: { type: string; webSocketDebuggerUrl: string }[] | undefined
-    for (let i = 0; i < 100 && !targets; i++) {
-      await sleep(100)
-      try { targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json() } catch { /* not up yet */ }
-    }
-    const ws = new WebSocket(targets!.find((t) => t.type === 'page')!.webSocketDebuggerUrl)
-    await new Promise((r) => ws.addEventListener('open', r))
-    let id = 0
-    const pending = new Map<number, (v: any) => void>()
-    ws.addEventListener('message', (m) => {
-      const d = JSON.parse(String(m.data))
-      pending.get(d.id)?.(d.result)
-      pending.delete(d.id)
-    })
-    const send = (method: string, params = {}) => new Promise<any>((r) => { pending.set(++id, r); ws.send(JSON.stringify({ id, method, params })) })
-    await send('Page.enable')
-    await send('Page.navigate', { url })
-    for (let i = 0; i < 50 && !(await send('Runtime.evaluate', { expression: '!!document.querySelector("main .commit")', returnByValue: true })).result.value; i++) await sleep(100)
-    await steps(async (js) => (await send('Runtime.evaluate', { expression: js, returnByValue: true })).result.value)
-    ws.close()
-  } finally {
-    chrome.kill()
-  }
-}
 
-test('in a real browser, a review opens on click and its findings stay text', { skip: !chromium && 'no Chromium found' }, async () => {
+test('in a real browser, a review opens in the main pane on click and its findings stay text', { skip: skipBrowse }, async () => {
   const { dir, write, commit } = repo()
   write('app.js', ['function main() {', '  run()', '  stop()', '}'])
   commit('stop', [group('stop', ['h1'])])
@@ -193,13 +162,57 @@ test('in a real browser, a review opens on click and its findings stay text', { 
   const out = join(dir, 'page.html')
   assert.equal(gloss(dir, ['html', '-o', out]).code, 0)
   await browse(`file://${out}`, async (evaluate) => {
-    assert.match(String(await evaluate("document.querySelector('details.review summary').textContent")), /^honesty: reviewed/)
-    assert.equal(await evaluate("document.querySelector('details.review').open"), false)
-    await evaluate("document.querySelector('details.review summary').click()")
-    assert.equal(await evaluate("document.querySelector('details.review').open"), true)
-    assert.match(String(await evaluate("document.querySelector('pre.findings').textContent")), /<b>not bold<\/b>/)
-    assert.equal(await evaluate("document.querySelectorAll('pre.findings b, pre.findings img').length"), 0)
+    const rail = "document.querySelector('.rail').textContent"
+    assert.match(String(await evaluate("document.querySelector('.rvrow').textContent")), /^honesty.*current/)
+    assert.doesNotMatch(String(await evaluate(rail)), /Accurate/, 'no findings in the rail')
+    assert.equal(await evaluate("document.querySelectorAll('.rail details').length"), 0)
+    await evaluate("document.querySelector('.rvrow').click()")
+    assert.equal(await evaluate('location.hash'), '#reviews-honesty')
+    assert.match(String(await evaluate("document.querySelector('main .md').textContent")), /<b>not bold<\/b>/)
+    assert.equal(await evaluate("document.querySelectorAll('main .md b, main .md img').length"), 0)
     assert.notEqual(await evaluate('document.title'), '1')
+    await evaluate("[...document.querySelectorAll('main .btn')].find((b) => b.textContent.includes('Back')).click()")
+    assert.equal(await evaluate("location.hash"), '#overview', 'Back returns to the previous selection')
+  })
+})
+
+const REPORT = [
+  '## Verification run', '',
+  '- `npm test`: **verified**, 12/12 pass', '  - nested *point* here', '- second item', '',
+  '1. first step', '2. second step', '',
+  '### Detail', 'a*b*c stays as it is, see [the docs](https://example.com/x).', '',
+  '```', 'const x = "**not bold**"', '```', '',
+  '<img src=x onerror=alert(1)> </script><script>document.title="pwned"</script>', '',
+  'VERDICT: ISSUES',
+].join('\n')
+
+test('in a real browser, findings render as markdown without raw syntax or markup', { skip: skipBrowse }, async () => {
+  const { dir, write, commit } = repo()
+  write('app.js', ['function main() {', '  run()', '  stop()', '}'])
+  commit('stop', [group('stop', ['h1'])])
+  review(dir, 'HEAD', 'honesty', 'An older review with an `unterminated fence\n```\nnever closed')
+  review(dir, 'HEAD', 'honesty', REPORT)
+  const out = join(dir, 'page.html')
+  assert.equal(gloss(dir, ['html', '-o', out]).code, 0)
+  await browse(`file://${out}`, async (evaluate) => {
+    await evaluate("document.querySelector('.rvrow').click()")
+    const q = (sel: string) => evaluate(`document.querySelectorAll('main ${sel}').length`)
+    assert.ok(Number(await q('.md h4')) >= 1 && Number(await q('.md h5')) >= 1, 'headings')
+    assert.ok(Number(await q('.md li')) >= 5 && Number(await q('.md ol li')) === 2, 'lists')
+    assert.ok(Number(await q('.md ul ul li')) === 1, 'nesting by indentation')
+    assert.ok(Number(await q('.md strong')) >= 1 && Number(await q('.md em')) === 1 && Number(await q('.md code')) >= 2)
+    const text = String(await evaluate("document.querySelector('main .entry:not(.old) .md').textContent"))
+    assert.doesNotMatch(text.replace(/const x = "\*\*not bold\*\*"/, ''), /##|\*\*|`/, 'no raw markdown syntax outside the code block')
+    assert.match(text, /a\*b\*c stays as it is, see the docs \(https:\/\/example\.com\/x\)/, 'a * inside a word stays; links are text')
+    assert.equal(await q('.md a'), 0, 'review text never makes links')
+    assert.match(text, /<img src=x onerror=alert\(1\)> <\/script>/, 'markup stays text')
+    assert.equal(await q('.md img, .md script'), 0)
+    assert.equal(await evaluate("document.title.includes('pwned')"), false)
+    assert.match(String(await evaluate("document.querySelector('main .entry:not(.old) .chip').textContent")), /issues found/)
+    // The older review is folded, and an unterminated fence swallows the rest as code instead of throwing.
+    assert.equal(await q('details.old'), 1)
+    assert.match(String(await evaluate("document.querySelector('details.old .md pre').textContent")), /never closed/)
+    assert.equal(await q('.findings'), 0, 'no inner scroll boxes')
   })
 })
 
@@ -305,4 +318,17 @@ test('a binary or mode-only change counts as new code; bad records are skipped, 
   const forged = { review: 1, id: 'f', at: '2099-01-01T00:00:00Z', stage: 'bugs', agent: 'x', target: 'HEAD', findings: 'f', verdict: 'maybe', ...seen }
   g('notes', '--ref', 'refs/notes/gloss-reviews', 'append', '-m', JSON.stringify(forged), sha)
   assert.doesNotMatch(gloss(dir, ['show']).out, /reviewed \(x/)
+})
+
+test('in a real browser, a #reviews-<stage> link lands on that stage, also at load', { skip: skipBrowse }, async () => {
+  const { dir, write, commit } = repo()
+  write('app.js', ['function main() {', '  run()', '  stop()', '}'])
+  commit('stop', [group('stop', ['h1'])])
+  review(dir, 'HEAD', 'honesty', 'Fine.\n\n' + 'A long paragraph of findings. '.repeat(80))
+  review(dir, 'HEAD', 'bugs', 'No defects.\n\n' + 'Another long paragraph. '.repeat(120))
+  const out = join(dir, 'page.html')
+  assert.equal(gloss(dir, ['html', '-o', out]).code, 0)
+  await browse(`file://${out}#reviews-bugs`, async (evaluate) => {
+    assert.ok(Math.abs(Number(await evaluate("document.getElementById('rv-bugs').getBoundingClientRect().top"))) < 5, 'the bugs section is at the top')
+  })
 })

@@ -69,6 +69,10 @@ export type CommitData = {
   computed: { floor: AttentionLevel; derived: { level: AttentionLevel; reasons: string[] }; below: boolean } | null
   warnings: string[]
   groups: PageGroup[]
+  // Group ids in review order: the attention's focus groups first, then by
+  // impact (declared, else derived) high to low, then by size, ties in the
+  // order of `groups`. Empty when there is no gloss.
+  order: string[]
   unannotated: PageHunk[]
   alternatives: { option: string; rejected_because: string }[]
   risks: string[]
@@ -152,6 +156,17 @@ function pageHunk(h: Hunk, lines: Set<number> | null, status: PageHunk['status']
   }
 }
 
+// The order a reviewer should read a commit's groups in. Deterministic: a
+// stable sort over the groups as they come, so ties keep their order.
+export function reviewOrder(groups: PageGroup[], focus: string[] = []): string[] {
+  const rank = (g: PageGroup) => IMPACT.indexOf((g.impact ?? g.impact_derived)!) + 1 // 0: unrated
+  const first = (g: PageGroup) => (focus.includes(g.id) ? focus.indexOf(g.id) : focus.length)
+  return groups
+    .map((g, i) => ({ g, i }))
+    .sort((a, b) => first(a.g) - first(b.g) || rank(b.g) - rank(a.g) || (b.g.added + b.g.removed) - (a.g.added + a.g.removed) || a.i - b.i)
+    .map((x) => x.g.id)
+}
+
 const allLines = (h: Hunk) => Array.from({ length: changedCount(h) }, (_, i) => i + 1)
 
 export function commitData(gloss: LoadedGloss): CommitData {
@@ -215,6 +230,7 @@ export function commitData(gloss: LoadedGloss): CommitData {
     computed: an ? { floor: an.floor, derived: an.derived, below: belowFloor(a.attention, an) } : null,
     warnings: gloss.warnings,
     groups,
+    order: reviewOrder(groups, a.attention?.focus),
     unannotated: gloss.unannotated.map((u) => pageHunk(u.hunk, u.lines, 'unannotated', [])),
     alternatives: a.alternatives ?? [],
     risks: a.risks ?? [],
@@ -235,6 +251,7 @@ function unglossedData(sha: string): CommitData {
     computed: null,
     warnings: [],
     groups: [],
+    order: [],
     unannotated: parseDiff(commitDiff(sha)).map((h) => pageHunk(h, null, 'unannotated', [])),
     alternatives: [],
     risks: [],
