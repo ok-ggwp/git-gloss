@@ -1,0 +1,114 @@
+{
+  "gloss": 4,
+  "commit": "cc433ad43af347708c8a5856b36817b895ad027d",
+  "created_at": "2026-10-24T15:04:36.047Z",
+  "annotation": {
+    "version": 1,
+    "task": "Teach the gloss skill how an arbiter records decisions, and make `reviews` print the review id it needs",
+    "summary": "reviews shows each review id in its header; the skill and README follow; TODO keeps a narrowed gg-deliver item.",
+    "groups": [
+      {
+        "id": "show-id",
+        "intent": "Print the review id in each review's header line (display only, through plain(); stored id untouched)",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "An arbiter cannot learn the id --decide needs except from an error message",
+        "evidence": "test/decisions.test.ts 'reviews prints each review id'",
+        "hunks": [
+          "h4"
+        ]
+      },
+      {
+        "id": "show-id-test",
+        "intent": "Cover that reviews output contains the recorded review's id",
+        "necessity": "supporting",
+        "serves": "show-id",
+        "removal_impact": "The id display could regress unnoticed",
+        "hunks": [
+          "h5"
+        ]
+      },
+      {
+        "id": "docs",
+        "intent": "Skill section 'Arbitrating a review' (agent instructions), README fix of the stale size-cap sentence and id mention, TODO Phase 4 narrowed to the personal gg-deliver skill",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Arbiters would not know to record decisions; README would misstate the caps",
+        "hunks": [
+          "h1",
+          "h2",
+          "h3"
+        ]
+      }
+    ],
+    "risks": [
+      "Browser test 'markdown that is quadratic to scan' (3 s budget) failed in the full run on this worktree under load but passes alone and on main; unrelated to this change"
+    ],
+    "attention": {
+      "level": "look",
+      "focus": [
+        "show-id",
+        "docs"
+      ],
+      "reasons": [
+        "one-line display change; skill text changes agent behaviour"
+      ]
+    },
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-sonnet-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 178,
+      "oldLines": 7,
+      "newStart": 178,
+      "newLines": 7,
+      "hash": "03f68983545983cd"
+    },
+    {
+      "id": "h2",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 197,
+      "oldLines": 8,
+      "newStart": 197,
+      "newLines": 7,
+      "hash": "32b5783a745da366"
+    },
+    {
+      "id": "h3",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 133,
+      "oldLines": 4,
+      "newStart": 133,
+      "newLines": 18,
+      "hash": "98f14106f32f11c3"
+    },
+    {
+      "id": "h4",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 103,
+      "oldLines": 7,
+      "newStart": 103,
+      "newLines": 7,
+      "hash": "f6358bd679de22c9"
+    },
+    {
+      "id": "h5",
+      "file": "test/decisions.test.ts",
+      "oldFile": "test/decisions.test.ts",
+      "oldStart": 52,
+      "oldLines": 6,
+      "newStart": 52,
+      "newLines": 11,
+      "hash": "3c74d6eb4eda4e76"
+    }
+  ]
+}
