@@ -1,6 +1,6 @@
 {
   "name": "@ok-ggwp/git-gloss",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Annotate agent-written diffs with intent and necessity, stored in git notes",
   "license": "MIT",
   "keywords": [
