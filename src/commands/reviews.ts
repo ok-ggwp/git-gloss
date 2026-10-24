@@ -103,7 +103,7 @@ export function run(argv: string[]): number {
     for (const s of statuses) {
       out.push(`  ${statusPhrase(s)}`)
       for (const r of s.reviews) {
-        out.push('', style('dim', `  ── ${r.stage} by ${r.agent}${r.model ? `:${r.model}` : ''}${r.mode ? ` (${r.mode})` : ''}, ${r.at.slice(0, 16).replace('T', ' ')}, of ${r.target}`))
+        out.push('', style('dim', `  ── ${r.stage} by ${r.agent}${r.model ? `:${r.model}` : ''}${r.mode ? ` (${r.mode})` : ''}, ${r.at.slice(0, 16).replace('T', ' ')}, of ${r.target}, id ${plain(r.id)}`))
         out.push(...r.findings.trim().split('\n').map((l) => `  ${l}`))
         const ds = decisions.filter((d) => d.review === r.id)
         if (r.verdict !== 'clean' || ds.length) {
