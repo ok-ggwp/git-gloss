@@ -30,7 +30,7 @@
 // items. A numbered heading with no list under it keeps its own number as its
 // ref (`1`) and gets no label. Running it on its own output changes nothing.
 
-type Scan = { out: string; refs: string[] }
+type Scan = { out: string; found: Map<string, string> }
 
 const isDigit = (c: string) => c >= '0' && c <= '9'
 const MAXDIG = 6
@@ -125,7 +125,9 @@ function stripLabel(t: string): string {
 
 function scan(text: string): Scan {
   const lines = text.split('\n')
-  const refs: string[] = []
+  // Each ref with its text (an item's, or a numbered heading's line); the first wins.
+  const found = new Map<string, string>()
+  const add = (ref: string, t: string) => { if (!found.has(ref)) found.set(ref, t) }
   let section = 0, count = 0
   let sawHeading = false, sawNumbered = false, sawItem = false
   let fence: string | null = null
@@ -141,7 +143,7 @@ function scan(text: string): Scan {
     const h = headingText(line) ?? boldOnly(line) ?? (plainTitle(lines, n) ? line : null)
     if (h !== null) {
       const num = leadingNumber(h)
-      if (num !== null) { section = num; sawNumbered = true; refs.push(String(num)) }
+      if (num !== null) { section = num; sawNumbered = true; add(String(num), line.replace(/^[\s#*_]+/, '').replace(/^\d{1,3}[.)]?\s*/, '').replace(/[\s*_:]+$/, '')) }
       else if (!sawItem && !sawNumbered) section = 0
       else section += 1
       sawHeading = true
@@ -154,10 +156,10 @@ function scan(text: string): Scan {
     sawItem = true
     count++
     const ref = sawHeading ? `${section}.${count}` : String(count)
-    refs.push(ref)
+    add(ref, stripLabel(item))
     lines[n] = `- **[${ref}]** ${stripLabel(item)}`
   }
-  return { out: lines.join('\n'), refs }
+  return { out: lines.join('\n'), found }
 }
 
 export function labelFindings(text: string): string {
@@ -166,7 +168,12 @@ export function labelFindings(text: string): string {
 
 // The refs a report's findings carry (and its numbered headings'), as a set.
 export function findingRefs(text: string): Set<string> {
-  return new Set(scan(text).refs)
+  return new Set(scan(text).found.keys())
+}
+
+// Each ref a report carries, once, with the text of its finding (raw, for the caller to clean).
+export function findingTexts(text: string): [string, string][] {
+  return [...scan(text).found]
 }
 
 // A decision's finding names a finding by starting with its ref: `1.2 wording nit`,

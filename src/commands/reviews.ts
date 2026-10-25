@@ -2,12 +2,13 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { commitSubject, gitTry, GlossError, resolveCommits } from '../git.ts'
-import { addReviews, checkBy, checkDecision, isValidDecision, MAX_DECISION_LINE, MAX_FINDINGS, MAX_REVIEW_LINE, decisionSummary, readDecisions, readReviews, reviewStatus, stamp, statusPhrase, verdictOf, type DecisionRecord, type ReviewRecord } from '../reviews.ts'
+import { addReviews, checkBy, checkDecision, isValidDecision, MAX_FINDINGS, MAX_REVIEW_LINE, decisionSummary, readDecisions, readReviews, reviewStatus, stamp, statusPhrase, verdictOf, type DecisionRecord, type ReviewRecord } from '../reviews.ts'
 import { findingRefs, labelFindings, orderDecisions, refOf } from '../findings.ts'
 import { plain } from '../plain.ts'
 import { page, style } from '../render.ts'
+import { checkLength, parseBatch, readBounded, template } from '../batch.ts'
 
-export const usage = 'reviews [<commit> | <range> | wip] [--stamp | --record]   the reviews recorded for commits, with their findings and what was decided about them\n  reviews <target> --decide <review-id> --finding <text> --outcome <fixed|follow-up|rejected|accepted> [--note <text>] [--by <name>]\n  reviews <target> --decide <review-id> --complete   the arbiter is done; --stamp, --record and --decide are for tools'
+export const usage = 'reviews [<commit> | <range> | wip] [--stamp | --record]   the reviews recorded for commits, with their findings and what was decided about them\n  reviews <target> --decide <review-id> --finding <text> --outcome <fixed|follow-up|rejected|accepted> [--note <text>] [--by <name>]\n  reviews <target> --decide <review-id> --complete   the arbiter is done\n  reviews <target> --decide-template <review-id>   print a JSON skeleton of the findings of a review to fill in\n  reviews <target> --decide <review-id> --decide-file <file|->   record every decision of the filled-in skeleton at once, or none; --stamp, --record and --decide are for tools'
 
 type Stamped = Record<string, { lines: string[]; groups: string[] }>
 
@@ -21,9 +22,19 @@ export function run(argv: string[]): number {
     allowPositionals: true,
     options: {
       stamp: { type: 'boolean' }, record: { type: 'boolean' }, decide: { type: 'string' }, finding: { type: 'string' },
-      outcome: { type: 'string' }, note: { type: 'string' }, complete: { type: 'boolean' }, by: { type: 'string' },
+      outcome: { type: 'string' }, 'decide-file': { type: 'string' }, 'decide-template': { type: 'string' }, note: { type: 'string' }, complete: { type: 'boolean' }, by: { type: 'string' },
     },
   })
+
+  const batchFlag = values['decide-file'] !== undefined ? '--decide-file' : values['decide-template'] !== undefined ? '--decide-template' : null
+  if (batchFlag) {
+    for (const k of ['finding', 'outcome', 'note', 'complete', 'stamp', 'record'] as const) {
+      if (values[k] !== undefined) throw new GlossError(`${batchFlag} cannot be combined with --${k}`)
+    }
+    if (values['decide-file'] !== undefined && values['decide-template'] !== undefined) throw new GlossError('--decide-file and --decide-template cannot be combined')
+    if (batchFlag === '--decide-template' && (values.decide !== undefined || values.by !== undefined)) throw new GlossError('--decide-template takes the review id itself and no --decide or --by')
+    if (batchFlag === '--decide-file' && values.decide === undefined) throw new GlossError('--decide-file goes with --decide <review-id>')
+  }
 
   if (values.record) {
     const input = JSON.parse(readFileSync(0, 'utf8')) as Recording
@@ -59,6 +70,50 @@ export function run(argv: string[]): number {
   }
 
   const { shas } = resolveCommits(positionals[0] ?? 'HEAD')
+  const target = positionals[0] ?? 'HEAD'
+  // Every commit of the target holding that review gets the decision.
+  const holdersOf = (id: string) => {
+    const holders = shas.filter((sha) => readReviews(sha).some((r) => r.id === id))
+    if (!holders.length) {
+      const known = [...new Set(shas.flatMap(readReviews).map((r) => r.id))]
+      throw new GlossError(`no review ${id} on ${target}` + (known.length ? ` (reviews there: ${plain(known.join(', '))})` : ' (it has no reviews)'))
+    }
+    return holders
+  }
+  const reportOf = (id: string, holders: string[]) => holders.flatMap(readReviews).find((r) => r.id === id)
+  // A finding that starts with a ref names a finding of the report: say so when there is none (never refuse).
+  const warnUnknownRef = (id: string, report: ReviewRecord | undefined, finding: string, hint = '') => {
+    const ref = refOf(finding)
+    if (ref !== null && report && !findingRefs(report.findings).has(ref)) console.error(`git-gloss: review ${plain(id)} has no finding ${ref} (${hint}see the refs in \`git gloss reviews ${target}\`); recording it anyway`)
+  }
+  if (values['decide-template'] !== undefined) {
+    const id = values['decide-template']
+    const report = reportOf(id, holdersOf(id))!
+    console.log(JSON.stringify(template(id, report.findings), null, 2))
+    return 0
+  }
+  if (values['decide-file'] !== undefined) {
+    const id = values.decide!
+    // Everything is checked before the first write: one bad entry records nothing.
+    const batch = parseBatch(readBounded(values['decide-file']), id)
+    const holders = holdersOf(id)
+    const by = values.by !== undefined ? values.by.trim() : gitTry(['config', 'user.name'])?.trim() || 'unknown'
+    checkBy(by)
+    const at = new Date().toISOString()
+    const records: DecisionRecord[] = batch.entries.map((e, i) => {
+      const r: DecisionRecord = { decision: 1, review: id, at, by, finding: e.finding, outcome: e.outcome, ...(e.note ? { note: e.note } : {}) }
+      checkLength(r, `--decide-file: entry ${i + 1}`)
+      return r
+    })
+    if (batch.complete) records.push({ decision: 1, review: id, at, by, complete: true })
+    const report = reportOf(id, holders)
+    batch.entries.forEach((e, i) => warnUnknownRef(id, report, e.finding, `entry ${i + 1}; `))
+    // One compare-and-swap write per commit, whatever the number of records.
+    for (const sha of holders) addReviews(sha, records)
+    const n = batch.entries.length
+    console.log(`recorded ${n} decision${n === 1 ? '' : 's'} on ${holders.length} commit${holders.length === 1 ? '' : 's'}${batch.complete ? ' and marked the review complete' : ''}`)
+    return 0
+  }
   if (values.decide !== undefined) {
     const id = values.decide
     if (values.complete) {
@@ -66,12 +121,7 @@ export function run(argv: string[]): number {
         throw new GlossError('--complete marks the review as arbitrated; it takes no --finding, --outcome or --note')
       }
     } else checkDecision(values)
-    // Every commit of the target holding that review gets the decision.
-    const holders = shas.filter((sha) => readReviews(sha).some((r) => r.id === id))
-    if (!holders.length) {
-      const known = [...new Set(shas.flatMap(readReviews).map((r) => r.id))]
-      throw new GlossError(`no review ${id} on ${positionals[0] ?? 'HEAD'}` + (known.length ? ` (reviews there: ${plain(known.join(', '))})` : ' (it has no reviews)'))
-    }
+    const holders = holdersOf(id)
     const by = values.by !== undefined ? values.by.trim() : gitTry(['config', 'user.name'])?.trim() || 'unknown'
     checkBy(by)
     const record: DecisionRecord = {
@@ -82,13 +132,8 @@ export function run(argv: string[]): number {
       }),
     }
     // Control characters are written as 6-byte escapes, so check the line itself against the reader's cap.
-    if (JSON.stringify(record).length > MAX_DECISION_LINE) throw new GlossError('that decision is too long to record: the finding and note, as written, exceed what readers accept; shorten them')
-    // A finding that starts with a ref names a finding of the report: say so when there is none (never refuse).
-    const ref = record.finding === undefined ? null : refOf(record.finding)
-    if (ref !== null) {
-      const report = holders.flatMap(readReviews).find((r) => r.id === id)
-      if (report && !findingRefs(report.findings).has(ref)) console.error(`git-gloss: review ${plain(id)} has no finding ${ref} (see the refs in \`git gloss reviews ${positionals[0] ?? 'HEAD'}\`); recording it anyway`)
-    }
+    checkLength(record, 'that decision')
+    if (record.finding !== undefined) warnUnknownRef(id, reportOf(id, holders), record.finding)
     for (const sha of holders) addReviews(sha, [record])
     console.log(`recorded ${values.complete ? 'the review as complete' : `"${record.finding}": ${record.outcome}`} on ${holders.length} commit${holders.length === 1 ? '' : 's'}`)
     return 0
