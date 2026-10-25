@@ -244,3 +244,10 @@ the network: a sync makes up to six round trips, and the pre-push hook runs one.
 - [ ] A `resolveBy` helper shared by `--record`, `--decide` and `--decide-file`; move the `--decide-file` branch out of `run` into `batch.ts`.
 - [ ] `lint` does not report add's config-edit note (`configEdit` is computed and dropped); report it or drop the field.
 
+## Timeouts (2026-10-25, from the reviews of the git timeout work)
+
+- [ ] `rethrowTimeout` at the stamp (reviews), the show hint, the versions summary and `createdAt` (sync) has no test; a regression that swallows a timeout there again stays green. Add one test per site with the hanging fake git.
+- [ ] A `git push` that times out (600 s) in `round()`/`syncReviews()` fails before `notes merge -s ours` records what the remote has; the remote may already have accepted the push, so the next merge base is stale. Probably self-healing; verify and test.
+- [ ] A network timeout message says to set `GIT_GLOSS_GIT_TIMEOUT`, but `GIT_GLOSS_NETWORK_TIMEOUT` is the variable that governs fetch/push/ls-remote; make the message name the right one.
+- [ ] `dropWipNote` still uses `gitTry` (a timeout there throws); decide whether a hung note deletion should fail the command.
+
