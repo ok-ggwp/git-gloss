@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync, spawn } from './run.ts'
 import { cpSync, symlinkSync, writeFileSync } from 'node:fs'
 import { Script } from 'node:vm'
 import { GitError, resolveCommit } from '../src/git.ts'

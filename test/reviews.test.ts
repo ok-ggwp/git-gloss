@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync, spawnSync } from './run.ts'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmp } from './tmp.ts'
@@ -276,7 +276,7 @@ test('reviews recorded at the same moment are all kept', async () => {
   write('app.js', ['function main() {', '  run()', '  stop()', '}'])
   commit('stop', [group('stop', ['h1'])])
   const stamp = JSON.parse(gloss(dir, ['reviews', '--stamp', 'HEAD']).out)
-  const { spawn } = await import('node:child_process')
+  const { spawn } = await import('./run.ts')
   await Promise.all(Array.from({ length: 8 }, (_, i) => new Promise<void>((resolve, reject) => {
     const p = spawn(process.execPath, [BIN, 'reviews', '--record'], { cwd: dir, stdio: ['pipe', 'ignore', 'pipe'] })
     p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`record ${i} exited ${code}`))))

@@ -36,7 +36,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "prepare": "npm run build",
-    "test": "node --test 'test/**/*.test.ts'",
+    "test": "node --test --test-timeout=180000 --import ./test/guard.ts 'test/**/*.test.ts'",
     "typecheck": "tsc"
   },
   "publishConfig": {

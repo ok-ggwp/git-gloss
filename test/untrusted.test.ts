@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from './run.ts'
 import net from 'node:net'
 import { statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
