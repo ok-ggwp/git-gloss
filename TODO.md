@@ -231,3 +231,13 @@ the network: a sync makes up to six round trips, and the pre-push hook runs one.
   touching untrusted input.
 - [ ] The `gg-deliver` skill was copied from a work project; trim its PR flow
   and `nx` steps for this repo.
+
+## Batch decisions and lint (2026-10-25, from the reviews of `--decide-file` and `lint`)
+
+- [ ] The decision template lists a numbered heading as a row even when items sit under it, so the arbiter must delete those rows or the file is refused (empty outcome). Leave heading rows out when the heading has items.
+- [ ] Duplicate refs (two `1.` headings each with `- item`) collapse to one ref in `labelFindings` and the template; the second finding has no batch path. Pre-existing ambiguity.
+- [ ] Re-running a `--decide-file` after a partly failed range write adds a second set of decisions to the commits already written (each run has a new `at`).
+- [ ] No cap on the total size of the decisions one file writes (500 entries at the per-record limit).
+- [ ] A `resolveBy` helper shared by `--record`, `--decide` and `--decide-file`; move the `--decide-file` branch out of `run` into `batch.ts`.
+- [ ] `lint` does not report add's config-edit note (`configEdit` is computed and dropped); report it or drop the field.
+
