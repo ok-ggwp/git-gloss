@@ -264,12 +264,18 @@
     var f = r.state === 'seen' ? 'current' : r.state === 'code-changed' ? 'code changed since review' : 'gloss changed since review'
     return v + ' · ' + f
   }
-  // How far the arbiter got with a stage's latest review, for a rail row: nothing unless it found issues.
+  // How many findings of a stage are still undecided (and how far a legacy review's decisions got), for a rail row.
   function decidedShort(r) {
-    // reviewStatus() in src/reviews.ts sorts each stage newest-first, and the page data keeps that order.
-    var latest = r.entries[0]
-    if (!latest || !latest.decisions || latest.verdict === 'clean') return ''
-    return latest.complete ? ' \u00b7 complete' : latest.decisionCount ? ' \u00b7 ' + latest.decisionCount + ' decided' : ' \u00b7 undecided'
+    // Structured findings: every item of every structured review of the stage; stale reviews are counted and marked.
+    var any = r.entries.some(function (e) { return e.items && e.items.length })
+    var label = ''
+    if (r.open) label = ' \u00b7 ' + r.open + ' open' + (r.openStale ? ' (' + r.openStale + ' on stale reviews)' : '')
+    else if (any) label = ' \u00b7 all decided'
+    // A legacy review (no items) next to them: its decisions are free text, so say how far they got.
+    var legacy = find(r.entries, function (e) { return !e.items && e.decisions && e.verdict !== 'clean' })
+    if (!legacy) return label
+    if (legacy.complete) return label + ' \u00b7 complete'
+    return label + (legacy.decisionCount ? ' \u00b7 ' + legacy.decisionCount + ' decided' : ' \u00b7 undecided (legacy)')
   }
   // One compact row per stage; each opens the Reviews view in the main pane.
   function reviewStatus(c) {
@@ -382,6 +388,7 @@
     var head = el('div', 'ehead')
     add(head, el('strong', null, e.agent + (e.model ? ':' + e.model : '') + (e.mode ? ' (' + e.mode + ')' : '')),
       el('span', 'muted', e.at.slice(0, 16).replace('T', ' ') + ', of ' + e.target))
+    if (e.stale) add(head, el('span', 'chip bad', 'stale review'))
     var v = verdictOf(e.findings)
     if (v) add(head, el('span', 'chip ' + (v === 'ISSUES' ? 'bad' : 'good'), v === 'ISSUES' ? 'issues found' : 'no issues'))
     return head
@@ -405,6 +412,28 @@
     }
     return box
   }
+  // The report's findings: severity, kind, basis, where each stands, the title. Text only, never markup.
+  function itemsBlock(e) {
+    if (!e.items) return null
+    var box = el('div', 'items')
+    add(box, el('h3', 'dhead', plural(e.items.length, 'finding')))
+    if (!e.items.length) return box
+    var ul = el('ul', 'dlist')
+    e.items.forEach(function (i) {
+      var row = el('li', 'drow irow')
+      add(row, el('span', 'chip dchip ' + (i.status === 'open' ? 'open' : i.status), i.status), text(' '), el('strong', 'iid', i.id), text(' '),
+        el('span', 'chip sev-' + i.severity, i.severity), text(' '), el('span', 'chip', i.kind), text(' '), el('span', 'chip', i.basis), text(' '), el('span', 'ititle', i.title))
+      if (i.where) add(row, text(' '), el('span', 'muted iwhere', i.where))
+      if (i.note) add(row, text(' \u2014 '), el('span', 'dnote', i.note))
+      ul.appendChild(row)
+    })
+    return add(box, ul)
+  }
+  // The raw report: shown as it is for a legacy review; under a disclosure when the findings are listed above it.
+  function reportBlock(e) {
+    if (!e.items) return markdown(e.findings)
+    return add(el('details', 'rawreport'), el('summary', null, 'Report'), markdown(e.findings))
+  }
   function reviewsPane(c, stage) {
     var pane = el('div')
     add(pane, button('btn small back', '‹ Back', goBack))
@@ -416,10 +445,10 @@
       add(sec, el('h2', null, r.stage), add(el('p', 'rvsum'), el('span', reviewClass(r), r.phrase)))
       var entries = r.entries.slice().sort(function (a, b) { return a.at < b.at ? 1 : a.at > b.at ? -1 : 0 })
       entries.forEach(function (e, i) {
-        if (i === 0) add(sec, add(el('div', 'entry'), entryHead(e), decisionsBlock(e), markdown(e.findings)))
+        if (i === 0) add(sec, add(el('div', 'entry'), entryHead(e), itemsBlock(e), decisionsBlock(e), reportBlock(e)))
         else {
           var d = el('details', 'entry old')
-          add(d, add(el('summary'), entryHead(e)), decisionsBlock(e), markdown(e.findings))
+          add(d, add(el('summary'), entryHead(e)), itemsBlock(e), decisionsBlock(e), reportBlock(e))
           add(sec, d)
         }
       })
@@ -928,6 +957,7 @@
       var hl = honestyLabel(c)
       add(metaEl, text(' · '), el('span', hl[0], hl[1]))
     } else add(metaEl, text(' · '), el('span', 'stale', 'no gloss'))
+    if (c.openFindings) add(metaEl, text(' · '), el('span', 'stale', plural(c.openFindings, 'open finding')))
     add(pick, add(el('span', 'rtop'), el('span', 'sha', sha7(c)), el('span', 'sha', new Date(c.date).toLocaleDateString()), level),
       el('span', 'csubject', c.subject), metaEl)
     add(wrap, pick)

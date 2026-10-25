@@ -1,13 +1,12 @@
 import { closeSync, openSync, readSync } from 'node:fs'
 import { GlossError } from './git.ts'
-import { addReviews, checkDecision, MAX_DECISION_LINE, readDecisions, resolveBy, type DecisionRecord } from './reviews.ts'
-import { findingTexts } from './findings.ts'
+import { addReviews, checkDecision, requireItems, MAX_DECISION_LINE, readDecisions, resolveBy, type DecisionRecord } from './reviews.ts'
+import type { Item } from './findings-block.ts'
 import { plain } from './plain.ts'
 
 // Limits for `reviews --decide-file`, checked before anything is parsed or written.
 export const MAX_BATCH_ENTRIES = 500
 export const MAX_BATCH_BYTES = 1024 * 1024
-export const TEMPLATE_TEXT = 80
 // What one --decide-file may write to a commit (bytes of its record lines): the 1 MiB input
 // cap alone would still let a file add about 1 MiB to every commit of a range. Honest
 // decisions are a few hundred bytes each; this is a guard against bloat, not against unreadable data.
@@ -47,9 +46,13 @@ export function readBounded(src: string): string {
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
-// Accepts a bare array of {finding, outcome, note?}, or {review?, complete?: boolean,
-// decisions: [...]}. Unknown keys are ignored. Everything is checked here; nothing is written.
-export function parseBatch(text: string, reviewId: string): Batch {
+// Accepts a bare array of {finding, outcome, note?} (finding is an item id of the review), or
+// {review?, complete?: boolean, decisions: [...]}. Unknown keys are ignored (the template's
+// severity, kind and title among them). Everything is checked here, an unknown or repeated id
+// as an error; nothing is written.
+export function parseBatch(text: string, reviewId: string, items: Item[] | undefined): Batch {
+  // A legacy review has nothing to decide, whatever the file holds.
+  requireItems(items)
   let data: unknown
   try { data = JSON.parse(text) } catch (e) {
     throw new GlossError(`--decide-file: not valid JSON (${e instanceof RangeError ? 'nested too deeply' : plain((e as Error).message).slice(0, 120)})`)
@@ -80,14 +83,15 @@ export function parseBatch(text: string, reviewId: string): Batch {
     if (outcome === undefined || outcome === '') throw new GlossError(`${label} has an empty outcome; fill it in or delete the row`)
     if (typeof outcome !== 'string') throw new GlossError(`${label}: "outcome" must be a string`)
     if (note !== undefined && typeof note !== 'string') throw new GlossError(`${label}: "note" must be a string`)
-    try { checkDecision({ finding, outcome, note }) } catch (err) {
+    let id: string
+    try { id = checkDecision({ finding, outcome, note }, items) } catch (err) {
       if (err instanceof GlossError) throw new GlossError(`${label}: ${err.message.replace(/^--/, '')}`)
       throw err
     }
-    const seen = firstAt.get(finding.trim())
+    const seen = firstAt.get(id)
     if (seen !== undefined) throw new GlossError(`${label} repeats entry ${seen}`)
-    firstAt.set(finding.trim(), i + 1)
-    return { finding: finding.trim(), outcome: outcome as BatchEntry['outcome'], ...(note ? { note } : {}) }
+    firstAt.set(id, i + 1)
+    return { finding: id, outcome: outcome as BatchEntry['outcome'], ...(note ? { note } : {}) }
   })
   return { entries, complete }
 }
@@ -97,21 +101,22 @@ export function checkLength(record: DecisionRecord, what: string) {
   if (JSON.stringify(record).length > MAX_DECISION_LINE) throw new GlossError(`${what} is too long to record: the finding and note, as written, exceed what readers accept; shorten them`)
 }
 
-// The skeleton `--decide-template` prints: one row per ref, outcome left empty.
-export function template(reviewId: string, findings: string) {
-  const rows = findingTexts(findings)
-  if (rows.length > MAX_BATCH_ENTRIES) throw new GlossError(`review ${plain(reviewId)} has ${rows.length} findings; --decide-file takes at most ${MAX_BATCH_ENTRIES}`)
+// The skeleton `--decide-template` prints: one row per item of the review, outcome left empty.
+// Only finding, outcome and note are read back; the rest is there to read while filling it in.
+export function template(reviewId: string, items: Item[] | undefined) {
+  requireItems(items)
   return {
     review: reviewId, complete: false,
-    decisions: rows.map(([ref, text]) => ({ finding: `${ref}${ref.includes('.') ? '' : ':'} ${[...plain(text).replace(/\s+/g, ' ').trim()].slice(0, TEMPLATE_TEXT).join('')}`.trim(), outcome: '', note: '' })),
+    decisions: items!.map((i) => ({ finding: i.id, severity: i.severity, kind: i.kind, title: i.title, outcome: '', note: '' })),
   }
 }
 
 // Everything `reviews --decide-file` needs before it writes: the checked entries, the
 // holders of the review, and the records (with the complete marker last). Nothing is written.
-export function prepareBatch(src: string, id: string, byArg: string | undefined, holdersOf: (id: string) => string[]) {
-  const batch = parseBatch(readBounded(src), id)
-  const holders = holdersOf(id)
+export function prepareBatch(src: string, id: string, byArg: string | undefined, lookup: (id: string) => { holders: string[]; items: Item[] | undefined }) {
+  const text = readBounded(src)
+  const { holders, items } = lookup(id)
+  const batch = parseBatch(text, id, items)
   const by = resolveBy(byArg)
   const at = new Date().toISOString()
   const records: DecisionRecord[] = batch.entries.map((e, i) => {

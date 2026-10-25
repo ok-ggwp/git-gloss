@@ -1,6 +1,5 @@
 import { commitDiff, commitSubject, git } from '../git.ts'
-import { labelFindings, orderDecisions } from '../findings.ts'
-import { decisionSummary, readDecisions, reviewStatus, statusPhrase, verdict } from '../reviews.ts'
+import { byItemOrder, decisionSummary, itemStatuses, openItems, readDecisions, reviewStale, reviewStatus, statusPhrase, verdict } from '../reviews.ts'
 import { parseDiff } from '../diff.ts'
 import { loadGlossInRange, loadGloss, refusedWarning } from '../loader.ts'
 import { plain } from '../plain.ts'
@@ -83,6 +82,8 @@ export type CommitData = {
   // Per review stage: whether the commit as it is now was reviewed, and the
   // reviews' reports (shown as text).
   reviews: PageReview[]
+  // Findings with no decision yet (all stages; those of stale reviews included).
+  openFindings: number
 }
 
 export type PageReview = {
@@ -90,6 +91,10 @@ export type PageReview = {
   state: 'seen' | 'code-changed' | 'gloss-changed'
   verdict: 'clean' | 'issues' | 'unknown'
   phrase: string
+  // Findings of this stage's structured reviews (all of them) with no decision yet.
+  open: number
+  // How many of those are on a stale review (the code or gloss changed since it).
+  openStale: number
   entries: PageEntry[]
 }
 
@@ -104,12 +109,16 @@ export type PageEntry = {
   at: string
   target: string
   findings: string
+  // Whether this review's stage no longer applies to the commit as it is (shown as a stale marker).
+  stale?: boolean
   // Only on an entry that is not clean or that has decisions: what was decided
   // about it (oldest first), whether the arbiter marked it complete, and the
   // summary line. A clean review with no decisions has none of the three.
   decisions?: { outcome: string; finding: string; note?: string; by: string; at: string }[]
   complete?: boolean
   summary?: string
+  // The report's findings with where each stands (absent on a legacy review). Text only.
+  items?: { id: string; severity: string; kind: string; basis: string; where?: string; title: string; status: string; note?: string }[]
   // The review's own verdict and how many per-finding decisions it has in all
   // (`decisions` holds only the newest MAX_PAGE_DECISIONS of them).
   verdict?: 'clean' | 'issues'
@@ -122,21 +131,27 @@ const authorAndDate = (sha: string): [string, string] => {
   return [plain(author), plain(date)]
 }
 
-function pageReviews(sha: string): PageReview[] {
+function pageReviews(sha: string): { reviews: PageReview[]; openFindings: number } {
   const all = readDecisions(sha)
-  return reviewStatus(sha).map((s) => ({
+  const statuses = reviewStatus(sha)
+  const open = openItems(sha, statuses, all)
+  const reviews = statuses.map((s): PageReview => ({
     stage: s.stage,
     state: s.code === 'changed' ? 'code-changed'
       : (s.stage === 'honesty' || s.stage === 'improve') && s.gloss === 'changed' ? 'gloss-changed' : 'seen',
     verdict: verdict(s),
     phrase: statusPhrase(s),
+    open: open.filter((o) => o.review.stage === s.stage).length,
+    openStale: open.filter((o) => o.review.stage === s.stage && o.stale).length,
     entries: s.reviews.map((r): PageEntry => {
-      const entry: PageEntry = { id: r.id, agent: r.agent, model: r.model, mode: r.mode, at: r.at, target: r.target, findings: labelFindings(r.findings) }
+      const entry: PageEntry = { id: r.id, agent: r.agent, model: r.model, mode: r.mode, at: r.at, target: r.target, findings: r.findings, ...(reviewStale(s, r) ? { stale: true } : {}) }
+      const rows = itemStatuses(r, all)
+      if (rows) entry.items = rows.map(({ item: i, status, decision }) => ({ id: i.id, severity: i.severity, kind: i.kind, basis: i.basis, ...(i.where ? { where: i.where } : {}), title: i.title, status, ...(decision?.note ? { note: plain(decision.note) } : {}) }))
       const ds = all.filter((d) => d.review === r.id)
       if (r.verdict === 'clean' && !ds.length) return entry
-      // Sorted here only to pick the newest MAX_PAGE_DECISIONS; orderDecisions sets the order shown.
+      // Sorted here only to pick the newest MAX_PAGE_DECISIONS; byItemOrder sets the order shown.
       const done = ds.filter((d) => d.outcome).sort((a, b) => a.at.localeCompare(b.at))
-      entry.decisions = orderDecisions(done.slice(-MAX_PAGE_DECISIONS)).map((d) => ({ outcome: d.outcome!, finding: plain(d.finding!), ...(d.note ? { note: plain(d.note) } : {}), by: plain(d.by), at: plain(d.at) }))
+      entry.decisions = byItemOrder(r, done.slice(-MAX_PAGE_DECISIONS)).map((d) => ({ outcome: d.outcome!, finding: plain(d.finding!), ...(d.note ? { note: plain(d.note) } : {}), by: plain(d.by), at: plain(d.at) }))
       entry.complete = ds.some((d) => d.complete)
       entry.summary = decisionSummary(ds)
       entry.verdict = r.verdict
@@ -144,6 +159,7 @@ function pageReviews(sha: string): PageReview[] {
       return entry
     }),
   }))
+  return { reviews, openFindings: open.length }
 }
 
 export type PageData = {
@@ -297,7 +313,7 @@ export function commitData(gloss: LoadedGloss): CommitData {
     unannotated: gloss.unannotated.map((u) => pageHunk(u.hunk, u.lines, 'unannotated', [])),
     alternatives: a.alternatives ?? [],
     risks: a.risks ?? [],
-    reviews: pageReviews(gloss.sha),
+    ...pageReviews(gloss.sha),
   }
 }
 
@@ -319,7 +335,7 @@ function unglossedData(sha: string, refused?: string): CommitData {
     unannotated: parseDiff(commitDiff(sha)).map((h) => pageHunk(h, null, 'unannotated', [])),
     alternatives: [],
     risks: [],
-    reviews: pageReviews(sha),
+    ...pageReviews(sha),
   }
 }
 
