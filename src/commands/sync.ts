@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
-import { git, gitTry, GitError, NOTES_REF } from '../git.ts'
+import { git, gitTry, GitError, gitCleanup, NETWORK_TIMEOUT, NOTES_REF, rethrowTimeout } from '../git.ts'
 import { carryNew } from '../origins.ts'
 import { REVIEWS_REF } from '../reviews.ts'
 import { carry } from './carry.ts'
@@ -25,7 +25,8 @@ function createdAt(blob: string): string | null {
   try {
     const value = JSON.parse(git(['cat-file', 'blob', blob]))?.created_at
     return typeof value === 'string' ? value : null
-  } catch {
+  } catch (err) {
+    rethrowTimeout(err)
     return null
   }
 }
@@ -55,13 +56,13 @@ function shareable(remote: string, pushing: string[]): Set<string> {
 // code (or an update-ref onto our own notes ref) touches it.
 function checkTracking(remote: string, ref: string, tracking: string): void {
   if (gitTry(['rev-parse', '-q', '--verify', `${tracking}^{commit}`]) === null) {
-    gitTry(['update-ref', '-d', tracking])
+    gitCleanup(['update-ref', '-d', tracking])
     throw new GitError(`${remote}'s ${ref} is not a notes commit; ignoring it (nothing was changed here)`)
   }
 }
 
 function fetchTracking(remote: string, ref: string, tracking: string): void {
-  git(['fetch', '-q', remote, `+${ref}:${tracking}`])
+  git(['fetch', '-q', remote, `+${ref}:${tracking}`], undefined, {}, NETWORK_TIMEOUT)
   checkTracking(remote, ref, tracking)
 }
 
@@ -73,7 +74,7 @@ type Outcome = { fetched: number; pushed: number; withheld: number; conflicts: s
 // someone else's push and the round should be retried.
 function round(remote: string, pushing: string[], carried: string[]): Outcome | null {
   const tracking = `refs/notes/remotes/${remote}/gloss`
-  const remoteHas = gitTry(['ls-remote', '--exit-code', remote, NOTES_REF]) !== null
+  const remoteHas = gitTry(['ls-remote', '--exit-code', remote, NOTES_REF], undefined, NETWORK_TIMEOUT) !== null
   if (remoteHas) fetchTracking(remote, NOTES_REF, tracking)
 
   const local = noteList(NOTES_REF)
@@ -142,12 +143,12 @@ function round(remote: string, pushing: string[], carried: string[]): Outcome | 
 
   try {
     if (remoteHas) git(['update-ref', PUSH_REF, tracking])
-    else gitTry(['update-ref', '-d', PUSH_REF])
+    else gitCleanup(['update-ref', '-d', PUSH_REF])
     for (const [object, blob] of toPush) git(['notes', '--ref', PUSH_REF, 'add', '-f', '-C', blob, object])
     try {
       // --no-verify: don't run the pre-push hook for the notes push itself,
       // which would call sync again.
-      git(['push', '-q', '--no-verify', remote, `${PUSH_REF}:${NOTES_REF}`])
+      git(['push', '-q', '--no-verify', remote, `${PUSH_REF}:${NOTES_REF}`], undefined, {}, NETWORK_TIMEOUT)
     } catch (err) {
       if (/\(fetch first\)|non-fast-forward/.test((err as Error).message)) return null
       throw err
@@ -155,7 +156,7 @@ function round(remote: string, pushing: string[], carried: string[]): Outcome | 
     // Record what the remote now has, so the next sync's merge base is right.
     git(['notes', '--ref', NOTES_REF, 'merge', '-q', '-s', 'ours', PUSH_REF])
   } finally {
-    gitTry(['update-ref', '-d', PUSH_REF])
+    gitCleanup(['update-ref', '-d', PUSH_REF])
   }
   return { fetched, pushed: toPush.length, withheld, conflicts }
 }
@@ -167,7 +168,7 @@ const REVIEWS_PUSH_REF = 'refs/notes/gloss-reviews-sync-tmp'
 // commits the remote may see are sent. Returns null if the push lost a race.
 function syncReviews(remote: string, pushing: string[]): { fetched: number; pushed: number } | null {
   const tracking = `refs/notes/remotes/${remote}/gloss-reviews`
-  const remoteHas = gitTry(['ls-remote', '--exit-code', remote, REVIEWS_REF]) !== null
+  const remoteHas = gitTry(['ls-remote', '--exit-code', remote, REVIEWS_REF], undefined, NETWORK_TIMEOUT) !== null
   if (remoteHas) fetchTracking(remote, REVIEWS_REF, tracking)
   const before = noteList(REVIEWS_REF)
   const theirs = remoteHas ? noteList(tracking) : new Map<string, string>()
@@ -182,17 +183,17 @@ function syncReviews(remote: string, pushing: string[]): { fetched: number; push
   if (!toPush.length) return { fetched, pushed: 0 }
   try {
     if (remoteHas) git(['update-ref', REVIEWS_PUSH_REF, tracking])
-    else gitTry(['update-ref', '-d', REVIEWS_PUSH_REF])
+    else gitCleanup(['update-ref', '-d', REVIEWS_PUSH_REF])
     for (const [object, blob] of toPush) git(['notes', '--ref', REVIEWS_PUSH_REF, 'add', '-f', '-C', blob, object])
     try {
-      git(['push', '-q', '--no-verify', remote, `${REVIEWS_PUSH_REF}:${REVIEWS_REF}`])
+      git(['push', '-q', '--no-verify', remote, `${REVIEWS_PUSH_REF}:${REVIEWS_REF}`], undefined, {}, NETWORK_TIMEOUT)
     } catch (err) {
       if (/\(fetch first\)|non-fast-forward/.test((err as Error).message)) return null
       throw err
     }
     git(['notes', '--ref', REVIEWS_REF, 'merge', '-q', '-s', 'cat_sort_uniq', REVIEWS_PUSH_REF])
   } finally {
-    gitTry(['update-ref', '-d', REVIEWS_PUSH_REF])
+    gitCleanup(['update-ref', '-d', REVIEWS_PUSH_REF])
   }
   return { fetched, pushed: toPush.length }
 }

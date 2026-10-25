@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { git, GitError, GlossError, gitTry } from './git.ts'
+import { git, GitError, GlossError, gitTry, rethrowTimeout } from './git.ts'
 import { globToRegExp } from './glob.ts'
 
 // Settings for the computed signals, in three layers (later wins for scalars,
@@ -192,6 +192,7 @@ function trustedRef(): string | null {
       const mb = gitAnswer(['merge-base', 'HEAD', b])?.trim()
       if (mb) return mb
     } catch (err) {
+      rethrowTimeout(err)
       // A broken candidate does not hide the ones after it.
       failed = true
       warnOnce(`git failed finding the base branch with ${b} (${(err as Error).message}); trying the next candidate`)
@@ -214,6 +215,7 @@ function configAt(ref: string): string | null {
     if (!git(['ls-tree', '--full-tree', '--name-only', ref, '--', CONFIG_FILE]).trim()) return null
     return git(['show', `${ref}:${CONFIG_FILE}`])
   } catch (err) {
+    rethrowTimeout(err)
     warnOnce(`${CONFIG_FILE} could not be read from the base branch (${(err as Error).message}); using the built-in defaults, so the repo's own patterns do not apply`)
     return null
   }

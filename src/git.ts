@@ -22,11 +22,35 @@ export class GlossError extends Error {}
 export class GitError extends GlossError {
   // git's exit code, when it ran and failed (1 is often "no", 128 a real failure).
   status?: number
+  // The call was killed at GIT_GLOSS_GIT_TIMEOUT: unlike a failure, not an answer.
+  timedOut = false
 }
 
-export function git(args: string[], input?: string, env: Record<string, string> = {}): string {
+// How long one git call may run before it is killed (ms; 0 = no limit). A
+// hung git (a stuck filesystem, a credential helper, a lock) would otherwise
+// hang git-gloss for good. Read once at load: GIT_GLOSS_GIT_TIMEOUT overrides;
+// a value that is not a non-negative number is ignored.
+// A timed-out git gets SIGTERM, not SIGKILL: git removes its lock files
+// (index.lock, a ref's .lock) on SIGTERM, while SIGKILL would leave one that
+// fails every later command. A git that ignores SIGTERM is waited for, with
+// no second-stage kill (execFileSync only returns when the child ends), so
+// such a git still hangs git-gloss.
+// Network calls (fetch, push, ls-remote) get NETWORK_TIMEOUT (600 s) instead:
+// a slow link would otherwise fail at 120 s and every retry would fail again.
+// GIT_GLOSS_NETWORK_TIMEOUT (ms, 0 = none) sets that limit alone; failing it,
+// GIT_GLOSS_GIT_TIMEOUT, when set, applies to both.
+export function parseGitTimeout(raw: string | undefined, fallback = 120_000): number {
+  const n = raw === undefined || raw.trim() === '' ? NaN : Number(raw)
+  return Number.isFinite(n) && n >= 0 ? n : fallback
+}
+const GIT_TIMEOUT = parseGitTimeout(process.env.GIT_GLOSS_GIT_TIMEOUT)
+export const NETWORK_TIMEOUT = parseGitTimeout(process.env.GIT_GLOSS_NETWORK_TIMEOUT, parseGitTimeout(process.env.GIT_GLOSS_GIT_TIMEOUT, 600_000))
+
+export function git(args: string[], input?: string, env: Record<string, string> = {}, limit = GIT_TIMEOUT): string {
   try {
     return execFileSync('git', args, {
+      timeout: limit,
+      killSignal: 'SIGTERM',
       encoding: 'utf8',
       input,
       // Untranslated messages: readNote recognises "no note found" by its text.
@@ -35,6 +59,12 @@ export function git(args: string[], input?: string, env: Record<string, string> 
       stdio: ['pipe', 'pipe', 'pipe'],
     })
   } catch (err) {
+    if ((err as { code?: string }).code === 'ETIMEDOUT') {
+      const what = plain(args.slice(0, 3).join(' ')).slice(0, 80)
+      const t = new GitError(`git ${what} timed out after ${limit / 1000} s (set GIT_GLOSS_GIT_TIMEOUT to change the limit)`)
+      t.timedOut = true
+      throw t
+    }
     const stderr = (err as { stderr?: string }).stderr?.trim()
     const e = new GitError(stderr || `git ${args.join(' ')} failed`)
     e.status = typeof (err as { status?: unknown }).status === 'number' ? (err as { status: number }).status : undefined
@@ -42,10 +72,31 @@ export function git(args: string[], input?: string, env: Record<string, string> 
   }
 }
 
-export function gitTry(args: string[], input?: string): string | null {
+// For a catch that turns a git failure into a value ("no gloss", "unreadable",
+// "use the defaults"): a git killed at the time limit gave no answer, so the
+// timeout goes on to the caller rather than become that value.
+export function rethrowTimeout(err: unknown): void {
+  if (err instanceof GitError && err.timedOut) throw err
+}
+
+// Best-effort cleanup (a temporary ref in a `finally`, or after success): never
+// throws, not even on a timeout, so it can't fail a finished job or replace the
+// first error. A timeout leaves one warning line.
+export function gitCleanup(args: string[]): void {
   try {
-    return git(args, input)
-  } catch {
+    git(args)
+  } catch (err) {
+    if (err instanceof GitError && err.timedOut) process.stderr.write(`warning: cleanup timed out, a temporary ref may be left (git ${args.join(' ')})\n`)
+  }
+}
+
+export function gitTry(args: string[], input?: string, limit = GIT_TIMEOUT): string | null {
+  try {
+    return git(args, input, {}, limit)
+  } catch (err) {
+    // Any failure is "no" (callers probe with this), but a git killed at the
+    // time limit gave no answer: say so rather than let it read as "no".
+    rethrowTimeout(err)
     return null
   }
 }

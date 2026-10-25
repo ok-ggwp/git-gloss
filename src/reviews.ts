@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { commitDiff, git, gitTry, GlossError, readNote } from './git.ts'
+import { commitDiff, git, gitCleanup, gitTry, GlossError, readNote, rethrowTimeout } from './git.ts'
 import { parseDiff, type Hunk } from './diff.ts'
 import type { Annotation, Group } from './schema.ts'
 import { bodyLines } from './selection.ts'
@@ -87,7 +87,7 @@ export function stamp(sha: string): { lines: string[]; groups: string[] } {
   try {
     const note = readNote(sha)
     groups = note ? glossKeys(note.annotation) : []
-  } catch { /* an unreadable gloss: nothing to stamp */ }
+  } catch (err) { rethrowTimeout(err) /* an unreadable gloss: nothing to stamp */ }
   return { lines: lineKeys(parseDiff(commitDiff(sha))), groups }
 }
 
@@ -239,7 +239,7 @@ export function addReviews(sha: string, records: (ReviewRecord | DecisionRecord)
     for (let attempt = 0; attempt < 50; attempt++) {
       const old = gitTry(['rev-parse', '-q', '--verify', REVIEWS_REF])?.trim() ?? null
       if (old) git(['update-ref', tmp, old])
-      else gitTry(['update-ref', '-d', tmp])
+      else gitCleanup(['update-ref', '-d', tmp])
       const existing = (gitTry(['notes', '--ref', tmp, 'show', sha]) ?? '').split('\n').filter(Boolean)
       const lines = [...new Set([...existing, ...mine])].sort()
       git(['notes', '--ref', tmp, 'add', '-f', '-F', '-', sha], lines.join('\n') + '\n')
@@ -249,7 +249,7 @@ export function addReviews(sha: string, records: (ReviewRecord | DecisionRecord)
     }
     throw new GlossError(`couldn't record the review on ${sha.slice(0, 10)}: other processes kept writing reviews at the same time`)
   } finally {
-    gitTry(['update-ref', '-d', tmp])
+    gitCleanup(['update-ref', '-d', tmp])
   }
 }
 
