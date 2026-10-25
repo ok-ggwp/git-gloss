@@ -1,0 +1,370 @@
+{
+  "gloss": 4,
+  "commit": "93953c6028afca25374a42f201519fc7b752f208",
+  "created_at": "2026-10-25T03:19:20.975Z",
+  "annotation": {
+    "version": 1,
+    "task": "Make wall-clock test guards reliable under load without making them vacuous",
+    "summary": "Browser waits become deadline-based, time budgets are raised to sit between measured loaded-good and mutated-bad times, the signals check becomes a 900-vs-100 hunk ratio, and one guard that cannot be separated is dropped.",
+    "groups": [
+      {
+        "id": "wait-for",
+        "intent": "Browser waits poll to a 30 s deadline instead of a fixed count",
+        "necessity": "supporting",
+        "serves": "budgets",
+        "removal_impact": "Chromium start, page render, new tab and until() waits would again give up after 5-10 s on a loaded machine (the 11 s Reviews pane failure).",
+        "impact": "local",
+        "hunks": [
+          "h2",
+          "h3",
+          "h4",
+          "h5",
+          "h6"
+        ],
+        "notes": "Behaviour change: ready() now THROWS on timeout (it used to carry on silently), so a broken Chromium can stall a browser test up to 30 s before it fails."
+      },
+      {
+        "id": "time-helper",
+        "intent": "within(): one place that prints and asserts a time budget",
+        "necessity": "supporting",
+        "serves": "budgets",
+        "removal_impact": "The budget guards would not print their times; and the note that they only catch slow, not hung, calls would be lost.",
+        "impact": "local",
+        "hunks": [
+          "h7",
+          "h13",
+          "h16",
+          "h17"
+        ]
+      },
+      {
+        "id": "budgets",
+        "intent": "Raise the time budgets to 20-60 s, between loaded-good and attack time",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The 3 s and 10 s budgets keep failing on a loaded machine; the guards still go red on their reproduced attacks (40-100 s).",
+        "evidence": "mutation runs: split 102 s, claims html 40 s (killed), markdown 55 s, regex hang over 80 s",
+        "impact": "local",
+        "hunks": [
+          "h8",
+          "h9",
+          "h15",
+          "h18",
+          "h19",
+          "h20",
+          "h21",
+          "h22",
+          "h23",
+          "h24"
+        ]
+      },
+      {
+        "id": "signals-ratio",
+        "intent": "Check analyze on 900 hunks costs under 30x what 100 hunks do",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "analyze took 0.3 s alone but 3 s under load, so no fixed time could separate load from a quadratic scan.",
+        "evidence": "mutation with a sampled quadratic rescan: 61x (2757 vs 45 ms) fails; good code 7-9x alone, 2-9x loaded, limit 30x with no flat slack, each side amortised to 100 ms or more",
+        "impact": "local",
+        "hunks": [
+          "h14"
+        ]
+      },
+      {
+        "id": "drop-hostile-timing",
+        "intent": "Drop the 3 s time check from the hostile decision text test",
+        "necessity": "incidental",
+        "serves": "task",
+        "removal_impact": "Nothing: it measured 100-200 ms, nothing could be mutated to make it slow, and it flaked; the safety asserts stay.",
+        "impact": "local",
+        "hunks": [
+          "h10",
+          "h11",
+          "h12"
+        ]
+      },
+      {
+        "id": "todo",
+        "intent": "Replace the flaky-timing TODO with a note on what changed",
+        "necessity": "supporting",
+        "serves": [
+          "budgets",
+          "drop-hostile-timing"
+        ],
+        "removal_impact": "The TODO would still list a fixed problem.",
+        "impact": "local",
+        "hunks": [
+          "h1"
+        ]
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Lower --test-concurrency",
+        "rejected_because": "Measured 2m12 at 8 against 2m13 to 2m52 at the default: no gain, so not changed"
+      }
+    ],
+    "risks": [
+      "The 10 MB line and nesting budgets are 'slow, not hang' budgets: their functional asserts fail first, and no per-test timeout protects against a true hang (TODO)",
+      "One unexplained ~7-minute hang with an orphan Chromium, seen once in a full run and not reproduced",
+      "A slow-but-correct page can now fail where ready() used to carry on"
+    ],
+    "attention": {
+      "level": "look",
+      "focus": [
+        "signals-ratio",
+        "budgets"
+      ],
+      "reasons": [
+        "test-only change",
+        "one time guard removed and one turned into a ratio"
+      ]
+    },
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-sonnet-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 172,
+      "oldLines": 7,
+      "newStart": 172,
+      "newLines": 8,
+      "hash": "10109cbe4b1ac7be"
+    },
+    {
+      "id": "h2",
+      "file": "test/ary.test.ts",
+      "oldFile": "test/ary.test.ts",
+      "oldStart": 6,
+      "oldLines": 7,
+      "newStart": 6,
+      "newLines": 7,
+      "hash": "bdabd7b6c98123bd"
+    },
+    {
+      "id": "h3",
+      "file": "test/ary.test.ts",
+      "oldFile": "test/ary.test.ts",
+      "oldStart": 244,
+      "oldLines": 11,
+      "newStart": 244,
+      "newLines": 7,
+      "hash": "5135758cf8cf761d"
+    },
+    {
+      "id": "h4",
+      "file": "test/browser.ts",
+      "oldFile": "test/browser.ts",
+      "oldStart": 37,
+      "oldLines": 6,
+      "newStart": 37,
+      "newLines": 19,
+      "hash": "28bacefb4b02dac3"
+    },
+    {
+      "id": "h5",
+      "file": "test/browser.ts",
+      "oldFile": "test/browser.ts",
+      "oldStart": 78,
+      "oldLines": 16,
+      "newStart": 91,
+      "newLines": 12,
+      "hash": "4bb5e444fcaeea5a"
+    },
+    {
+      "id": "h6",
+      "file": "test/browser.ts",
+      "oldFile": "test/browser.ts",
+      "oldStart": 100,
+      "oldLines": 12,
+      "newStart": 109,
+      "newLines": 8,
+      "hash": "c5c0c3c7b877d6a2"
+    },
+    {
+      "id": "h7",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 9,
+      "oldLines": 6,
+      "newStart": 9,
+      "newLines": 7,
+      "hash": "21abe927a7dc66f2"
+    },
+    {
+      "id": "h8",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 563,
+      "oldLines": 7,
+      "newStart": 564,
+      "newLines": 7,
+      "hash": "7a710e92f1ae35b4"
+    },
+    {
+      "id": "h9",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 573,
+      "oldLines": 7,
+      "newStart": 574,
+      "newLines": 7,
+      "hash": "d0e901232d27ec30"
+    },
+    {
+      "id": "h10",
+      "file": "test/htmldec.test.ts",
+      "oldFile": "test/htmldec.test.ts",
+      "oldStart": 182,
+      "oldLines": 7,
+      "newStart": 182,
+      "newLines": 7,
+      "hash": "7518aa5a7c558b03"
+    },
+    {
+      "id": "h11",
+      "file": "test/htmldec.test.ts",
+      "oldFile": "test/htmldec.test.ts",
+      "oldStart": 194,
+      "oldLines": 7,
+      "newStart": 194,
+      "newLines": 6,
+      "hash": "2f80925e610a8e62"
+    },
+    {
+      "id": "h12",
+      "file": "test/htmldec.test.ts",
+      "oldFile": "test/htmldec.test.ts",
+      "oldStart": 205,
+      "oldLines": 7,
+      "newStart": 204,
+      "newLines": 6,
+      "hash": "0e55185fa57d42f8"
+    },
+    {
+      "id": "h13",
+      "file": "test/signals.test.ts",
+      "oldFile": "test/signals.test.ts",
+      "oldStart": 10,
+      "oldLines": 6,
+      "newStart": 10,
+      "newLines": 7,
+      "hash": "181110e7dc7ab332"
+    },
+    {
+      "id": "h14",
+      "file": "test/signals.test.ts",
+      "oldFile": "test/signals.test.ts",
+      "oldStart": 569,
+      "oldLines": 19,
+      "newStart": 570,
+      "newLines": 33,
+      "hash": "ba3317276d821319"
+    },
+    {
+      "id": "h15",
+      "file": "test/signals.test.ts",
+      "oldFile": "test/signals.test.ts",
+      "oldStart": 601,
+      "oldLines": 7,
+      "newStart": 616,
+      "newLines": 7,
+      "hash": "7ff7d88870e2e7c7"
+    },
+    {
+      "id": "h16",
+      "file": "test/timing.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 11,
+      "hash": "28667b2a3b1e28fe"
+    },
+    {
+      "id": "h17",
+      "file": "test/untrusted.test.ts",
+      "oldFile": "test/untrusted.test.ts",
+      "oldStart": 6,
+      "oldLines": 6,
+      "newStart": 6,
+      "newLines": 7,
+      "hash": "519e0b0dbbf0aea0"
+    },
+    {
+      "id": "h18",
+      "file": "test/untrusted.test.ts",
+      "oldFile": "test/untrusted.test.ts",
+      "oldStart": 54,
+      "oldLines": 7,
+      "newStart": 55,
+      "newLines": 7,
+      "hash": "926feab26f72e9e6"
+    },
+    {
+      "id": "h19",
+      "file": "test/untrusted.test.ts",
+      "oldFile": "test/untrusted.test.ts",
+      "oldStart": 156,
+      "oldLines": 7,
+      "newStart": 157,
+      "newLines": 7,
+      "hash": "c1f160ffe1bfbd72"
+    },
+    {
+      "id": "h20",
+      "file": "test/untrusted.test.ts",
+      "oldFile": "test/untrusted.test.ts",
+      "oldStart": 165,
+      "oldLines": 7,
+      "newStart": 166,
+      "newLines": 7,
+      "hash": "139b2efcec056797"
+    },
+    {
+      "id": "h21",
+      "file": "test/untrusted.test.ts",
+      "oldFile": "test/untrusted.test.ts",
+      "oldStart": 178,
+      "oldLines": 7,
+      "newStart": 179,
+      "newLines": 7,
+      "hash": "fc0dc00ea37bb240"
+    },
+    {
+      "id": "h22",
+      "file": "test/untrusted.test.ts",
+      "oldFile": "test/untrusted.test.ts",
+      "oldStart": 418,
+      "oldLines": 7,
+      "newStart": 419,
+      "newLines": 7,
+      "hash": "7649449efc8ee8c6"
+    },
+    {
+      "id": "h23",
+      "file": "test/untrusted.test.ts",
+      "oldFile": "test/untrusted.test.ts",
+      "oldStart": 539,
+      "oldLines": 7,
+      "newStart": 540,
+      "newLines": 7,
+      "hash": "b013b638ecf0e5cd"
+    },
+    {
+      "id": "h24",
+      "file": "test/untrusted.test.ts",
+      "oldFile": "test/untrusted.test.ts",
+      "oldStart": 547,
+      "oldLines": 7,
+      "newStart": 548,
+      "newLines": 7,
+      "hash": "73e8d2651862ca8a"
+    }
+  ]
+}
