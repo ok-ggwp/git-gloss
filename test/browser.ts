@@ -37,6 +37,19 @@ export const skipBrowse: string | false =
 type Send = (method: string, params?: object) => Promise<any>
 export type Evaluate = (js: string) => Promise<unknown>
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+// Waits until `probe` returns something truthy, polling every 100 ms, for up to
+// `deadline` ms: a slow machine waits longer instead of failing on a fixed poll count.
+export async function waitFor<T>(probe: () => Promise<T | undefined | false | null | ''>, what: string, deadline = 30_000): Promise<T> {
+  const end = Date.now() + deadline
+  let last: unknown
+  for (;;) {
+    let v: T | undefined | false | null | '' = undefined
+    try { v = await probe() } catch (e) { last = e }
+    if (v) return v
+    if (Date.now() > end) throw new Error(`timed out after ${deadline} ms waiting for ${what}${last ? `; last error: ${last instanceof Error ? last.message : last}` : ''}`)
+    await sleep(100)
+  }
+}
 
 const KEYS: Record<string, [string, number, string | undefined]> = { Enter: ['Enter', 13, '\r'], o: ['KeyO', 79, 'o'] }
 // A real key press (down, up) on whatever has focus, then a short wait for the page to react.
@@ -78,16 +91,12 @@ export async function browse(
   const forget = onCleanup(() => { chrome.kill('SIGKILL') })
   const list = async (): Promise<{ id: string; type: string; webSocketDebuggerUrl: string }[]> => (await fetch(`http://127.0.0.1:${port}/json`)).json()
   const ready = async (evaluate: Evaluate) => {
-    for (let i = 0; i < 50 && !(await evaluate('!!document.querySelector("main .commit")')); i++) await sleep(100)
+    await waitFor(() => evaluate('!!document.querySelector("main .commit")'), 'the page to render')
   }
   const sockets: WebSocket[] = []
   try {
-    let targets: Awaited<ReturnType<typeof list>> | undefined
-    for (let i = 0; i < 100 && !targets; i++) {
-      await sleep(100)
-      try { targets = await list() } catch { /* not up yet */ }
-    }
-    const page = await connect(targets!.find((t) => t.type === 'page')!.webSocketDebuggerUrl)
+    const first = await waitFor(async () => (await list()).find((t) => t.type === 'page'), 'Chromium to start')
+    const page = await connect(first.webSocketDebuggerUrl)
     sockets.push(page.ws)
     await page.send('Page.enable')
     if (opts.scheme) await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: opts.scheme }] })
@@ -100,12 +109,8 @@ export async function browse(
       const known = new Set((await list()).map((t) => t.id))
       // userGesture, or the popup blocker refuses window.open
       await page.send('Runtime.evaluate', { expression: `window.open(${JSON.stringify(tabUrl)}, '_blank', 'noopener') && 1`, userGesture: true })
-      let target: Awaited<ReturnType<typeof list>>[number] | undefined
-      for (let i = 0; i < 50 && !target; i++) {
-        await sleep(100)
-        target = (await list()).find((t) => t.type === 'page' && !known.has(t.id))
-      }
-      const tab = await connect(target!.webSocketDebuggerUrl)
+      const target = await waitFor(async () => (await list()).find((t) => t.type === 'page' && !known.has(t.id)), 'the new tab')
+      const tab = await connect(target.webSocketDebuggerUrl)
       sockets.push(tab.ws)
       await ready(tab.evaluate)
       return tab.evaluate

@@ -6,7 +6,7 @@ import { Script } from 'node:vm'
 import { GitError, resolveCommit } from '../src/git.ts'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { browse, skipBrowse, sleep } from './browser.ts'
+import { browse, skipBrowse, sleep, waitFor } from './browser.ts'
 import { tmp } from './tmp.ts'
 
 const BIN = join(import.meta.dirname, '..', 'bin', 'git-gloss.js')
@@ -244,11 +244,7 @@ test('a revision that looks like an option is a bad revision, not a flag', () =>
 
 // Polls the page until the expression holds (a navigation in between is fine).
 async function until(evaluate: (js: string) => Promise<unknown>, js: string, what: string) {
-  for (let i = 0; i < 60; i++) {
-    if (await evaluate(`(() => { try { return !!(${js}) } catch (e) { return false } })()`)) return
-    await sleep(100)
-  }
-  assert.fail(`timed out waiting for ${what}`)
+  await waitFor(() => evaluate(`(() => { try { return !!(${js}) } catch (e) { return false } })()`), what)
 }
 
 test('in a browser, the desk is the whole page and picking a branch loads that branch', { skip: skipBrowse }, async () => {

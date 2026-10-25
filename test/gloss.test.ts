@@ -9,6 +9,7 @@ import { parseDiff } from '../src/diff.ts'
 import { matchHunks } from '../src/loader.ts'
 import { pageLines, reviewOrder } from '../src/html/data.ts'
 import { bodyLines, formatRanges, parseRef, slice } from '../src/selection.ts'
+import { within } from './timing.ts'
 
 const BIN = join(import.meta.dirname, '..', 'bin', 'git-gloss.js')
 
@@ -563,7 +564,7 @@ test('html splits a hunk between groups by line', () => {
   assert.ok(byId.fix.hunks[0].lines.some((l: { kind: string }) => l.kind === 'gap'))
 })
 
-test('splitting a large new file stays fast', () => {
+test('splitting a large new file finishes within a generous bound (no quadratic blow-up)', () => {
   const dir = tmp('gloss-test-')
   const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' })
   g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@e'); g('config', 'user.name', 'T')
@@ -573,7 +574,7 @@ test('splitting a large new file stays fast', () => {
   const r = gloss(dir, ['add'], annotation([{ ...retryCore, hunks: ['h1:1-10000'] }, { ...config, hunks: ['h1:10001-20000'] }]))
   assert.equal(r.code, 0, r.err)
   assert.equal(gloss(dir, ['show']).code, 0)
-  assert.ok(Date.now() - start < 10000, `took ${Date.now() - start}ms (was ~66s before caching)`)
+  within('split large file', Date.now() - start, 30_000)
 })
 
 test('oversized ranges are rejected by add and clamped when read from a note', () => {

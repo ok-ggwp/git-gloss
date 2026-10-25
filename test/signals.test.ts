@@ -10,6 +10,7 @@ import { DEFAULTS, mergeConfig, RepoConfig } from '../src/config.ts'
 import { analyze, pathClasses } from '../src/signals.ts'
 import { analyzeGroups, groupInputsFor, ratingProblems } from '../src/floor.ts'
 import type { Annotation } from '../src/schema.ts'
+import { within } from './timing.ts'
 
 const BIN = join(import.meta.dirname, '..', 'bin', 'git-gloss.js')
 
@@ -569,19 +570,33 @@ test('fixture: docs-only changes (markdown and screenshots) -> skim', () => {
   assert.match(gloss(r.dir, ['show']).out, /attention: SKIM \(declared\) · floor: skim/)
 })
 
-test('performance: signals over 800+ hunks finishes within a few seconds', () => {
-  const diffs: string[] = []
-  for (let f = 0; f < 90; f++) {
-    diffs.push(fileDiff(`src/m${f}/file${f}.ts`, Array.from({ length: 10 }, (_, i) => [' ctx', `-const password${i} = 1`, `+const password${i} = 2`, ' // more context', '+const x = 1'])))
+test('performance: analyze on 900 hunks takes under 30 times what it takes on 100 (linear is 9, quadratic 81)', () => {
+  // A ratio against the same work on a smaller input measured in this test, so a
+  // loaded machine slows both sides alike; wall time alone could not tell a
+  // loaded machine from a quadratic scan. No flat slack: each side is repeated
+  // until it totals 100 ms or more, so the ratio stays meaningful on a fast machine.
+  const make = (files: number) => hunksOf(...Array.from({ length: files }, (_, f) =>
+    fileDiff(`src/m${f}/file${f}.ts`, Array.from({ length: 10 }, (_, i) => [' ctx', `-const password${i} = 1`, `+const password${i} = 2`, ' // more context', '+const x = 1']))))
+  const small = make(10), big = make(90)
+  assert.equal(small.length, 100)
+  assert.equal(big.length, 900)
+  // Per-run time, best of five batches.
+  const perRun = (hunks: ReturnType<typeof make>) => {
+    let best = Infinity
+    for (let k = 0; k < 5; k++) {
+      let runs = 0
+      const t = performance.now()
+      do {
+        assert.equal(analyze(hunks, defaults).hunks.length, hunks.length)
+        runs++
+      } while (performance.now() - t < 100)
+      best = Math.min(best, (performance.now() - t) / runs)
+    }
+    return best
   }
-  const hunks = hunksOf(...diffs)
-  assert.equal(hunks.length, 900)
-  const t = performance.now()
-  const sig = analyze(hunks, defaults)
-  const ms = performance.now() - t
-  assert.equal(sig.hunks.length, 900)
-  assert.ok(ms < 3000, `analyze took ${Math.round(ms)}ms`)
-  console.log(`# analyze of ${hunks.length} hunks: ${Math.round(ms)}ms`)
+  const msSmall = perRun(small), msBig = perRun(big)
+  console.log(`# analyze: 100 hunks ${msSmall.toFixed(1)} ms, 900 hunks ${msBig.toFixed(1)} ms (${(msBig / msSmall).toFixed(1)}x)`)
+  assert.ok(msBig <= 30 * msSmall, `900 hunks took ${msBig.toFixed(1)} ms against ${msSmall.toFixed(1)} ms for 100 (${(msBig / msSmall).toFixed(1)}x)`)
 })
 
 test('a pattern with the g or y flag still hits every changed line', () => {
@@ -601,7 +616,7 @@ test('a catastrophic regex in the config is cut off and counts as a hit, not run
   const t = Date.now()
   const out = gloss(r.dir, ['signals', 'wip', '--json'])
   assert.equal(out.code, 0)
-  assert.ok(Date.now() - t < 10_000, 'finishes well inside the time the pattern would need')
+  within('catastrophic regex', Date.now() - t, 30_000)
   assert.match(out.err, /took over \d+ms and is treated as matching/)
   assert.equal(JSON.parse(out.out).floor.impact, 'sensitive', 'a timed-out pattern fails closed')
 })

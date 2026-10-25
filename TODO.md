@@ -172,7 +172,8 @@ The brief is `gloss-review.md` (kept outside the repo; consider adding it under
   a filter chosen in one commit still hides groups after opening another (the
   filter button counts are per commit, so labels and rows can disagree). Reset
   the filters when the open commit changes, or keep them per commit.
-- [ ] Timing assertions flake when the full suite runs in parallel: the signals performance test, the untrusted markdown test (3 s budget) and the hostile decision text test (3 s) and the Reviews pane decisions test fail on a loaded machine and pass alone. Give them headroom or measure CPU time instead of wall time. Seen three times on 2026-10-24.
+- Timing guards: the hostile decision text browser test lost its wall-time check (102 ms, nothing slow to mutate it against; its safety asserts stay), and the signals performance test is a ratio (900 vs 100 hunks) rather than a time. The 10 MB line and nesting tests keep generous "slow, not hang" budgets, their functional asserts fail first.
+- [ ] No per-test timeout protects against a true hang (a test that never returns stalls the suite): consider `node --test --test-timeout=...`.
 - [ ] The browser tests skip on Node 20 (no global `WebSocket`) and the skip is
   silent, so a Node 20 CI would lose all browser coverage without failing.
 - [ ] Performance: every hunk of the selected group is now built eagerly (the old

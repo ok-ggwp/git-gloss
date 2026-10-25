@@ -182,7 +182,7 @@ test('decisions made on wip appear on the page after adopt', () => {
   assert.equal(e.summary, '1 decided · not marked complete')
 })
 
-test('in a real browser, hostile decision text stays text, and the page stays fast', { skip: skipBrowse }, async () => {
+test('in a real browser, hostile decision text stays text', { skip: skipBrowse }, async () => {
   const { dir } = glossed()
   const id = review(dir, 'HEAD', 'bugs', 'Problem.\nVERDICT: ISSUES')
   const bomb = '</script><img src=x onerror=window.__pwned=1>'
@@ -194,7 +194,6 @@ test('in a real browser, hostile decision text stays text, and the page stays fa
   const out = join(dir, 'page.html')
   assert.equal(gloss(dir, ['html', '-o', out]).code, 0)
   await browse(`file://${out}`, async (evaluate) => {
-    const t0 = Date.now()
     await evaluate(`document.querySelector('.rvrow').click()`)
     const f = JSON.parse(String(await evaluate(`JSON.stringify({
       pwned: window.__pwned === undefined ? null : window.__pwned,
@@ -205,7 +204,6 @@ test('in a real browser, hostile decision text stays text, and the page stays fa
       rows: [...document.querySelectorAll('.decisions .drow')].map((r) => r.textContent),
       scripts: document.scripts.length,
     })`)))
-    assert.ok(Date.now() - t0 < 3000, 'slow')
     assert.equal(f.pwned, null, 'a handler ran')
     assert.equal(f.img, false)
     assert.deepEqual(f.made, [])
