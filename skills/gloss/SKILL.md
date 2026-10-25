@@ -38,6 +38,7 @@ The commands below are written as `git gloss …`. That works only where git-glo
    `git gloss add wip -f <file>`
    Fix any validation errors it reports and rerun. Use `--force` only to replace your own earlier gloss.
 4. Run `git gloss show wip` (the summary) and `git gloss show wip --full` (every group's details) and check that they read well to someone who was not in the session. Then spot-check the code under a few groups with `git gloss show wip -g <group>`. Validation checks that every line is covered, not that each line is under the right intent.
+5. Run `git gloss lint wip` after `add` and fix what it reports (or be ready to defend it) before reporting back. It checks, by code, what an honesty reviewer checks by eye: missing or low `impact`, `required` groups whose `removal_impact` says nothing breaks, tests that serve nothing, missing `risks`, and the like. It is advisory and exits 0.
 
 If you edit files after glossing, `show wip` warns that the working tree has changed: run `git gloss hunks wip` again and re-gloss with `--force`. If you amend or rebase a glossed commit, the hooks from `git gloss init --hooks` carry the gloss along (and combine glosses on squash and fixup); if `show` still reports it stale or missing, run `git gloss carry --find --squash` before re-glossing by hand with `--force`. A replaced gloss is never lost: `git gloss versions <commit>` lists them. For a review of the uncommitted work, the user can run `git gloss review wip`, or `git gud review wip` to have agents review it in a sandbox.
 

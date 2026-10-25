@@ -15,6 +15,8 @@ git gloss hunks [<commit>|wip]        list hunks, numbering changed lines for h3
 git gloss signals [<commit>|<range>|wip] [--json]
                                       what the diff itself says about attention: path classes, pattern
                                       hits, dependency bumps and the computed floor
+git gloss lint [<commit>|wip] [--json]
+                                      advisory checks of a gloss that a reviewer would make by eye
 git gloss adopt [<commit>]            move the gloss of uncommitted work onto the commit made from it
 git gloss add [<commit>] -f a.json    attach an annotation (validated against the diff; --allow-underrate)
 git gloss carry <source>... [--to <c>] gloss a commit from the glosses of the commits its changes came from
@@ -123,6 +125,10 @@ git gloss adopt                # ...or move it by hand
 ```
 
 The snapshot is a commit object built from a temporary index, kept by the private ref `refs/worktree/gloss/wip` (one per linked worktree); your branch, index and files are never touched. Taking a new snapshot keeps the gloss of groups whose changes are unchanged, so after committing part of the work or editing one part, only the rest needs glossing again. Its gloss lives in `refs/notes/gloss-wip`, which `sync` doesn't push. Untracked files that look like secrets (`.env`, `*.key`, `*.pem`, `credentials.json`, …) are left out of the snapshot, with a note, because snapshots are shown and sent to reviewers; stage one with `git add` to include it. If a branch or tag is called `wip`, `wip` still means it when there's no snapshot; otherwise use `heads/wip`. Commands warn when you've edited files or committed since the snapshot. `adopt` matches the snapshot's hunks to the commit's by content, so the work can be committed in several commits (each takes the groups whose changes it contains), and changes made after glossing are reported as unexplained rather than silently covered. Once everything is committed, the snapshot is cleared.
+
+## Linting a gloss
+
+`git gloss lint [<commit>|wip]` checks a gloss deterministically for what a reviewer checking its honesty would look for by eye, and prints one line per finding with a stable code: `no-impact`, `impact-below-floor`, `attention-below-floor`, `mechanical-on-floor` (graded mechanical over a floor signal such as CI or sensitive code; a lockfile bump is fine), `unknown-serves`, `test-serves-nothing`, `required-but-nothing-breaks` (`removal_impact` begins "nothing breaks", "no effect" and the like), `missing-risks` (attention `careful` or above and no `risks`) and `uncovered-hunks` (a stale gloss). It is advisory: findings never change the exit code (errors such as no gloss still do). `--json` prints `{target, findings: [{code, group?, hunk?, message}]}`. When the diff signals are unavailable (a malformed `.gloss/config.json`), the rating checks are skipped and lint says `incomplete` (`"incomplete": true` in `--json`) instead of `clean`. Run it after `add` and fix what it reports, or be ready to defend it.
 
 ## Glosses that follow your history
 

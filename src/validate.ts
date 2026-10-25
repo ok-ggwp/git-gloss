@@ -1,6 +1,9 @@
-import { servesOf, type Annotation } from './schema.ts'
+import { servesOf, type Annotation, type Group } from './schema.ts'
 import type { Hunk } from './diff.ts'
 import { changedCount, claimsProblem, parseRef, refLabel, selections, uncovered, type Claim } from './selection.ts'
+
+// The serves targets of a group that are neither "task" nor a group id.
+export const unknownServes = (g: Pick<Group, 'serves'>, ids: Set<string>): string[] => servesOf(g).filter((t) => t !== 'task' && !ids.has(t))
 
 export type ValidationResult = { errors: string[]; uncovered: string[] }
 
@@ -33,8 +36,8 @@ export function validate(annotation: Annotation, hunks: Hunk[]): ValidationResul
       if (h) claims.push({ hunk: h, lines })
     }
     const targets = servesOf(g)
+    for (const t of unknownServes(g, groupIds)) errors.push(`group "${g.id}" serves unknown group "${t}" (use "task" or group ids)`)
     for (const t of targets) {
-      if (t !== 'task' && !groupIds.has(t)) errors.push(`group "${g.id}" serves unknown group "${t}" (use "task" or group ids)`)
       if (t === g.id) errors.push(`group "${g.id}" cannot serve itself`)
     }
     if (targets.length > 1 && targets.includes('task')) {
