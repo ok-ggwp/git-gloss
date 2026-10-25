@@ -1,0 +1,253 @@
+{
+  "gloss": 4,
+  "commit": "35a97e44e98dc365b0d553edb28c89861e73803a",
+  "created_at": "2026-10-25T09:04:45.923Z",
+  "annotation": {
+    "version": 1,
+    "task": "Record all decisions on a review at once: reviews --decide-template prints a skeleton, --decide-file records it in one validated write per commit",
+    "summary": "One call per finding was slow for an arbiter with a dozen findings. Now a template lists each ref, the arbiter fills outcomes, and the file is validated entirely before one compare-and-swap write per commit, so a bad row records nothing. The input is untrusted-shaped (size, depth, keys), so it is bounded and read field by field.",
+    "groups": [
+      {
+        "id": "batch-parse",
+        "intent": "Read a bounded decisions file, validate it, and build the template",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "No batch input could be read safely, and the template would not exist",
+        "impact": "contract",
+        "impact_reason": "defines the accepted file shapes and limits (500 entries, 1 MiB)",
+        "hunks": [
+          "h4"
+        ],
+        "notes": "Size and entry count are capped; nesting depth is not bounded: JSON.parse recursion errors are caught and reported. Template text is cut at 80 code points. A non-blocking stdin is waited for. Template rows write a bare ref as \"N: text\" (so refOf recognises it) and a repeated finding is refused."
+      },
+      {
+        "id": "batch-command",
+        "intent": "Wire --decide-template and --decide-file into reviews",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The batch flags would not exist",
+        "impact": "contract",
+        "impact_reason": "new CLI flags and a stdout summary line; writes decision records",
+        "hunks": [
+          "h5",
+          "h6",
+          "h7",
+          "h8",
+          "h9"
+        ],
+        "notes": "Flag conflicts, validate first, one addReviews per commit, warn on unknown refs, summary line. reportOf and warnUnknownRef are shared by the template, file and single paths; the single call reuses checkLength."
+      },
+      {
+        "id": "finding-texts",
+        "intent": "Scan keeps a first-wins ref to text map; findingRefs and findingTexts read it",
+        "necessity": "supporting",
+        "serves": "batch-command",
+        "removal_impact": "The template would need its own second parser of reports that could drift from the refs reviews prints",
+        "impact": "module",
+        "hunks": [
+          "h10",
+          "h11",
+          "h12",
+          "h13",
+          "h14"
+        ]
+      },
+      {
+        "id": "batch-docs",
+        "intent": "Document template, fill, file; keep the single call as fallback",
+        "necessity": "supporting",
+        "serves": "batch-command",
+        "removal_impact": "Arbiters would keep making one call per finding and not know the file shapes",
+        "impact": "local",
+        "hunks": [
+          "h1",
+          "h2",
+          "h3"
+        ]
+      },
+      {
+        "id": "batch-tests",
+        "intent": "Test template refs, round trip, atomicity, ranges, hostile files",
+        "necessity": "supporting",
+        "serves": [
+          "batch-parse",
+          "batch-command"
+        ],
+        "removal_impact": "Atomicity and the input limits would be unverified",
+        "impact": "local",
+        "hunks": [
+          "h15"
+        ],
+        "notes": "Covers: every template row maps back to its report ref (ref order, bogus ref warns); filled round trip; atomic refusal incl. repeated findings; stdin (and non-blocking stdin); complete marker; a two-commit range gets one write per commit (notes ref gains 2 commits); hostile files."
+      }
+    ],
+    "risks": [
+      "Validation is atomic but the write is one addReviews per commit: a range of commits can partly fail (a git error mid-range leaves earlier commits written)",
+      "A review with over 500 findings cannot get a template",
+      "Duplicate refs in a report collapse to one template row (first wins)"
+    ],
+    "attention": {
+      "level": "careful",
+      "focus": [
+        "batch-parse",
+        "batch-command"
+      ],
+      "reasons": [
+        "new CLI surface and untrusted file input",
+        "writes decision records to notes"
+      ]
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 39,
+      "oldLines": 6,
+      "newStart": 39,
+      "newLines": 8,
+      "hash": "03a67bacaee9503e"
+    },
+    {
+      "id": "h2",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 184,
+      "oldLines": 6,
+      "newStart": 186,
+      "newLines": 15,
+      "hash": "0d2c054c8246eca5"
+    },
+    {
+      "id": "h3",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 139,
+      "oldLines": 12,
+      "newStart": 139,
+      "newLines": 20,
+      "hash": "b99e55e6edad07a1"
+    },
+    {
+      "id": "h4",
+      "file": "src/batch.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 104,
+      "hash": "cf9901c1bb437482"
+    },
+    {
+      "id": "h5",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 2,
+      "oldLines": 12,
+      "newStart": 2,
+      "newLines": 13,
+      "hash": "1cb5ede566acb5a7"
+    },
+    {
+      "id": "h6",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 21,
+      "oldLines": 10,
+      "newStart": 22,
+      "newLines": 20,
+      "hash": "e55c1c6cff03ac14"
+    },
+    {
+      "id": "h7",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 59,
+      "oldLines": 6,
+      "newStart": 70,
+      "newLines": 50,
+      "hash": "b088f76a5a5c5f14"
+    },
+    {
+      "id": "h8",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 66,
+      "oldLines": 12,
+      "newStart": 121,
+      "newLines": 7,
+      "hash": "441c627cbee015c3"
+    },
+    {
+      "id": "h9",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 82,
+      "oldLines": 13,
+      "newStart": 132,
+      "newLines": 8,
+      "hash": "b51e46811dac4b36"
+    },
+    {
+      "id": "h10",
+      "file": "src/findings.ts",
+      "oldFile": "src/findings.ts",
+      "oldStart": 30,
+      "oldLines": 7,
+      "newStart": 30,
+      "newLines": 7,
+      "hash": "b0201c701e9a9b07"
+    },
+    {
+      "id": "h11",
+      "file": "src/findings.ts",
+      "oldFile": "src/findings.ts",
+      "oldStart": 125,
+      "oldLines": 7,
+      "newStart": 125,
+      "newLines": 9,
+      "hash": "fcc7aa2c2d112993"
+    },
+    {
+      "id": "h12",
+      "file": "src/findings.ts",
+      "oldFile": "src/findings.ts",
+      "oldStart": 141,
+      "oldLines": 7,
+      "newStart": 143,
+      "newLines": 7,
+      "hash": "94de812ea70c57f2"
+    },
+    {
+      "id": "h13",
+      "file": "src/findings.ts",
+      "oldFile": "src/findings.ts",
+      "oldStart": 154,
+      "oldLines": 10,
+      "newStart": 156,
+      "newLines": 10,
+      "hash": "a0b9f65291a3df3a"
+    },
+    {
+      "id": "h14",
+      "file": "src/findings.ts",
+      "oldFile": "src/findings.ts",
+      "oldStart": 166,
+      "oldLines": 7,
+      "newStart": 168,
+      "newLines": 12,
+      "hash": "1a961f9d03082851"
+    },
+    {
+      "id": "h15",
+      "file": "test/batch.test.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 331,
+      "hash": "d02a25f8ab234111"
+    }
+  ]
+}
