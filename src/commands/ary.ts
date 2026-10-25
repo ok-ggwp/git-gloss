@@ -32,5 +32,7 @@ export function run(argv: string[]): number {
     console.error('serving glosses read-only; press Ctrl-C to stop')
     if (!values['no-open']) openInBrowser(url)
   })
+  // The default action of a signal would skip the cleanup that kills running page builds.
+  for (const [sig, code] of [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129], ['SIGQUIT', 131]] as const) process.on(sig, () => { server.close(); process.exit(code) })
   return 0
 }

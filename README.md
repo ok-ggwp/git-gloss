@@ -262,6 +262,8 @@ All gloss and diff text is rendered as text, and a Content-Security-Policy with 
 
 It serves one repository, the one you run it in, until you press Ctrl-C. It listens on 127.0.0.1 only, on a free port (or `--port`), only answers requests addressed to that host name, and never writes anything: it doesn't take snapshots or change notes. A page shows at most 200 commits; pick a narrower range for more. `--no-open` doesn't launch a browser.
 
+A page is built in a child process of its own, so a slow or hung git never stops the server answering other requests. A build that outlives `GIT_GLOSS_ARY_TIMEOUT` (ms, default 300000; 0, or more than 2147483647, = no limit) gets a 504 page and its git processes are killed; a single git over `GIT_GLOSS_GIT_TIMEOUT` is a 422 page. At most `GIT_GLOSS_ARY_JOBS` (default 4) pages are built at once, further requests get 503 with `Retry-After` at once; a page over `GIT_GLOSS_ARY_MAX_OUTPUT` bytes (default 32 MiB) is a 502; each running build can hold up to twice that in memory (4 builds: 256 MiB). Closing the browser tab, stopping the server (Ctrl-C, or a closed terminal) or a timeout kills the builds it was running.
+
 ## Caveats
 
 - Carrying a gloss onto a server-side squash needs the original commits in your repository; usually the author has them. If a squash merge resolved conflicts or changed much of the code, it may not reach the 80% match; run `git gloss carry <branch commits> --to <squash>`.
