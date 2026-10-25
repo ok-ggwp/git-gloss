@@ -7,7 +7,7 @@ import { tmp } from './tmp.ts'
 import { browse, skipBrowse, waitFor } from './browser.ts'
 import { within } from './timing.ts'
 import { buildPageData } from '../src/html/data.ts'
-import { findingRefs, labelFindings, orderDecisions, refOf } from '../src/findings.ts'
+import { findingClashes, findingRefs, findingTexts, labelFindings, orderDecisions, refOf } from '../src/findings.ts'
 
 const BIN = join(import.meta.dirname, '..', 'bin', 'git-gloss.js')
 const lines = (...l: string[]) => l.join('\n')
@@ -252,4 +252,167 @@ test('in a real browser, a hostile finding is text and keeps its bold label', { 
     assert.ok(f.first.startsWith('[1.1] </script><img src=x onerror=window.__pwned=1>'), f.first)
     assert.equal(f.links, 0)
   })
+})
+
+const DUP = lines('## 1. Races', '- first', '', '## 1. Wording', '- second', '- third', '', '## 1. Again', '- fourth', 'VERDICT: ISSUES')
+const labelsOf = (out: string) => out.split('\n').filter((l) => l.startsWith('- **[')).map((l) => l.slice(5, l.indexOf(']**')))
+
+test('a repeated section number gets /N: 1, 1/2, 1/3; the first keeps its bare number', () => {
+  const out = labelFindings(DUP)
+  assert.deepEqual(labelsOf(out), ['1.1', '1/2.1', '1/2.2', '1/3.1'])
+  assert.deepEqual([...findingRefs(DUP)], ['1', '1.1', '1/2', '1/2.1', '1/2.2', '1/3', '1/3.1'])
+  // running it on its own output changes nothing, and the template lists the items only
+  assert.equal(labelFindings(out), out)
+  assert.deepEqual(findingTexts(DUP), [['1.1', 'first'], ['1/2.1', 'second'], ['1/2.2', 'third'], ['1/3.1', 'fourth']])
+})
+
+test('an implicit section meeting a numbered one is a repeat only if the first emitted a ref', () => {
+  // `## A` is section 1, `## B` section 2, then `2. C` repeats 2, and B emitted 2.1
+  const out = labelFindings(lines('## A', '- a', '## B', '- b', '## 2. C', '- c'))
+  assert.deepEqual(labelsOf(out), ['1.1', '2.1', '2/2.1'])
+  // two numbered headings without items: both stay rows of the template
+  assert.deepEqual(findingTexts('## 1. X\n\n## 1. Y\n').map(([r]) => r), ['1', '1/2'])
+  // a numbered heading without items emitted `2`, which is not `2.1`: no collision, no repeat
+  const early = lines('## 2. Empty', '', '## 1. A', '- a', '## Y', '- y')
+  assert.deepEqual(labelsOf(labelFindings(early)), ['1.1', '2.1'])
+  assert.deepEqual([...findingRefs(early)], ['2', '1', '1.1', '2.1'])
+  // an empty heading before a same-numbered one with items
+  assert.deepEqual([...findingRefs(lines('## 1. Empty', '## 1. B', '- b'))], ['1', '1.1'])
+  // an unnumbered heading that emitted nothing does not use up its number
+  const details = lines('## 1. Races', '- r1', '**Details**', 'some prose', '## 2. Wording', '- w1')
+  assert.deepEqual(labelsOf(labelFindings(details)), ['1.1', '2.1'])
+  assert.deepEqual([...findingRefs(details)], ['1', '1.1', '2', '2.1'])
+})
+
+test('refs are byte-identical to the previous version for reports without a collision', () => {
+  const corpus = JSON.parse(readFileSync(join(import.meta.dirname, 'fixtures', 'refs-corpus.json'), 'utf8')) as { name: string; text: string; labelled: string; refs: string[] }[]
+  assert.ok(corpus.length >= 10)
+  for (const c of corpus) {
+    assert.equal(labelFindings(c.text), c.labelled, c.name)
+    assert.deepEqual([...findingRefs(c.text)], c.refs, c.name)
+  }
+})
+
+test('items before the first heading keep their rows next to a numbered heading with items', () => {
+  const t = lines('- loose problem', '- another', '## 1. Races', '- lock')
+  assert.deepEqual(findingTexts(t).map(([r]) => r), ['1', '2', '1.1'])
+  assert.deepEqual(labelsOf(labelFindings(t)), ['1', '2', '1.1'])
+  // a heading without items next to a loose ref `1` takes a free label instead of being dropped
+  const u = lines('- loose', '## 1. Empty', '', 'VERDICT: ISSUES')
+  assert.deepEqual(findingTexts(u).map(([r]) => r), ['1', '1/2'])
+})
+
+test('refOf recognises N-th occurrence refs and rejects prose that looks like a suffix', () => {
+  const ok: [string, string | null][] = [['1/2.1 text', '1/2.1'], ['1/12.12: x', '1/12.12'], ['2/999.3', '2/999.3'], ['1/2: heading', '1/2'], ['1/2) x', '1/2'], ['1/2. x', '1/2'], ['1/2', null]]
+  for (const [f, want] of ok) assert.equal(refOf(f), want, f)
+  for (const f of ['1/2 cup of tea', '1/1.1 x', '1/0.1 x', '1/1000.1 x', '1/2/3.1 x', '1/a.1 x', '2nd: x', '1st) call', '2fa: bypass', '3d: render', '2a) option', '1b.1 text', '3d printing', '1/2.12345 x', '1234/2.1', '/2.1', '1/.1']) assert.equal(refOf(f), null, f)
+  assert.equal(refOf('1.2 wording nit'), '1.2')
+  assert.equal(refOf('3: x'), '3')
+  assert.equal(refOf('1 wording nit'), null)
+})
+
+test('a label of the repeat form written before is dropped, not stacked', () => {
+  const text = lines('## 1. A', '- **[1/2.9]** looks like a label', '- 1b.2 is text', '## 2. B', '- b')
+  assert.match(labelFindings(text), /\[1\.1\]\*\* looks like a label/)
+  const once = labelFindings(DUP)
+  assert.equal(labelFindings(once), once)
+})
+
+test('orderDecisions: 1 < 1.1 < 1.10 < 1/2 < 1/2.1 < 1/10 < 2', () => {
+  const d = (finding: string, at: string) => ({ finding, at })
+  const out = orderDecisions([d('2.1 x', '1'), d('1/10.1 x', '2'), d('1/2.1 x', '3'), d('1/2: x', '4'), d('1.10 x', '5'), d('1.1 x', '6'), d('1: x', '7'), d('free text', '8')])
+  assert.deepEqual(out.map((x) => refOf(x.finding)), ['1', '1.1', '1.10', '1/2', '1/2.1', '1/10.1', '2.1', null])
+})
+
+test('hostile: thousands of repeated headings stay bounded and every item keeps its own label', () => {
+  const N = 3000
+  const many = Array.from({ length: N }, () => '## 1. S\n- i').join('\n')
+  const t0 = Date.now()
+  const printed = labelsOf(labelFindings(many))
+  assert.ok(Date.now() - t0 < 3000)
+  // 999 distinct labels; past that the label stays 1/999 and the items keep counting on
+  assert.equal(printed.length, N)
+  assert.equal(new Set(printed).size, N)
+  assert.equal(printed[0], '1.1')
+  assert.equal(printed[1], '1/2.1')
+  assert.equal(printed[998], '1/999.1')
+  assert.equal(printed[999], '1/999.2')
+  assert.equal(printed[N - 1], `1/999.${N - 998}`)
+  // (item numbers over 999 are not refs a decision can name; that limit is older than this)
+  assert.ok(printed.slice(0, 1997).every((r) => refOf(r) === r))
+  // the template has a row for every item
+  assert.equal(findingTexts(many).length, N)
+  // a heading without items past the cap has no row of its own (its ref is taken); nothing else is lost
+  const empties = Array.from({ length: 1005 }, () => '## 1. S').join('\n\n')
+  assert.equal(findingTexts(empties).length, 999)
+  assert.equal(refOf('1' + 'b'.repeat(200000) + '.1 x'), null)
+  assert.equal(refOf('1/2' + ' '.repeat(100000) + '.1'), null)
+  assert.equal(refOf('1/' + '2'.repeat(100000) + '.1'), null)
+})
+
+test('hostile text: __proto__, SQL-like and long digit refs are plain text', () => {
+  for (const f of ['__proto__', '1/2.1; DROP', '9'.repeat(100) + '.1 x', '1/2.1\u0000', 'constructor.1 x']) assert.equal(refOf(f), null, f)
+  const t = lines('## 1. __proto__', '- constructor', '## 1. toString', '- y')
+  assert.deepEqual(labelsOf(labelFindings(t)), ['1.1', '1/2.1'])
+})
+
+test('a heading numbered 0 keeps its own ref, with or without items', () => {
+  assert.deepEqual([...findingRefs(lines('## 0. Intro', '- a', '## 2. B', '- b'))], ['0', '1.1', '2', '2.1'])
+  // its items fall in section 1; a later `## 1.` then collides with them and is the repeat
+  const t = lines('## 0. Intro', '- a', '## 1. B', '- b')
+  assert.deepEqual([...findingRefs(t)], ['0', '1.1', '1/2', '1/2.1'])
+  assert.deepEqual(labelsOf(labelFindings(t)), ['1.1', '1/2.1'])
+  // a heading with items is no template row, whatever its number
+  assert.deepEqual(findingTexts(t).map(([r]) => r), ['1.1', '1/2.1'])
+  assert.deepEqual(findingTexts(lines('## 0. Intro', '', '## 2. B', '- b')).map(([r]) => r), ['0', '2.1'])
+})
+
+test('a heading that lost its ref is a clash only when it would have been a row', () => {
+  assert.deepEqual(findingClashes(lines('## 1. Empty', '## 1. B', '- b')), [])
+  assert.deepEqual(findingClashes(Array.from({ length: 1002 }, () => '## 1. S').join('\n\n')), ['1/999'])
+  // headings numbered 0 with items past the cap lose only a ref no row needs
+  assert.deepEqual(findingClashes('## 0. S\n- i\n'.repeat(1002)), [])
+})
+
+test('hostile: a 250 KB report of repeated sections labels in well under a second', () => {
+  const big = '## 1.\n- i\n'.repeat(22000)
+  assert.ok(big.length < 256 * 1024)
+  let t = performance.now()
+  const out = labelFindings(big)
+  within('labelFindings 22000 repeats', performance.now() - t, 1000)
+  assert.equal(out.split('\n').filter((l) => l.startsWith('- **[')).length, 22000)
+  t = performance.now()
+  assert.equal(findingTexts(big).length, 22000)
+  assert.equal(findingRefs(big).size, 22000 + 999)
+  within('findingTexts+refs 22000 repeats', performance.now() - t, 1000)
+})
+
+// Property: whenever the previous version's refs were all distinct, the refs are unchanged.
+test('generated reports whose old refs were distinct keep their refs exactly', async () => {
+  const old = await import('./fixtures/findings-v0.6.ts')
+  let seed = 12345
+  const rnd = (n: number) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n }
+  let compared = 0
+  for (let i = 0; i < 600; i++) {
+    const parts: string[] = []
+    const heads: number[] = []
+    let loose = 0, sawHeading = false, items = 0
+    for (let k = 1 + rnd(8); k > 0; k--) {
+      const c = rnd(6)
+      if (c === 0) { const n = rnd(5); heads.push(n); sawHeading = true; parts.push(`## ${n}. H`) }
+      else if (c === 1) { sawHeading = true; parts.push('## Plain') }
+      else if (c === 2) { sawHeading = true; parts.push('**Details**') }
+      else if (c === 3) parts.push('some prose')
+      else { if (!sawHeading) loose++; items++; parts.push('- item') }
+    }
+    const text = parts.join('\n\n') + '\nVERDICT: ISSUES'
+    const o = old.labelFindings(text)
+    const printed = o.split('\n').filter((l) => l.startsWith('- **[')).map((l) => l.slice(5, l.indexOf(']**')))
+    const distinct = new Set(printed).size === printed.length && new Set(heads).size === heads.length && !heads.some((n) => n >= 1 && n <= loose)
+    if (!distinct) continue
+    compared++
+    assert.equal(labelFindings(text), o, text)
+    assert.deepEqual([...findingRefs(text)], [...old.findingRefs(text)], text)
+  }
+  assert.ok(compared > 100, `only ${compared} comparable reports`)
 })

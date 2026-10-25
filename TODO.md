@@ -236,13 +236,11 @@ the network: a sync makes up to six round trips, and the pre-push hook runs one.
   and `nx` steps for this repo.
 
 ## Batch decisions and lint (2026-10-25, from the reviews of `--decide-file` and `lint`)
-
-- [ ] The decision template lists a numbered heading as a row even when items sit under it, so the arbiter must delete those rows or the file is refused (empty outcome). Leave heading rows out when the heading has items.
-- [ ] Duplicate refs (two `1.` headings each with `- item`) collapse to one ref in `labelFindings` and the template; the second finding has no batch path. Pre-existing ambiguity.
-- [ ] Re-running a `--decide-file` after a partly failed range write adds a second set of decisions to the commits already written (each run has a new `at`).
-- [ ] No cap on the total size of the decisions one file writes (500 entries at the per-record limit).
-- [ ] A `resolveBy` helper shared by `--record`, `--decide` and `--decide-file`; move the `--decide-file` branch out of `run` into `batch.ts`.
-- [ ] `lint` does not report add's config-edit note (`configEdit` is computed and dropped); report it or drop the field.
+- [ ] `findings.ts` has two parsers for a written label: `stripLabel` (an old digit/dot loop plus a regex for the `1/2.2` form) and `refOf`. One regex for both would tighten the old loop and may change refs that exist; do it with a corpus check.
+- [ ] Past 999 repeats of one section number the label stays `S/999` and its items keep counting (item numbers over 999 are not refs a decision can name, as for any section); the heading row of such a repeat without items has no row of its own.
+- [ ] The `--decide-file` branch in `commands/reviews.ts` `run` still holds `reportOf`, `warnUnknownRef`, the unknown-ref warnings, the output line and the `applyBatch` call; only preparation and the write loop moved to `batch.ts`.
+- [ ] `lint` is silent about `config-edit` when the diff analysis is unavailable (malformed `.gloss/config.json`): the rating checks are skipped, `config-edit` with them.
+- [ ] `newRecords` (idempotent re-run) relies on `readDecisions` returning every record: lines skipped as over-length or malformed make the "latest decision" fall back to an older one, so a re-run could write a decision again.
 
 ## Timeouts (2026-10-25, from the reviews of the git timeout work)
 

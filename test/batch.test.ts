@@ -4,7 +4,8 @@ import { execFileSync, spawnSync, spawn } from './run.ts'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmp } from './tmp.ts'
-import { findingRefs, refOf } from '../src/findings.ts'
+import { within } from './timing.ts'
+import { findingClashes, findingRefs, labelFindings, refOf } from '../src/findings.ts'
 
 const BIN = join(import.meta.dirname, '..', 'bin', 'git-gloss.js')
 
@@ -73,13 +74,11 @@ test('--decide-template lists every ref with the finding text cut to 80 characte
   const t = JSON.parse(r.out)
   assert.equal(t.review, id)
   assert.equal(t.complete, false)
-  assert.deepEqual(t.decisions.map((d: any) => d.finding.split(' ')[0]), ['1:', '1.1', '1.2', '2:', '2.1'])
-  assert.equal(t.decisions[0].finding, '1: Races')
-  assert.equal(t.decisions[3].finding, '2: Wording')
-  assert.deepEqual(t.decisions.map((d: any) => [d.outcome, d.note]), Array(5).fill(['', '']))
-  assert.equal(t.decisions[1].finding, '1.1 first problem with the lock ordering')
-  assert.equal(t.decisions[2].finding, '1.2 second problem: ' + 'x'.repeat(64))
-  assert.equal(t.decisions[4].finding, '2.1 **bold** nit')
+  assert.deepEqual(t.decisions.map((d: any) => d.finding.split(' ')[0]), ['1.1', '1.2', '2.1'])
+  assert.deepEqual(t.decisions.map((d: any) => [d.outcome, d.note]), Array(3).fill(['', '']))
+  assert.equal(t.decisions[0].finding, '1.1 first problem with the lock ordering')
+  assert.equal(t.decisions[1].finding, '1.2 second problem: ' + 'x'.repeat(64))
+  assert.equal(t.decisions[2].finding, '2.1 **bold** nit')
   assert.match(gloss(dir, ['reviews', 'HEAD', '--decide-template', 'nope']).err, /no review nope on HEAD/)
 })
 
@@ -94,21 +93,21 @@ test('the template has no escapes from the report', () => {
 test('a filled-in template round-trips: every record is written, in one write, and reads back', () => {
   const { dir, id, batch, decisions, notesCount } = setup()
   const t = JSON.parse(gloss(dir, ['reviews', 'HEAD', '--decide-template', id]).out)
-  t.decisions.forEach((d: any, i: number) => { d.outcome = ['fixed', 'rejected', 'accepted', 'follow-up', 'fixed'][i]; if (i === 1) d.note = 'not a bug' })
+  t.decisions.forEach((d: any, i: number) => { d.outcome = ['rejected', 'accepted', 'fixed'][i]; if (i === 0) d.note = 'not a bug' })
   t.complete = true
   const before = notesCount()
   const r = batch(t, '--by', 'Arb')
   assert.equal(r.code, 0, r.err)
-  assert.equal(r.out.trim(), 'recorded 5 decisions on 1 commit and marked the review complete')
-  // Observable: the notes ref gained exactly one commit for 5 decisions and the marker.
+  assert.equal(r.out.trim(), 'recorded 3 decisions on 1 commit and marked the review complete')
+  // Observable: the notes ref gained exactly one commit for 3 decisions and the marker.
   assert.equal(notesCount(), before + 1)
   const ds = decisions()
-  assert.equal(ds.length, 6)
+  assert.equal(ds.length, 4)
   assert.ok(ds.every((d: any) => d.by === 'Arb' && d.review === id))
   assert.equal(ds.find((d: any) => d.finding?.startsWith('1.1 ')).note, 'not a bug')
   assert.equal(ds.find((d: any) => d.complete).complete, true)
   const out = gloss(dir, ['reviews']).out
-  assert.match(out, /decisions on this review: 2 fixed, 1 follow-up, 1 rejected, 1 accepted · complete/)
+  assert.match(out, /decisions on this review: 1 fixed, 1 rejected, 1 accepted · complete/)
   assert.match(out, /rejected: 1.1 first problem with the lock ordering — not a bug/)
 })
 
@@ -279,18 +278,27 @@ test('stdin that is a non-blocking pipe fed slowly is waited for, not refused', 
   assert.equal(decisions().length, 1)
 })
 
+// Natural ref order: section, repeat (1/2), item; `1/2.1` is section 1, repeat 2, item 1.
+const refParts = (r: string) => { const [sec, item = '-1'] = r.split('.'); const [n, rep = '1'] = sec.split('/'); return [Number(n), Number(rep), Number(item)] }
+const byRef = (a: string, b: string) => { const x = refParts(a), y = refParts(b); return x[0] - y[0] || x[1] - y[1] || x[2] - y[2] }
+
 test('every template row is recognised as its report ref: ref order, and a bogus ref warns', () => {
   const many = Array.from({ length: 12 }, (_, i) => `- zeta ${i + 1}`).join('\n')
-  const reports = [
-    REPORT,
-    many + '\nVERDICT: ISSUES',
-    '# Review\n\n3. Removal\n\n4. Wording\n\n- a nit\n\nVERDICT: ISSUES',
-    '## A\n\n- one\n- two\n\n## B\n\n' + Array.from({ length: 11 }, (_, i) => `- b${i + 1}`).join('\n') + '\n\nVERDICT: ISSUES',
+  // Each report with the refs of its numbered headings that have no list (the rest are the printed [ref] labels).
+  const reports: [string, string[]][] = [
+    [REPORT, []],
+    ['## 1. A\n\n- a\n\n## 2. Empty\n\n## 3. B\n\n- b\n\nVERDICT: ISSUES', ['2']],
+    [many + '\nVERDICT: ISSUES', []],
+    ['# Review\n\n3. Removal\n\n4. Wording\n\n- a nit\n\nVERDICT: ISSUES', []],
+    ['## A\n\n- one\n- two\n\n## B\n\n' + Array.from({ length: 11 }, (_, i) => `- b${i + 1}`).join('\n') + '\n\nVERDICT: ISSUES', []],
   ]
-  for (const report of reports) {
+  for (const [report, headings] of reports) {
     const { dir, id, batch } = setup(report)
     const t = JSON.parse(gloss(dir, ['reviews', 'HEAD', '--decide-template', id]).out)
-    const refs = [...findingRefs(report)]
+    // The rows are the printed labels plus the list-less headings; a heading with items is no row.
+    const printed = labelFindings(report).split('\n').filter((l) => l.startsWith('- **[')).map((l) => l.slice(5, l.indexOf(']**')))
+    const refs = [...printed, ...headings].sort(byRef)
+    assert.deepEqual([...t.decisions.map((d: any) => refOf(d.finding))].sort(), [...refs].sort())
     assert.ok(refs.length > 0)
     assert.deepEqual(t.decisions.map((d: any) => refOf(d.finding)), refs)
     t.decisions.forEach((d: any) => { d.outcome = 'accepted' })
@@ -302,8 +310,7 @@ test('every template row is recognised as its report ref: ref order, and a bogus
     assert.match(r.err, /no finding 99 \(entry \d+;/)
     // `reviews` lists the decisions in ref order (1.2 before 1.10), the bogus ref last.
     const listed = gloss(dir, ['reviews']).out.split('\n').filter((l) => /^ {4}(accepted|rejected): /.test(l)).map((l) => refOf(l.replace(/^ +\w+: /, '')))
-    const num = (x: string) => x.split('.').map(Number)
-    const sorted = [...refs, '99'].sort((a, b) => num(a)[0] - num(b)[0] || (num(a)[1] ?? -1) - (num(b)[1] ?? -1))
+    const sorted = [...refs, '99'].sort(byRef)
     assert.deepEqual(listed, sorted)
   }
 })
@@ -328,4 +335,172 @@ test('a range: every commit holding the review gets the decisions in one write o
   // 3 records per commit, written as one notes commit per commit: 2 in all, not 6.
   assert.equal(Number(r.g('rev-list', '--count', 'refs/notes/gloss-reviews')), before + 2)
   for (const sha of shas) assert.equal(noteLines(r.dir, sha).filter((l) => JSON.parse(l).decision === 1).length, 3)
+})
+
+test('the template has no row for a numbered heading with items, and --decide-file still accepts a row naming one', () => {
+  const report = ['# Findings', '', '## 1. Races', '', '- lock ordering', '', '## 2. Empty section', '', '## 3. Wording', '', '- nit', '', 'VERDICT: ISSUES'].join('\n')
+  const { dir, id, batch, decisions } = setup(report)
+  const t = JSON.parse(gloss(dir, ['reviews', 'HEAD', '--decide-template', id]).out)
+  // `1` and `3` have items; `2` has none, so it is a row
+  assert.deepEqual(t.decisions.map((d: any) => d.finding.split(' ')[0]), ['1.1', '2:', '3.1'])
+  const r = batch([e('1: Races', 'accepted'), e('1.1 lock ordering'), e('3.1 nit', 'rejected', 'ok')])
+  assert.equal(r.code, 0, r.err)
+  assert.equal(r.err, '')
+  assert.equal(decisions().length, 3)
+})
+
+const DUP_REPORT = ['## 1. Races', '', '- first problem', '', '## 1. Wording', '', '- second problem', '', 'VERDICT: ISSUES'].join('\n')
+
+test('two headings with the same number: both findings are in the template, in reviews, and decided apart', () => {
+  const { dir, id, batch, decisions } = setup(DUP_REPORT)
+  const shown = gloss(dir, ['reviews']).out
+  assert.match(shown, /\[1\.1\]\*\* first problem/)
+  assert.match(shown, /\[1\/2\.1\]\*\* second problem/)
+  const t = JSON.parse(gloss(dir, ['reviews', 'HEAD', '--decide-template', id]).out)
+  assert.deepEqual(t.decisions.map((d: any) => d.finding), ['1.1 first problem', '1/2.1 second problem'])
+  t.decisions[0].outcome = 'fixed'
+  t.decisions[1].outcome = 'rejected'
+  t.decisions[1].note = 'second is wrong'
+  const r = batch(t)
+  assert.equal(r.code, 0, r.err)
+  assert.equal(r.err, '')
+  assert.equal(decisions().length, 2)
+  const out = gloss(dir, ['reviews']).out
+  assert.match(out, /^ {4}fixed: 1\.1 first problem \(/m)
+  assert.match(out, /^ {4}rejected: 1\/2\.1 second problem — second is wrong \(/m)
+  // a decision on only the second leaves the first undecided in the listing
+  const { dir: d2, id: id2 } = setup(DUP_REPORT)
+  assert.equal(gloss(d2, ['reviews', 'HEAD', '--decide', id2, '--finding', '1/2.1 second problem', '--outcome', 'accepted']).code, 0)
+  const o2 = gloss(d2, ['reviews']).out
+  assert.match(o2, /accepted: 1\/2\.1 second problem/)
+  assert.doesNotMatch(o2, /: 1\.1 first/)
+  // no warning for either ref, a warning for one the report lacks
+  assert.equal(gloss(d2, ['reviews', 'HEAD', '--decide', id2, '--finding', '1.1 x', '--outcome', 'fixed']).err, '')
+  assert.match(gloss(d2, ['reviews', 'HEAD', '--decide', id2, '--finding', '1/3.1 x', '--outcome', 'fixed']).err, /no finding 1\/3\.1/)
+})
+
+test('the total size one --decide-file writes is capped, with the sizes named; nothing is written', () => {
+  const { batch, tip, notesCount, decisions } = setup()
+  const tip0 = tip(), n0 = notesCount()
+  // Under the 1 MiB input cap, over the 512 KiB write cap: 500 entries with long text.
+  const big = Array.from({ length: 500 }, (_, i) => e(`1.1 f${i} ${'a'.repeat(600)}`, 'fixed', 'n'.repeat(600)))
+  const r = batch(big)
+  assert.equal(r.code, 1)
+  assert.match(r.err, /the 500 records come to \d+ KiB as written; at most 512 KiB per file/)
+  assert.doesNotMatch(r.err, /\n\s+at /)
+  // 500 entries at the per-field maximum are refused too (by whichever cap comes first)
+  const max = batch(Array.from({ length: 500 }, (_, i) => e(`1.1 f${i} ${'a'.repeat(1900)}`, 'fixed', 'n'.repeat(2000))))
+  assert.equal(max.code, 1)
+  assert.match(max.err, /over 1 MiB|at most 512 KiB/)
+  assert.equal(tip(), tip0)
+  assert.equal(notesCount(), n0)
+  // just under the cap is fine
+  const ok = batch(Array.from({ length: 100 }, (_, i) => e(`1.1 f${i} ${'a'.repeat(600)}`, 'fixed', 'n'.repeat(600))))
+  assert.equal(ok.code, 0, ok.err)
+  assert.equal(decisions().length, 100)
+})
+
+test('running the same file twice records nothing the second time, and reviews reads the same', () => {
+  const { dir, id, batch, decisions, tip } = setup()
+  const entries = [e('1.1 a'), e('2.1 b', 'rejected', 'why')]
+  const body = { complete: true, decisions: entries }
+  const first = batch(body, '--by', 'Arb')
+  assert.equal(first.out.trim(), 'recorded 2 decisions on 1 commit and marked the review complete')
+  const before = gloss(dir, ['reviews']).out
+  const tip1 = tip()
+  const second = batch(body, '--by', 'Arb')
+  assert.equal(second.code, 0, second.err)
+  assert.equal(second.out.trim(), 'recorded 0 decisions on 0 commits (3 already recorded)')
+  assert.equal(decisions().length, 3)
+  assert.equal(tip(), tip1)
+  assert.equal(gloss(dir, ['reviews']).out, before)
+  // a changed outcome, note or author is a new decision; an unchanged one is not repeated
+  const third = batch({ decisions: [e('1.1 a'), e('2.1 b', 'rejected', 'other why'), e('1.2 c', 'accepted')] }, '--by', 'Arb')
+  assert.equal(third.out.trim(), 'recorded 2 decisions on 1 commit (1 already recorded)')
+  const byOther = batch({ decisions: [e('1.1 a')] }, '--by', 'Other')
+  assert.equal(byOther.out.trim(), 'recorded 1 decision on 1 commit')
+  assert.equal(decisions().length, 6)
+})
+
+test('a range re-run after one commit was written fills in only the other', () => {
+  const r = repo()
+  for (const f of ['one', 'two']) {
+    r.write('app.js', ['function main() {', '  run()', `  ${f}()`, '}'])
+    r.g('commit', '-qam', f)
+  }
+  const range = 'HEAD~2..HEAD'
+  const stamp = JSON.parse(gloss(r.dir, ['reviews', '--stamp', range]).out)
+  gloss(r.dir, ['reviews', '--record'], JSON.stringify({ stage: 'bugs', agent: 'claude', target: range, findings: '- p\n- q\nVERDICT: ISSUES', stamp }))
+  const shas = Object.keys(stamp)
+  const id = JSON.parse(noteLines(r.dir, shas[0])[0]).id
+  const decide = () => gloss(r.dir, ['reviews', range, '--decide', id, '--decide-file', '-', '--by', 'A'], JSON.stringify({ decisions: [e('1: a'), e('2: b')] }))
+  // the first commit already has them (as after a failed write of the second)
+  assert.equal(gloss(r.dir, ['reviews', shas[0], '--decide', id, '--decide-file', '-', '--by', 'A'], JSON.stringify({ decisions: [e('1: a'), e('2: b')] })).code, 0)
+  const out = decide()
+  assert.equal(out.out.trim(), 'recorded 2 decisions on 1 commit (2 already recorded)')
+  for (const sha of shas) assert.equal(noteLines(r.dir, sha).filter((l) => JSON.parse(l).decision === 1).length, 2)
+  assert.equal(decide().out.trim(), 'recorded 0 decisions on 0 commits (4 already recorded)')
+})
+
+test('a second review on the same commit with the same decision is not skipped as already recorded', () => {
+  const { dir, id, batch, decisions } = setup()
+  const id2 = review(dir, 'HEAD', 'Other.\n- only problem\nVERDICT: ISSUES')
+  assert.notEqual(id2, id)
+  assert.equal(batch({ decisions: [e('1 same')] }, '--by', 'Arb').out.trim(), 'recorded 1 decision on 1 commit')
+  const file = join(dir, 'd2.json')
+  writeFileSync(file, JSON.stringify({ decisions: [e('1 same')] }))
+  const r = gloss(dir, ['reviews', 'HEAD', '--decide', id2, '--decide-file', file, '--by', 'Arb'])
+  assert.equal(r.out.trim(), 'recorded 1 decision on 1 commit')
+  assert.equal(decisions().length, 2)
+})
+
+test('the write cap counts bytes, not UTF-16 units: non-ASCII text under the cap in characters but over it in bytes is refused', () => {
+  const { batch, tip } = setup()
+  const tip0 = tip()
+  const rows = Array.from({ length: 200 }, (_, i) => e(`1.1 f${i}`, 'fixed', '日'.repeat(1000)))
+  const units = rows.reduce((n, r) => n + JSON.stringify(r).length, 0)
+  assert.ok(units < 512 * 1024, `fixture is ${units} units`)
+  const r = batch(rows)
+  assert.equal(r.code, 1)
+  assert.match(r.err, /at most 512 KiB per file/)
+  assert.equal(tip(), tip0)
+})
+
+test('a re-run does not skip a decision that a later one reversed', () => {
+  const { dir, id, batch, decisions } = setup()
+  const file = { decisions: [e('1.1 a', 'fixed')] }
+  assert.equal(batch(file, '--by', 'Arb').out.trim(), 'recorded 1 decision on 1 commit')
+  const single = gloss(dir, ['reviews', 'HEAD', '--decide', id, '--finding', '1.1 a', '--outcome', 'rejected', '--by', 'Arb'])
+  assert.equal(single.code, 0, single.err)
+  const again = batch(file, '--by', 'Arb')
+  assert.equal(again.out.trim(), 'recorded 1 decision on 1 commit')
+  assert.deepEqual(decisions().map((d) => d.outcome).sort(), ['fixed', 'fixed', 'rejected'])
+  // and now the file's decision is the latest, so another re-run skips it
+  assert.equal(batch(file, '--by', 'Arb').out.trim(), 'recorded 0 decisions on 0 commits (1 already recorded)')
+  assert.match(gloss(dir, ['reviews']).out, /fixed: 1\.1 a/)
+})
+
+test('--decide-template: no warning when no row is lost; the clash list names the refs lost past the cap', () => {
+  // a heading numbered 1 with items, after a loose item 1: every finding still has a row
+  const clash = setup(['- loose problem', '- another', '## 1. Races', '- lock', 'VERDICT: ISSUES'].join('\n'))
+  const r = gloss(clash.dir, ['reviews', 'HEAD', '--decide-template', clash.id])
+  assert.equal(r.code, 0, r.err)
+  assert.equal(r.err, '')
+  assert.deepEqual(JSON.parse(r.out).decisions.map((d: any) => refOf(d.finding)), ['1', '2', '1.1'])
+  // past 999 repeats of one number, the heading rows without items beyond the cap are lost
+  // (the command then refuses the template for its size, so this is checked on the scan)
+  assert.deepEqual(findingClashes(Array.from({ length: 1002 }, () => '## 1. S').join('\n\n')), ['1/999'])
+  // a report without a clash prints nothing
+  const fine = setup()
+  assert.equal(gloss(fine.dir, ['reviews', 'HEAD', '--decide-template', fine.id]).err, '')
+})
+
+test('a 500-entry --decide-file against a report of 20000 repeated sections finishes quickly', () => {
+  const report = '## 1.\n- i\n'.repeat(20000) + 'VERDICT: ISSUES'
+  const { batch } = setup(report)
+  const t = performance.now()
+  const r = batch(Array.from({ length: 500 }, (_, i) => e(`${i === 0 ? '1' : `1/${i + 1}`}.1 f${i}`)))
+  within('decide-file 500 entries', performance.now() - t, 4000)
+  assert.equal(r.code, 0, r.err)
+  assert.equal(r.err, '')
 })

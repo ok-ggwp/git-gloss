@@ -208,6 +208,13 @@ export const checkBy = (by: string) => {
   if (by.length > MAX_BY) throw new GlossError(`--by is too long (${by.length} characters; at most ${MAX_BY})`)
 }
 
+// Who a decision is by: --by, else git's user.name, else "unknown"; checked like any --by.
+export const resolveBy = (arg: string | undefined): string => {
+  const by = arg !== undefined ? arg.trim() : gitTry(['config', 'user.name'])?.trim() || 'unknown'
+  checkBy(by)
+  return by
+}
+
 export const checkDecision = (d: { finding?: string; outcome?: string; note?: string }) => {
   if (!d.finding?.trim()) throw new GlossError('--decide needs --finding <text naming the finding>')
   if (!OUTCOMES.includes(d.outcome as Outcome)) throw new GlossError(`--outcome must be one of ${OUTCOMES.join(', ')}`)
