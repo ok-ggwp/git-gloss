@@ -1,0 +1,443 @@
+{
+  "gloss": 4,
+  "commit": "0e6598858ac5452e0144196826a3c399c71baa8f",
+  "created_at": "2026-10-25T11:06:24.279Z",
+  "annotation": {
+    "version": 1,
+    "task": "Fix two review findings on the git timeout: network calls need a longer limit, and best-effort cleanups must not fail on a timeout",
+    "summary": "git() now takes a per-call limit, and sync's fetch, push and ls-remote use a 600 s one. A gitCleanup helper swallows timeouts for temporary-ref cleanups. The earlier git timeout work (120 s default, rethrow at catch sites) is in the same diff.",
+    "groups": [
+      {
+        "id": "timeout-core",
+        "intent": "Kill a hung git at 120 s with SIGTERM and report a timeout error",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A hung git hangs git-gloss for good",
+        "evidence": "test/timeout.test.ts 'a hung git fails the command'",
+        "impact": "contract",
+        "impact_reason": "GIT_GLOSS_GIT_TIMEOUT config key; GitError gains timedOut that callers test",
+        "hunks": [
+          "h20:1-2,4-12,17-21,23,25-26",
+          "h21",
+          "h22:2-8,24-27"
+        ]
+      },
+      {
+        "id": "rethrow-sites",
+        "intent": "Let a timeout through the catches that turn git errors into values",
+        "necessity": "required",
+        "serves": "timeout-core",
+        "removal_impact": "A timeout reads as 'no gloss', 'broken' or 'use the defaults' instead of failing",
+        "evidence": "test/timeout.test.ts carry and config tests",
+        "impact": "module",
+        "hunks": [
+          "h2",
+          "h3",
+          "h4",
+          "h5",
+          "h6",
+          "h8",
+          "h15",
+          "h16",
+          "h17",
+          "h18",
+          "h19",
+          "h24"
+        ]
+      },
+      {
+        "id": "network-limit",
+        "intent": "Give fetch, push and ls-remote a 600 s limit through a git() parameter",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A slow link fails sync at 120 s and every retry hits the same limit",
+        "evidence": "test/timeout.test.ts 'sync: a hung git fetch is cut at the network limit'",
+        "impact": "contract",
+        "impact_reason": "new GIT_GLOSS_NETWORK_TIMEOUT config key; git() and gitTry() signatures",
+        "hunks": [
+          "h7",
+          "h9:3-4",
+          "h10",
+          "h11:3-4",
+          "h13",
+          "h14:3-4",
+          "h20:3,13-16,22,24",
+          "h22:1,13-14,21-23"
+        ],
+        "notes": "GIT_GLOSS_GIT_TIMEOUT, when set, applies to both limits; GIT_GLOSS_NETWORK_TIMEOUT sets the network one alone. The h7 import line also carries gitCleanup and rethrowTimeout."
+      },
+      {
+        "id": "cleanup-helper",
+        "intent": "Add gitCleanup and use it for temporary-ref deletes so a timeout cannot fail them",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A timeout in a finally replaces the first error, or fails a sync that had already succeeded",
+        "evidence": "test/timeout.test.ts hung update-ref -d tests (sync and addReviews)",
+        "impact": "module",
+        "hunks": [
+          "h9:1-2",
+          "h11:1-2",
+          "h12",
+          "h14:1-2,5-6",
+          "h22:9-12,15-20",
+          "h23",
+          "h25",
+          "h26"
+        ],
+        "notes": "One warning line on stderr when the cleanup timed out. dropWipNote and the other gitTry callers are not cleanups of a temporary ref and keep gitTry."
+      },
+      {
+        "id": "run-harness",
+        "intent": "Run test children under coreutils timeout with SIGKILL",
+        "necessity": "supporting",
+        "serves": "timeout-core",
+        "removal_impact": "A hung fake git in the timeout tests could outlive the test run",
+        "impact": "shared",
+        "impact_reason": "test/run.ts wraps every sync child of every test file",
+        "hunks": [
+          "h27"
+        ]
+      },
+      {
+        "id": "timeout-tests",
+        "intent": "Test the timeout, network limit and cleanup behaviour with a hanging fake git",
+        "necessity": "supporting",
+        "serves": [
+          "timeout-core",
+          "rethrow-sites",
+          "network-limit",
+          "cleanup-helper"
+        ],
+        "removal_impact": "None of the four groups would have a test",
+        "impact": "module",
+        "hunks": [
+          "h28"
+        ]
+      },
+      {
+        "id": "todo-notes",
+        "intent": "Record the timeout design and remaining follow-ups in TODO.md",
+        "necessity": "supporting",
+        "serves": "timeout-core",
+        "removal_impact": "The network limit, gitCleanup and open follow-ups would not be written down",
+        "impact": "local",
+        "hunks": [
+          "h1"
+        ]
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "One 120 s limit for everything",
+        "rejected_because": "Fails slow-link syncs at the same point on every retry"
+      },
+      {
+        "option": "Only GIT_GLOSS_GIT_TIMEOUT, no second variable",
+        "rejected_because": "Could not tell in a test which limit a call used"
+      }
+    ],
+    "risks": [
+      "The SIGTERM lock test uses a fake git with a trap: it proves the signal and the trap path, not real git's lock cleanup",
+      "A cleanup that times out can leave a temporary ref behind (warned on stderr)",
+      "A git that ignores SIGTERM still hangs git-gloss: no second-stage kill",
+      "Network calls can now take up to 600 s before failing"
+    ],
+    "attention": {
+      "level": "look",
+      "focus": [
+        "network-limit",
+        "cleanup-helper"
+      ],
+      "reasons": [
+        "adds an env var and changes git()/gitTry() signatures",
+        "behaviour is covered by hanging-git tests; mutation-checked"
+      ]
+    },
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-sonnet-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 173,
+      "oldLines": 8,
+      "newStart": 173,
+      "newLines": 11,
+      "hash": "5e14edda75ea3c16"
+    },
+    {
+      "id": "h2",
+      "file": "src/commands/carry.ts",
+      "oldFile": "src/commands/carry.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "cc3ba07341c6bd93"
+    },
+    {
+      "id": "h3",
+      "file": "src/commands/carry.ts",
+      "oldFile": "src/commands/carry.ts",
+      "oldStart": 21,
+      "oldLines": 6,
+      "newStart": 21,
+      "newLines": 7,
+      "hash": "0fcb350b5519cbca"
+    },
+    {
+      "id": "h4",
+      "file": "src/commands/carry.ts",
+      "oldFile": "src/commands/carry.ts",
+      "oldStart": 40,
+      "oldLines": 6,
+      "newStart": 41,
+      "newLines": 7,
+      "hash": "6fbb95d8ba74507e"
+    },
+    {
+      "id": "h5",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 1,
+      "oldLines": 5,
+      "newStart": 1,
+      "newLines": 5,
+      "hash": "44ae0825a538ee00"
+    },
+    {
+      "id": "h6",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 69,
+      "oldLines": 7,
+      "newStart": 69,
+      "newLines": 8,
+      "hash": "45d4dd053091f585"
+    },
+    {
+      "id": "h7",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "b8b87a6a7c926202"
+    },
+    {
+      "id": "h8",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 25,
+      "oldLines": 7,
+      "newStart": 25,
+      "newLines": 8,
+      "hash": "660f7d13e8838f69"
+    },
+    {
+      "id": "h9",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 55,
+      "oldLines": 13,
+      "newStart": 56,
+      "newLines": 13,
+      "hash": "0dca45fa99bf4a85"
+    },
+    {
+      "id": "h10",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 73,
+      "oldLines": 7,
+      "newStart": 74,
+      "newLines": 7,
+      "hash": "66a147173e50d586"
+    },
+    {
+      "id": "h11",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 142,
+      "oldLines": 12,
+      "newStart": 143,
+      "newLines": 12,
+      "hash": "9659492bb0ca90f6"
+    },
+    {
+      "id": "h12",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 155,
+      "oldLines": 7,
+      "newStart": 156,
+      "newLines": 7,
+      "hash": "317b9d531800f591"
+    },
+    {
+      "id": "h13",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 167,
+      "oldLines": 7,
+      "newStart": 168,
+      "newLines": 7,
+      "hash": "08112dada527c362"
+    },
+    {
+      "id": "h14",
+      "file": "src/commands/sync.ts",
+      "oldFile": "src/commands/sync.ts",
+      "oldStart": 182,
+      "oldLines": 17,
+      "newStart": 183,
+      "newLines": 17,
+      "hash": "9682fe5ca20ebf99"
+    },
+    {
+      "id": "h15",
+      "file": "src/commands/versions.ts",
+      "oldFile": "src/commands/versions.ts",
+      "oldStart": 1,
+      "oldLines": 5,
+      "newStart": 1,
+      "newLines": 5,
+      "hash": "b8a7a6297739d6d2"
+    },
+    {
+      "id": "h16",
+      "file": "src/commands/versions.ts",
+      "oldFile": "src/commands/versions.ts",
+      "oldStart": 49,
+      "oldLines": 7,
+      "newStart": 49,
+      "newLines": 8,
+      "hash": "a0b890b55cb27bd7"
+    },
+    {
+      "id": "h17",
+      "file": "src/config.ts",
+      "oldFile": "src/config.ts",
+      "oldStart": 1,
+      "oldLines": 5,
+      "newStart": 1,
+      "newLines": 5,
+      "hash": "2e1c5573def0e893"
+    },
+    {
+      "id": "h18",
+      "file": "src/config.ts",
+      "oldFile": "src/config.ts",
+      "oldStart": 192,
+      "oldLines": 6,
+      "newStart": 192,
+      "newLines": 7,
+      "hash": "bbf4db94061c0a65"
+    },
+    {
+      "id": "h19",
+      "file": "src/config.ts",
+      "oldFile": "src/config.ts",
+      "oldStart": 214,
+      "oldLines": 6,
+      "newStart": 215,
+      "newLines": 7,
+      "hash": "be5f6ecdcdc05878"
+    },
+    {
+      "id": "h20",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 22,
+      "oldLines": 11,
+      "newStart": 22,
+      "newLines": 35,
+      "hash": "0f7bd559f53e9081"
+    },
+    {
+      "id": "h21",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 35,
+      "oldLines": 6,
+      "newStart": 59,
+      "newLines": 12,
+      "hash": "6b784ad6e26fe564"
+    },
+    {
+      "id": "h22",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 42,
+      "oldLines": 10,
+      "newStart": 72,
+      "newLines": 31,
+      "hash": "f9977ab77a838c98"
+    },
+    {
+      "id": "h23",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 1,
+      "oldLines": 5,
+      "newStart": 1,
+      "newLines": 5,
+      "hash": "17a5beb51015bf3f"
+    },
+    {
+      "id": "h24",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 87,
+      "oldLines": 7,
+      "newStart": 87,
+      "newLines": 7,
+      "hash": "1bf98b7e5a22d47a"
+    },
+    {
+      "id": "h25",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 239,
+      "oldLines": 7,
+      "newStart": 239,
+      "newLines": 7,
+      "hash": "43c08a314e5c281b"
+    },
+    {
+      "id": "h26",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 249,
+      "oldLines": 7,
+      "newStart": 249,
+      "newLines": 7,
+      "hash": "0de1ce2cb818cf64"
+    },
+    {
+      "id": "h27",
+      "file": "test/run.ts",
+      "oldFile": "test/run.ts",
+      "oldStart": 15,
+      "oldLines": 19,
+      "newStart": 15,
+      "newLines": 42,
+      "hash": "594f84f86910abb8"
+    },
+    {
+      "id": "h28",
+      "file": "test/timeout.test.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 234,
+      "hash": "9803ab27e05641ba"
+    }
+  ]
+}
