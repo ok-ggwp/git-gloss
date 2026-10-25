@@ -150,10 +150,12 @@ function gitInt(key: string): number | undefined {
 
 // Git failing (a broken repo, an unreadable object, no permission) is not the
 // same as "no base" or "no file": the repo's own, perhaps stricter, config
-// would silently not apply. It is not fatal either (the built-in defaults
-// still give a floor, and refusing to rate anything would make every command
-// fail in a damaged repo), so it is warned about on stderr, once per message,
-// and the defaults are used.
+// would silently not apply, and a floor computed from the defaults alone could
+// be lower than the real one. So the ratings are unverifiable: loadConfig
+// throws a ConfigError, which `add` and `signals` report as an error, and
+// `show`, `lint`, `html` and `hunks` meet through withSignals (the signals are
+// unavailable, `lint` says "incomplete"). A broken base candidate is only
+// warned about (once per message) while a later one still works.
 const warned = new Set<string>()
 function warnOnce(msg: string) {
   if (warned.has(msg)) return
@@ -183,7 +185,12 @@ function gitAnswer(args: string[]): string | null {
 // is always a `sensitive` path.
 function trustedRef(): string | null {
   // No commits yet: no base, and nothing failed.
-  if (gitAnswer(['rev-parse', '--verify', '-q', 'HEAD']) === null) return noBase()
+  try {
+    if (gitAnswer(['rev-parse', '--verify', '-q', 'HEAD']) === null) return noBase()
+  } catch (err) {
+    rethrowTimeout(err)
+    throw new ConfigError(`git failed finding HEAD (${(err as Error).message}), so ${CONFIG_FILE} cannot be read and the ratings cannot be verified`)
+  }
   let failed = false
   // Full ref names, so a tag called "main" cannot stand in for the branch.
   for (const b of ['refs/remotes/origin/main', 'refs/heads/main', 'refs/remotes/origin/master', 'refs/heads/master']) {
@@ -199,7 +206,8 @@ function trustedRef(): string | null {
     }
   }
   // Some candidate failed: git's warning above is the reason, not an absent branch.
-  return failed ? (console.error(`warning: no working base branch, so ${CONFIG_FILE} is not read; using the built-in defaults`), null) : noBase()
+  if (failed) throw new ConfigError(`git failed on every base branch candidate, so ${CONFIG_FILE} cannot be read and the ratings cannot be verified (the repo's own patterns would not apply); fix the repository, or see the warnings above`)
+  return noBase()
 }
 
 function noBase(): null {
@@ -208,7 +216,7 @@ function noBase(): null {
 }
 
 // The config file at `ref`: null when the file is not there (the usual case),
-// a warning and null when git could not tell or could not read it. Presence
+// a ConfigError when git could not tell or could not read it. Presence
 // is asked of ls-tree (empty output: absent), not read off an error message.
 function configAt(ref: string): string | null {
   try {
@@ -216,8 +224,7 @@ function configAt(ref: string): string | null {
     return git(['show', `${ref}:${CONFIG_FILE}`])
   } catch (err) {
     rethrowTimeout(err)
-    warnOnce(`${CONFIG_FILE} could not be read from the base branch (${(err as Error).message}); using the built-in defaults, so the repo's own patterns do not apply`)
-    return null
+    throw new ConfigError(`${CONFIG_FILE} could not be read from the base branch (${(err as Error).message}); the repo's own patterns cannot be applied, so the ratings cannot be verified`)
   }
 }
 

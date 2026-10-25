@@ -61,8 +61,29 @@ function checkTracking(remote: string, ref: string, tracking: string): void {
   }
 }
 
+// `init`'s refspec is a glob (refs/notes/gloss*), so a remote that once published
+// refs/notes/gloss/x leaves refs/notes/remotes/<remote>/gloss/x behind, and git
+// then cannot create refs/notes/remotes/<remote>/gloss once the remote has that
+// ref (a ref cannot be both a file and a directory): every fetch fails until
+// `git remote prune`. We are about to fetch the ref into `tracking`, so
+// whatever sits below it is stale and cannot be valid together with it. Only
+// that namespace is touched, in one batched update-ref.
+function clearBlockingTracking(tracking: string): void {
+  const stale = (gitTry(['for-each-ref', '--format=%(refname)', `${tracking}/`]) ?? '').split('\n').filter((r) => r.startsWith(`${tracking}/`))
+  if (stale.length) git(['update-ref', '--stdin'], stale.map((r) => `delete ${r}\n`).join(''))
+}
+
 function fetchTracking(remote: string, ref: string, tracking: string): void {
-  git(['fetch', '-q', remote, `+${ref}:${tracking}`], undefined, {}, NETWORK_TIMEOUT)
+  try {
+    clearBlockingTracking(tracking)
+    git(['fetch', '-q', remote, `+${ref}:${tracking}`], undefined, {}, NETWORK_TIMEOUT)
+  } catch (err) {
+    rethrowTimeout(err)
+    if (err instanceof GitError && /cannot lock ref|Unable to create .*\.lock|some local refs could not be updated/.test(err.message)) {
+      throw new GitError(`${err.message}\n  a stale remote-tracking ref may be in the way; try: git remote prune ${remote}`)
+    }
+    throw err
+  }
   checkTracking(remote, ref, tracking)
 }
 
