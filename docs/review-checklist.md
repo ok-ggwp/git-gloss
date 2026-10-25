@@ -39,8 +39,9 @@ finding repeats; remove one when tooling enforces it.
 - Decision files are validated as a whole and written once per commit, or not at all.
 
 ## Tests
-- Use `test/tmp.ts` `tmp()` (never `mkdtempSync`), `test/run.ts` for child processes and
-  `test/timing.ts` `within()`/`waitFor` (condition waits, not fixed sleeps or tight budgets).
+- Use `test/tmp.ts` `tmp()` (never `mkdtempSync`), `test/run.ts` for child processes,
+  `test/timing.ts` `within()` for time limits and, in browser tests, `waitFor` from
+  `test/browser.ts`. Elsewhere poll for a condition; no fixed sleeps or tight budgets.
 - A full run takes about four minutes: background it and poll; at most two at once.
 - Changes to `src/git.ts`, `src/schema.ts`, `src/loader.ts`, `src/reviews.ts`, `src/config.ts`
   or `src/html/data.ts` need a full run after every rework round.
