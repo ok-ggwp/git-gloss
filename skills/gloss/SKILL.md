@@ -138,7 +138,7 @@ When the user asks you to help review a branch or pull request, start from its g
 
 ## Arbitrating a review
 
-Needs git-gloss 0.5 or later, the first release with decision records.
+Needs git-gloss 0.5 or later, the first release with decision records; the template and file form below needs 0.6 (with 0.5, use the single call at the end of this section, once per finding).
 
 When you decide what to do about a review's findings (you are the orchestrator or arbiter, or a person), decide each finding as one of: `fixed` (a change was made), `follow-up` (real, recorded for later), `rejected` (wrong or not worth it; say why in `--note`) or `accepted` (noted, no action). Then record them all at once: template, fill, file.
 
