@@ -1,0 +1,263 @@
+{
+  "gloss": 4,
+  "commit": "ee02b1771a319017a21976f9d8b8944f2acef391",
+  "created_at": "2026-10-25T13:49:18.448Z",
+  "annotation": {
+    "version": 1,
+    "task": "ary must never block its event loop on git: build pages off the main loop, with limits and cleanup",
+    "summary": "Page builds move into a child process per request (own process group), started only after the query is checked in the server. Adds a job pool with a concurrency cap, time limit, output cap, and kills on client disconnect, server close and SIGINT, SIGTERM, SIGHUP and SIGQUIT. The page-building code moves unchanged into desk.ts.",
+    "groups": [
+      {
+        "id": "desk-split",
+        "intent": "Move page building into desk.ts (no HTTP) with an up-front query check",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The child process and the tests would have nothing to call without the HTTP handler; the main process could not check queries before starting a job",
+        "evidence": "test 'the page is byte-identical to the one the synchronous code builds'",
+        "impact": "module",
+        "hunks": [
+          "h4",
+          "h7"
+        ],
+        "notes": "desk.ts has no HTTP but runs git synchronously, inside the job child. Code moved, not rewritten; only the return value (a result object instead of res.end) and the up-front parseQuery differ. Validation now runs before git rather than after listRefs."
+      },
+      {
+        "id": "job-child",
+        "intent": "Internal entry that builds one page in a child and writes it to stdout",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "No process to run git in: the server would again call git inside its request handler",
+        "evidence": "test 'a page stuck in a hung git does not block any other request'",
+        "impact": "module",
+        "hunks": [
+          "h6"
+        ]
+      },
+      {
+        "id": "job-pool",
+        "intent": "Run each page build in its own process group with cap, time limit, output cap",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A hung git could not be killed with its group, builds would be unbounded in number, time and memory",
+        "evidence": "tests for 504 group kill, 503 cap, 502 output cap, multi-megabyte page",
+        "impact": "contract",
+        "impact_reason": "new env vars, limits and status codes (503, 504, 502) of the server",
+        "hunks": [
+          "h5"
+        ]
+      },
+      {
+        "id": "route-jobs",
+        "intent": "Answer page requests from a job: 503, error pages, cancel on client disconnect",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Requests would not use the pool: no off-loop build, no 503, no kill when a client leaves",
+        "evidence": "tests 'a client that disconnects kills its job', 'at most GIT_GLOSS_ARY_JOBS...', 'hostile queries are refused in the main process'",
+        "impact": "contract",
+        "impact_reason": "request handling and status codes of the server change",
+        "hunks": [
+          "h8",
+          "h9"
+        ]
+      },
+      {
+        "id": "shutdown",
+        "intent": "Kill running builds on server close, process exit and SIGINT, SIGTERM, SIGHUP, SIGQUIT",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Ctrl-C or close would leave hung git processes running as orphans",
+        "evidence": "tests 'SIGTERM/SIGINT of git gloss ary kills its running git children', 'closing the server kills running children'",
+        "impact": "module",
+        "hunks": [
+          "h10",
+          "h11"
+        ]
+      },
+      {
+        "id": "tests",
+        "intent": "Tests for the non-blocking server, limits, kills and identical output",
+        "necessity": "supporting",
+        "serves": [
+          "desk-split",
+          "job-child",
+          "job-pool",
+          "route-jobs",
+          "shutdown"
+        ],
+        "removal_impact": "None of the guarantees (loop never blocked, group kill, cap, no orphans) would be checked",
+        "impact": "local",
+        "hunks": [
+          "h12"
+        ],
+        "notes": "Hang tests run red on the old synchronous server (answers delayed 8 s; no 504)."
+      },
+      {
+        "id": "docs",
+        "intent": "README ary section and TODO updates",
+        "necessity": "supporting",
+        "serves": [
+          "job-pool",
+          "route-jobs"
+        ],
+        "removal_impact": "Users would not know the env vars or status codes; the fixed TODO item and the new follow-ups would be lost",
+        "impact": "local",
+        "hunks": [
+          "h1",
+          "h2",
+          "h3"
+        ]
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "worker_threads",
+        "rejected_because": "A hung git cannot be killed with its group from a thread; terminate() leaves the git running"
+      },
+      {
+        "option": "Make src/git.ts async",
+        "rejected_because": "Every CLI command would change for a server-only problem"
+      }
+    ],
+    "risks": [
+      "Behaviour of ary under load is new: 503 when 4 pages are building",
+      "Children of a SIGKILLed server can outlive it"
+    ],
+    "attention": {
+      "level": "careful",
+      "focus": [
+        "job-pool",
+        "route-jobs"
+      ],
+      "reasons": [
+        "process lifecycle and kill logic is new",
+        "server status codes and env vars change"
+      ]
+    },
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-sonnet-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 262,
+      "oldLines": 6,
+      "newStart": 262,
+      "newLines": 8,
+      "hash": "c861ad2985dac56e"
+    },
+    {
+      "id": "h2",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 175,
+      "oldLines": 7,
+      "newStart": 175,
+      "newLines": 7,
+      "hash": "a52c68bd93bdaeb6"
+    },
+    {
+      "id": "h3",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 248,
+      "oldLines": 4,
+      "newStart": 248,
+      "newLines": 11,
+      "hash": "aee3f5b73ffaf105"
+    },
+    {
+      "id": "h4",
+      "file": "src/ary/desk.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 100,
+      "hash": "92fae3c477da1aec"
+    },
+    {
+      "id": "h5",
+      "file": "src/ary/jobs.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 137,
+      "hash": "db20f5cb652b429c"
+    },
+    {
+      "id": "h6",
+      "file": "src/ary/page-job.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 22,
+      "hash": "59ad2a540e7e8939"
+    },
+    {
+      "id": "h7",
+      "file": "src/ary/server.ts",
+      "oldFile": "src/ary/server.ts",
+      "oldStart": 1,
+      "oldLines": 28,
+      "newStart": 1,
+      "newLines": 12,
+      "hash": "bd4d83b3c7b21644"
+    },
+    {
+      "id": "h8",
+      "file": "src/ary/server.ts",
+      "oldFile": "src/ary/server.ts",
+      "oldStart": 34,
+      "oldLines": 89,
+      "newStart": 18,
+      "newLines": 30,
+      "hash": "24b3dd6bfaf47635"
+    },
+    {
+      "id": "h9",
+      "file": "src/ary/server.ts",
+      "oldFile": "src/ary/server.ts",
+      "oldStart": 127,
+      "oldLines": 7,
+      "newStart": 52,
+      "newLines": 7,
+      "hash": "443f0fe63ae8f23e"
+    },
+    {
+      "id": "h10",
+      "file": "src/ary/server.ts",
+      "oldFile": "src/ary/server.ts",
+      "oldStart": 137,
+      "oldLines": 4,
+      "newStart": 62,
+      "newLines": 16,
+      "hash": "489589dd5c691aad"
+    },
+    {
+      "id": "h11",
+      "file": "src/commands/ary.ts",
+      "oldFile": "src/commands/ary.ts",
+      "oldStart": 32,
+      "oldLines": 5,
+      "newStart": 32,
+      "newLines": 7,
+      "hash": "1b06a2cb484d10aa"
+    },
+    {
+      "id": "h12",
+      "file": "test/arysync.test.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 356,
+      "hash": "4288379d0e51ac09"
+    }
+  ]
+}
