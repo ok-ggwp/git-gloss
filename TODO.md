@@ -205,10 +205,20 @@ git-gloss versions without it copy only review records through adopt and carry
 and drop decision lines. The reason for it: a review record holds the report
 and a verdict, so a reader cannot tell "3 fixed, 2 deferred" from "5 ignored".
 
-- [ ] Phase 5 (git-gud, other repo): structured findings, so "N still open" can
-  be computed.
+- [ ] git-gud (other repo): add the `gloss-findings` block spec (`BLOCK_SPEC` in `src/findings-block.ts`, also in the README) to every stage's prompt and feed the stderr of a refused `--record` back to the reviewer; use `reviews <target> --open` as the hand-off gate. `git gloss review` (the built-in prompt) already asks for the block.
+- [ ] Structured findings (2026-10-25): reviews have no `--json` output yet, so `--open` is text only. The gate is fail-closed (every item of every structured review, per target; skipped records exit 1), so a superseded review's findings must be decided one by one: a bulk "decide all of review X" helper or a `superseded` outcome may be wanted. `show` and the page count per commit (only that commit's decisions), so a decision made through a narrower target can show as open there while the gate is shut/open by the union over its target. Not measured: how often real reviewers emit an invalid block.
+- [ ] Structured findings: `adopt`, `carry` and a wip re-snapshot copy review note lines raw (also ones this version cannot read), so the fail-closed gate holds on the target; the copy cannot tell a line a newer writer made from junk, and carries both. Decision lines are copied only when valid and when their review is on the commit.
+- [ ] Structured findings: a review is stale when its stage no longer covers the commit, or it saw a changed line (or honesty/improve gloss group) that is gone; a review that merely missed lines added later is only stale through its stage.
+- [ ] Structured findings: an unclosed prose fence earlier in the report swallows a valid final block, and the refusal says "no gloss-findings block" without naming that case; the message could say so.
+- [ ] Structured findings: `copyReviews` copies junk lines raw without a size bound (a trade-off against the fail-closed bypass); lines over the 8 MiB review cap that look like decisions are neither counted nor copied.
+- [ ] Structured findings: `skippedCount`/`skippedAt` keep the last read's count per commit, so they can be stale if a commit's notes vanish within one process.
+- [ ] Structured findings: a gate shut by an old review's undecided items needs one decision per item; consider `--supersede <review-id>` or a bulk decide.
+- [ ] Structured findings: the findings table pads columns by UTF-16 length, so wide characters (CJK, emoji) in titles misalign it.
+- [ ] Structured findings: `show` and the HTML page count a commit's own decisions, while the gate uses the union over its target, so a decision made through a narrower target can show as open there. The `show` line no longer summarises a legacy review's decisions (`reviews` lists them).
+- [ ] Structured findings: the block's `detail` cap is 500 characters (was 2000) so the worst spec-compliant block fits the 256 KiB report cap; a reviewer needing more puts it in the prose.
+- [ ] Structured findings: decisions with equal `at` (a batch in one millisecond plus another writer) pick the status by note-line order, which git sorts; no tie-break beyond that. `checkLength` in `batch.ts` is now unreachable from the CLI (a finding is an id of at most 32 characters, so a record cannot pass the 16 KiB cap); kept as a guard.
+- [ ] Structured findings: the HTML pane omits an item's `detail` (the raw report holds it, under the disclosure); a rail row shows only the open count of a stage's newest review.
 
-- [ ] Finding refs (`1.2`) are stored as text in decision records, but they come from the labelling rules in `src/findings.ts`. If those rules change, old decisions would point at different findings. Keep the rules stable, or version them and keep the old labeller for old reviews. From the honesty review of the finding refs.
 
 ## Sync speed
 
@@ -241,9 +251,6 @@ the network: a sync makes up to six round trips, and the pre-push hook runs one.
   and `nx` steps for this repo.
 
 ## Batch decisions and lint (2026-10-25, from the reviews of `--decide-file` and `lint`)
-- [ ] `findings.ts` has two parsers for a written label: `stripLabel` (an old digit/dot loop plus a regex for the `1/2.2` form) and `refOf`. One regex for both would tighten the old loop and may change refs that exist; do it with a corpus check.
-- [ ] Past 999 repeats of one section number the label stays `S/999` and its items keep counting (item numbers over 999 are not refs a decision can name, as for any section); the heading row of such a repeat without items has no row of its own.
-- [ ] The `--decide-file` branch in `commands/reviews.ts` `run` still holds `reportOf`, `warnUnknownRef`, the unknown-ref warnings, the output line and the `applyBatch` call; only preparation and the write loop moved to `batch.ts`.
 - [ ] `lint` is silent about `config-edit` when the diff analysis is unavailable (malformed `.gloss/config.json`): the rating checks are skipped, `config-edit` with them.
 - [ ] `newRecords` (idempotent re-run) relies on `readDecisions` returning every record: lines skipped as over-length or malformed make the "latest decision" fall back to an older one, so a re-run could write a decision again.
 
@@ -266,3 +273,6 @@ the network: a sync makes up to six round trips, and the pre-push hook runs one.
 - [ ] No test for `lint`'s exit status when signals are unavailable (`incomplete`).
 - [ ] `versions --show` and `--restore` read a whole historical blob before any size check (`--show` has no bound); check `cat-file -s` first.
 - [ ] `versions --restore` rewrites other modules' error text with regexes; give `parseNote`/`loadGlossOf` a structured reason instead.
+- [ ] `reviews <target> --open` prints "no open findings" even when no structured review was found (nothing checked); say so (`hasItems` exists for this).
+- [ ] The size comment at the top of the block caps in `src/findings-block.ts` still says "about 450 KB" (from before the detail cap dropped to 500); README/skill say `--record` prints "every problem" but at most 25 are listed.
+- [ ] Docs: the gate is only as strict as its writers (a record without `items` counts as legacy and hides nothing).

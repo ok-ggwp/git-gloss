@@ -6,7 +6,7 @@ import { loadGloss, loadGlossInRange, refusedWarning, type LoadedGloss, type Loa
 import { impactRank } from '../attention.ts'
 import { showsImpact, tryAnalyze } from '../floor.ts'
 import { IMPACT, NECESSITY, isImpact, isNecessity, type Group, type Impact, type Necessity } from '../schema.ts'
-import { current, decisionSummary, readDecisions, readReviews, reviewStatus, statusPhrase, verdict, type StageStatus } from '../reviews.ts'
+import { current, hasItems, openItems, reviewStatus, statusPhrase, verdict, type StageStatus } from '../reviews.ts'
 import { plain } from '../plain.ts'
 import {
   attentionBlock, colorDiff, derivedImpactTag, field, groupHeader, hunkLabel, IMPACT_W, impactTag, necessityWord, noteFooter, page, style, termWidth, wrap,
@@ -141,13 +141,12 @@ function reviewsLine(sha: string): string {
   const statuses = reviewStatus(sha)
   if (!statuses.length) return style('dim', 'reviews: none recorded')
   const color = (s: StageStatus) => (!current(s) || verdict(s) === 'issues' ? 'yellow' : verdict(s) === 'clean' ? 'green' : 'dim')
-  // What was decided about the reviews that found something (or didn't say);
-  // a commit with only clean reviews has nothing to decide.
-  const open = readReviews(sha).filter((r) => r.verdict !== 'clean')
-  const decisions = readDecisions(sha).filter((d) => open.some((r) => r.id === d.review))
+  // Findings with no decision yet (legacy reviews have none to decide); those of a stale review are counted and said so.
+  const open = openItems(sha, statuses)
+  const stale = open.filter((o) => o.stale).length
   const decided = open.length
-    ? ` ${style('dim', '·')} decisions: ${decisionSummary(decisions, open.every((r) => decisions.some((d) => d.review === r.id && d.complete)))}`
-    : ''
+    ? ` ${style('dim', '·')} ${style('yellow', `${open.length} open finding${open.length === 1 ? '' : 's'}${stale ? ` (${stale} on a stale review${stale === 1 ? '' : 's'})` : ''}`)}`
+    : hasItems(statuses) ? ` ${style('dim', '·')} no open findings` : ''
   return `reviews: ${statuses.map((s) => style(color(s), statusPhrase(s))).join(style('dim', ' · '))}${decided}` +
     style('dim', `   (findings: git gloss reviews ${sha.slice(0, 7)})`)
 }

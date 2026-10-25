@@ -222,7 +222,7 @@ test('addReviews: a hung update-ref -d cleanup does not fail recording a review'
   const s = setup(false, 'update-ref -d', false, { glossed: true })
   try {
     const stamp = JSON.parse(spawnSync(process.execPath, [bin, 'reviews', '--stamp', 'HEAD~1'], { cwd: s.dir, encoding: 'utf8' }).stdout)
-    const rec = JSON.stringify({ stage: 'bugs', agent: 'x', target: 'HEAD~1', findings: '## 1 nit\n- a', stamp })
+    const rec = JSON.stringify({ stage: 'bugs', agent: 'x', target: 'HEAD~1', findings: '## 1 nit\n- a\n\n```gloss-findings\n[]\n```\n', stamp })
     const r = spawnSync(process.execPath, [bin, 'reviews', '--record'], {
       cwd: s.dir, encoding: 'utf8', input: rec, timeout: 60_000,
       env: { ...process.env, PATH: `${join(s.dir, 'fakebin')}:${process.env.PATH}`, GIT_GLOSS_GIT_TIMEOUT: '1500' },

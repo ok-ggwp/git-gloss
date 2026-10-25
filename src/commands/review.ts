@@ -5,6 +5,7 @@ import { parseDiff, type Hunk } from '../diff.ts'
 import { refLabel, sliceText } from '../selection.ts'
 import { loadGloss, loadGlossInRange, refusedWarning, type LoadedGloss } from '../loader.ts'
 import { NECESSITY_HELP, servesOf } from '../schema.ts'
+import { BLOCK_SPEC } from '../findings-block.ts'
 
 export const usage = 'review [<commit> | <range>] [--material]   print a review prompt for a commit or a branch (pipe it to an agent, e.g. `| claude -p`); --material prints only the gloss and code, for other review prompts'
 
@@ -131,7 +132,7 @@ Report, most important first:
 
 For each finding, cite the ${range ? 'commit and ' : ''}group id and explain briefly. If the annotation is accurate and the change is lean, say so.
 
-End your report with one line on its own: \`VERDICT: CLEAN\` if you found no mismatches, misgrading or missing risks worth acting on, otherwise \`VERDICT: ISSUES\`. Tools record this line with the review.`,
+${BLOCK_SPEC}\n\nThen end your report with one line on its own: \`VERDICT: CLEAN\` if you found no mismatches, misgrading or missing risks worth acting on, otherwise \`VERDICT: ISSUES\`. Tools record this line with the review.`,
     '---\n\n# Material under review',
     ...material,
   ]

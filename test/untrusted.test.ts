@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { tmp } from './tmp.ts'
 import { browse, skipBrowse } from './browser.ts'
 import { within } from './timing.ts'
+import { item, report, withBlock } from './block.ts'
 
 // The adversarial checks of the untrusted-input audit (TODO.md, "Untrusted input"):
 // notes, branch names and commit text arrive from collaborators and remotes.
@@ -527,18 +528,18 @@ test('a review of a commit with 16,000 changed lines is recorded, read, and its 
   const { dir, sha } = bigHunkRepo(8_000)
   assert.equal(gloss(dir, ['add'], JSON.stringify(shared(1))).code, 0)
   const stamp = JSON.parse(gloss(dir, ['reviews', '--stamp', sha]).out)
-  const rec = gloss(dir, ['reviews', '--record'], JSON.stringify({ stage: 'honesty', agent: 'claude', target: sha, findings: 'Looks inaccurate.\n\nVERDICT: ISSUES', stamp }))
+  const rec = gloss(dir, ['reviews', '--record'], JSON.stringify({ stage: 'honesty', agent: 'claude', target: sha, findings: report('Looks inaccurate.', [item('f1')]), stamp }))
   assert.equal(rec.code, 0, rec.err)
   const shown = gloss(dir, ['reviews', sha])
   assert.equal(shown.code, 0, shown.err)
   assert.doesNotMatch(shown.err, /skipped/)
   assert.match(shown.out, /Looks inaccurate/)
   const id = /"id":"([^"]+)"/.exec(execFileSync('git', ['notes', '--ref', 'refs/notes/gloss-reviews', 'show', sha], { cwd: dir, encoding: 'utf8', maxBuffer: 1 << 28 }))![1]
-  const decided = gloss(dir, ['reviews', sha, '--decide', id, '--finding', '1', '--outcome', 'fixed', '--by', 'me'])
+  const decided = gloss(dir, ['reviews', sha, '--decide', id, '--finding', 'f1', '--outcome', 'fixed', '--by', 'me'])
   assert.equal(decided.code, 0, decided.err)
-  assert.match(gloss(dir, ['reviews', sha]).out, /fixed: 1/)
+  assert.match(gloss(dir, ['reviews', sha]).out, /f1 +minor +defect +read +fixed/)
   assert.match(gloss(dir, ['show', sha]).out, /honesty: /)
-  assert.match(gloss(dir, ['show', sha]).out, /decisions: 1 decided/)
+  assert.match(gloss(dir, ['show', sha]).out, /no open findings/)
 })
 
 test('a review line of 10 MB is skipped with a warning, within a generous bound; and --record refuses a report that readers would skip', () => {
@@ -551,8 +552,8 @@ test('a review line of 10 MB is skipped with a warning, within a generous bound;
   assert.doesNotMatch(r.out, /toolong/)
   within('10MB line', Date.now() - t, 30_000)
   const stamp = JSON.parse(gloss(dir, ['reviews', '--stamp', sha]).out)
-  const rec = gloss(dir, ['reviews', '--record'], JSON.stringify({ stage: 'bugs', agent: 'a', target: sha, findings: 'y'.repeat(300 * 1024), stamp }))
+  const rec = gloss(dir, ['reviews', '--record'], JSON.stringify({ stage: 'bugs', agent: 'a', target: sha, findings: withBlock('y'.repeat(300 * 1024)), stamp }))
   assert.equal(rec.code, 1)
-  assert.match(rec.err, /findings are too long/)
+  assert.match(rec.err, /the report, including its gloss-findings block, is too long/)
   assert.equal(spawnSync('git', ['notes', '--ref', 'refs/notes/gloss-reviews', 'show', sha], { cwd: dir, encoding: 'utf8', maxBuffer: 1 << 28 }).stdout.includes('"stage":"bugs"'), false, 'nothing was recorded')
 })

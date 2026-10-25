@@ -356,6 +356,14 @@ tr.gap td { background: var(--bg); color: var(--muted); font-style: italic; font
 .dchip.rejected { border-style: dotted; text-decoration: line-through; }
 .dchip.accepted { border-style: double; border-width: 3px; }
 
+/* Structured findings: the word and the border say what a chip means, not colour alone */
+.items { margin: 0 0 12px; }
+.irow .iid { font-family: var(--mono, monospace); }
+.chip.sev-major { color: var(--warn); border-color: var(--warn); font-weight: 600; }
+.chip.sev-nit { border-style: dotted; }
+.dchip.open { border-style: solid; border-width: 2px; }
+.rawreport summary { cursor: pointer; padding: 6px 0; min-height: 36px; }
+
 /* Rendered markdown */
 .md { max-width: 75ch; overflow-wrap: anywhere; }
 .md p { margin: 0 0 10px; }
