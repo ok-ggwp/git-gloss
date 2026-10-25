@@ -1,0 +1,559 @@
+{
+  "gloss": 4,
+  "commit": "d5774b7ab58b01c51ab47c7460ba38cfcfd4b880",
+  "created_at": "2026-10-25T12:27:24.514Z",
+  "annotation": {
+    "version": 1,
+    "task": "Tidy the batch-decision follow-ups from the reviews of --decide-file and lint (six TODO items, then review improvements)",
+    "summary": "The decision template skips headings that have items (by row, not ref), repeated section numbers get /N labels only on a real collision, lint reports config-edit, resolveBy/prepareBatch/applyBatch replace inline code, a 512 KiB byte cap is added, and a --decide-file re-run is idempotent against the latest decision.",
+    "groups": [
+      {
+        "id": "template-skip",
+        "intent": "Template leaves out headings that have items; warns on ambiguous refs",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Arbiters must delete heading rows by hand or the file is refused; a clash between a heading and a loose item of the same number goes unnoticed",
+        "evidence": "test/batch.test.ts 'the template has no row for a numbered heading with items'",
+        "impact": "contract",
+        "impact_reason": "the template is the file format arbiters fill in; rows vanish from it",
+        "hunks": [
+          "h17",
+          "h12:5-6"
+        ],
+        "notes": "Rows are marked heading or item by scan, so the filter works by row, never by ref string: loose items 1, 2 survive a later `## 1.` heading, and a heading numbered 0 with items is no row either. findingRefs still includes the heading ref, so a hand-written row naming it is accepted. --decide-template warns on stderr when a heading row that would have been listed lost its ref (findingClashes); that happens only past 999 repeats, where the template is refused for size anyway, so the warning is not reachable from the command today."
+      },
+      {
+        "id": "dup-refs",
+        "intent": "Repeated section numbers get /N labels: 1, 1/2, 1/3",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Two headings numbered 1 collapse to one ref and the second finding has no batch path",
+        "evidence": "test/findings.test.ts corpus, collision, refOf, hostile tests",
+        "impact": "contract",
+        "impact_reason": "ref format parsed from review text and written into decision records",
+        "hunks": [
+          "h14",
+          "h15",
+          "h16",
+          "h18"
+        ],
+        "notes": "A section is labelled S/N only when a ref it would emit equals one already emitted: the heading ref of a list-less heading, or the first item ref S.1. A heading ref and an item ref never collide, so empty numbered headings, unnumbered headings and bold lines use no label, and every report whose old refs were all distinct keeps them (corpus plus a generated-report property test against the old labeller). A numbered heading waits for its first item: with items it names the section, without it is a row. refOf accepts only digits, an optional /N (2..999), an optional .item, with the usual delimiter rules, so prose like 2nd: stays text. A heading numbered 0 keeps its own ref. Past 999 repeats the label stays S/999 and items keep counting; only a heading row without items is lost there (TODO). Decisions recorded under an old ambiguous ref no longer match after a relabel (README). scan resumes label probing per (number, kind), so labelling stays linear: 22,000 repeated sections label in about 20 ms."
+      },
+      {
+        "id": "lint-config-edit",
+        "intent": "lint reports the config-edit note that add prints",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "lint stays silent about a diff that edits .gloss/config.json, although configEdit was computed and dropped",
+        "evidence": "test/lint.test.ts 'config-edit'",
+        "impact": "contract",
+        "impact_reason": "adds a lint code scripts may match on",
+        "hunks": [
+          "h9",
+          "h10"
+        ]
+      },
+      {
+        "id": "resolve-by",
+        "intent": "Share resolveBy; move --decide-file preparation into prepareBatch",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The TODO item (one by-resolution helper, the branch out of run) is not done and the three paths keep copies",
+        "evidence": "existing decisions and batch tests unchanged and green",
+        "impact": "module",
+        "hunks": [
+          "h6",
+          "h11",
+          "h13",
+          "h19",
+          "h8:1-14,19-20",
+          "h12:7-18"
+        ],
+        "notes": "Behaviour identical: same order of checks, same by fallback, same messages."
+      },
+      {
+        "id": "write-cap",
+        "intent": "Refuse a --decide-file whose records exceed 512 KiB as written",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A file of near-limit records can still add about 1 MiB to every commit of a range",
+        "evidence": "test/batch.test.ts cap tests, including a non-ASCII one",
+        "impact": "contract",
+        "impact_reason": "a new refusal limit on what a file may record",
+        "hunks": [
+          "h7",
+          "h8:15-18"
+        ],
+        "notes": "512 KiB rather than 2 MiB: the 1 MiB input cap makes 2 MiB unreachable. Counted in UTF-8 bytes, so message and README are true for non-ASCII text."
+      },
+      {
+        "id": "scan-speed",
+        "intent": "Compute a report's refs once per batch, not per entry",
+        "necessity": "supporting",
+        "serves": "dup-refs",
+        "removal_impact": "A 500-entry --decide-file against a large repeated-section report would rescan the report 500 times (about 10 s in the test)",
+        "evidence": "test/batch.test.ts '500-entry --decide-file against a report of 20000 repeated sections'",
+        "impact": "module",
+        "hunks": [
+          "h12:1-4"
+        ]
+      },
+      {
+        "id": "idem-rerun",
+        "intent": "A re-run of a --decide-file skips decisions a commit already has",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Re-running after a partly failed range write duplicates decisions on the commits already written",
+        "evidence": "test/batch.test.ts re-run tests, including the reversed decision",
+        "impact": "sensitive",
+        "impact_reason": "decides which decision records are written to review notes and which are skipped",
+        "hunks": [
+          "h8:21-51",
+          "h12:19-24"
+        ],
+        "notes": "A record is skipped only if it equals the LATEST decision for its (review, finding) on that commit, so a decision reversed by a later single call is written again. Identity is review, finding, outcome, note, by and complete, never the timestamp. applyBatch does the write loop; decisions is the most any one commit got. The summary count S is records skipped, summed over commits, complete marker included. Not a merge of arbiters: an old file re-run after someone decided differently writes its decision again as the latest."
+      },
+      {
+        "id": "batch-tests",
+        "intent": "Tests for template, cap, re-run and the refactor",
+        "necessity": "supporting",
+        "serves": [
+          "template-skip",
+          "write-cap",
+          "idem-rerun",
+          "resolve-by",
+          "dup-refs",
+          "scan-speed"
+        ],
+        "removal_impact": "The template, cap, idempotency and duplicate-ref batch paths would have no test",
+        "impact": "local",
+        "hunks": [
+          "h20",
+          "h21",
+          "h22",
+          "h23",
+          "h24",
+          "h25"
+        ]
+      },
+      {
+        "id": "findings-tests",
+        "intent": "Tests, a no-collision corpus and the old labeller for the ref scheme",
+        "necessity": "supporting",
+        "serves": [
+          "dup-refs",
+          "template-skip",
+          "scan-speed"
+        ],
+        "removal_impact": "The suffix scheme and its edge cases would be untested",
+        "impact": "local",
+        "hunks": [
+          "h26",
+          "h27",
+          "h28",
+          "h29"
+        ],
+        "notes": "test/fixtures/findings-v0.6.ts is the previous labeller, kept so a generated-report property test can compare refs; the corpus holds its output for fixed shapes."
+      },
+      {
+        "id": "lint-test",
+        "intent": "Test that lint reports config-edit",
+        "necessity": "supporting",
+        "serves": "lint-config-edit",
+        "removal_impact": "The config-edit lint code would be untested",
+        "impact": "local",
+        "hunks": [
+          "h30"
+        ]
+      },
+      {
+        "id": "docs-readme",
+        "intent": "README: config-edit code, template rows, 1b refs, cap, re-run",
+        "necessity": "supporting",
+        "serves": [
+          "template-skip",
+          "dup-refs",
+          "lint-config-edit",
+          "write-cap",
+          "idem-rerun"
+        ],
+        "removal_impact": "Users would not know the new lint code, the 1b refs, the cap or that re-running is safe",
+        "impact": "local",
+        "hunks": [
+          "h1",
+          "h2"
+        ]
+      },
+      {
+        "id": "docs-skill",
+        "intent": "gloss skill: same changes for agents that arbitrate and lint",
+        "necessity": "supporting",
+        "serves": [
+          "template-skip",
+          "dup-refs",
+          "lint-config-edit",
+          "write-cap",
+          "idem-rerun"
+        ],
+        "removal_impact": "Agents would not know that template rows are findings only, what 1b means, or that re-running is safe",
+        "impact": "module",
+        "hunks": [
+          "h4",
+          "h5"
+        ]
+      },
+      {
+        "id": "todo-done",
+        "intent": "Remove finished TODO items; add follow-ups",
+        "necessity": "mechanical",
+        "serves": "task",
+        "removal_impact": "TODO would still list work that is done and miss the two-parser and 701-repeat notes",
+        "impact": "local",
+        "hunks": [
+          "h3"
+        ],
+        "notes": "The --decide-file branch of run is only partly moved out (preparation and the write loop); a narrowed TODO line says what remains."
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Letter suffixes (1b)",
+        "rejected_because": "Read prose such as 2nd: or 3d: as refs; S/N cannot look like prose without a delimiter"
+      },
+      {
+        "option": "Key idempotency on the record timestamp",
+        "rejected_because": "Each run has its own timestamp, so a re-run would never match"
+      }
+    ],
+    "risks": [
+      "Loose refs (items before the first heading) and numbered-heading refs share the bare-number space; a heading without items takes a free label, but one with items lets the loose ref keep the bare number (decisions naming the heading's number go to the loose item)",
+      "Past 999 repeats of one section number the label stays S/999; a heading without items there has no row",
+      "Two identical decisions made on purpose by the same author are collapsed on re-run",
+      "On a range, the printed decision count is the most any one commit received, not a union",
+      "Re-running an old --decide-file after another arbiter decided the same finding writes the old decision again as the latest; the rule is safe for one's own re-runs, not a merge",
+      "Decisions recorded under a ref that was ambiguous before the relabel no longer match it (only reports that had a clash)",
+      "The decide-template ambiguity warning cannot be triggered from the command today (the template is refused at 500 rows before 999 repeats)"
+    ],
+    "attention": {
+      "level": "careful",
+      "focus": [
+        "dup-refs",
+        "idem-rerun",
+        "template-skip"
+      ],
+      "reasons": [
+        "ref parsing is format-sensitive and feeds decision records",
+        "idem-rerun decides which records are written",
+        "template format changes for users of --decide-template",
+        "signals floor is only look; raised because of the parsing"
+      ],
+      "override_reason": "signals found no pattern hits; the ref parser and the write-skip logic are the risk, not the file paths"
+    },
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-sonnet-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 130,
+      "oldLines": 7,
+      "newStart": 130,
+      "newLines": 7,
+      "hash": "bcdcaad36a093b1b"
+    },
+    {
+      "id": "h2",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 195,
+      "oldLines": 11,
+      "newStart": 195,
+      "newLines": 11,
+      "hash": "4559d446149a3af1"
+    },
+    {
+      "id": "h3",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 233,
+      "oldLines": 11,
+      "newStart": 233,
+      "newLines": 9,
+      "hash": "89f637cd4d95d109"
+    },
+    {
+      "id": "h4",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 38,
+      "oldLines": 7,
+      "newStart": 38,
+      "newLines": 7,
+      "hash": "27d2cb241efe59d5"
+    },
+    {
+      "id": "h5",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 144,
+      "oldLines": 16,
+      "newStart": 144,
+      "newLines": 16,
+      "hash": "08d342edd7b28c3b"
+    },
+    {
+      "id": "h6",
+      "file": "src/batch.ts",
+      "oldFile": "src/batch.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "aa4e0b947e26b6b0"
+    },
+    {
+      "id": "h7",
+      "file": "src/batch.ts",
+      "oldFile": "src/batch.ts",
+      "oldStart": 8,
+      "oldLines": 6,
+      "newStart": 8,
+      "newLines": 10,
+      "hash": "67a77b6d672c944a"
+    },
+    {
+      "id": "h8",
+      "file": "src/batch.ts",
+      "oldFile": "src/batch.ts",
+      "oldStart": 102,
+      "oldLines": 3,
+      "newStart": 106,
+      "newLines": 54,
+      "hash": "f52f276d493a7ac1"
+    },
+    {
+      "id": "h9",
+      "file": "src/commands/lint.ts",
+      "oldFile": "src/commands/lint.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 7,
+      "hash": "02fff5b3ae4153db"
+    },
+    {
+      "id": "h10",
+      "file": "src/commands/lint.ts",
+      "oldFile": "src/commands/lint.ts",
+      "oldStart": 43,
+      "oldLines": 6,
+      "newStart": 44,
+      "newLines": 7,
+      "hash": "f6a695af22c556f9"
+    },
+    {
+      "id": "h11",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 2,
+      "oldLines": 11,
+      "newStart": 2,
+      "newLines": 11,
+      "hash": "987117d5ac8be5ad"
+    },
+    {
+      "id": "h12",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 82,
+      "oldLines": 36,
+      "newStart": 82,
+      "newLines": 28,
+      "hash": "b957d3a3ad667af5"
+    },
+    {
+      "id": "h13",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 122,
+      "oldLines": 8,
+      "newStart": 114,
+      "newLines": 7,
+      "hash": "a60447ecbd013f65"
+    },
+    {
+      "id": "h14",
+      "file": "src/findings.ts",
+      "oldFile": "src/findings.ts",
+      "oldStart": 28,
+      "oldLines": 9,
+      "newStart": 28,
+      "newLines": 24,
+      "hash": "5eda476810a6ee54"
+    },
+    {
+      "id": "h15",
+      "file": "src/findings.ts",
+      "oldFile": "src/findings.ts",
+      "oldStart": 110,
+      "oldLines": 9,
+      "newStart": 125,
+      "newLines": 11,
+      "hash": "6c2646b60a8b45f8"
+    },
+    {
+      "id": "h16",
+      "file": "src/findings.ts",
+      "oldFile": "src/findings.ts",
+      "oldStart": 127,
+      "oldLines": 8,
+      "newStart": 144,
+      "newLines": 44,
+      "hash": "4f814945cddd8ae1"
+    },
+    {
+      "id": "h17",
+      "file": "src/findings.ts",
+      "oldFile": "src/findings.ts",
+      "oldStart": 142,
+      "oldLines": 24,
+      "newStart": 195,
+      "newLines": 34,
+      "hash": "8abce253670903e3"
+    },
+    {
+      "id": "h18",
+      "file": "src/findings.ts",
+      "oldFile": "src/findings.ts",
+      "oldStart": 171,
+      "oldLines": 49,
+      "newStart": 234,
+      "newLines": 71,
+      "hash": "770088d0953eb119"
+    },
+    {
+      "id": "h19",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 208,
+      "oldLines": 6,
+      "newStart": 208,
+      "newLines": 13,
+      "hash": "55f45a05a195d8d7"
+    },
+    {
+      "id": "h20",
+      "file": "test/batch.test.ts",
+      "oldFile": "test/batch.test.ts",
+      "oldStart": 4,
+      "oldLines": 7,
+      "newStart": 4,
+      "newLines": 8,
+      "hash": "97883405d9fe19d8"
+    },
+    {
+      "id": "h21",
+      "file": "test/batch.test.ts",
+      "oldFile": "test/batch.test.ts",
+      "oldStart": 73,
+      "oldLines": 13,
+      "newStart": 74,
+      "newLines": 11,
+      "hash": "44792becfc962035"
+    },
+    {
+      "id": "h22",
+      "file": "test/batch.test.ts",
+      "oldFile": "test/batch.test.ts",
+      "oldStart": 94,
+      "oldLines": 21,
+      "newStart": 93,
+      "newLines": 21,
+      "hash": "c4d142a82408cc7e"
+    },
+    {
+      "id": "h23",
+      "file": "test/batch.test.ts",
+      "oldFile": "test/batch.test.ts",
+      "oldStart": 279,
+      "oldLines": 18,
+      "newStart": 278,
+      "newLines": 27,
+      "hash": "28625fef605b39f6"
+    },
+    {
+      "id": "h24",
+      "file": "test/batch.test.ts",
+      "oldFile": "test/batch.test.ts",
+      "oldStart": 302,
+      "oldLines": 8,
+      "newStart": 310,
+      "newLines": 7,
+      "hash": "3fbd5bb8d86e4a29"
+    },
+    {
+      "id": "h25",
+      "file": "test/batch.test.ts",
+      "oldFile": "test/batch.test.ts",
+      "oldStart": 329,
+      "oldLines": 3,
+      "newStart": 336,
+      "newLines": 171,
+      "hash": "5f424c8ad17e399c"
+    },
+    {
+      "id": "h26",
+      "file": "test/findings.test.ts",
+      "oldFile": "test/findings.test.ts",
+      "oldStart": 7,
+      "oldLines": 7,
+      "newStart": 7,
+      "newLines": 7,
+      "hash": "3803eb13ad89f6e8"
+    },
+    {
+      "id": "h27",
+      "file": "test/findings.test.ts",
+      "oldFile": "test/findings.test.ts",
+      "oldStart": 253,
+      "oldLines": 3,
+      "newStart": 253,
+      "newLines": 166,
+      "hash": "f357b5ec3b6d317a"
+    },
+    {
+      "id": "h28",
+      "file": "test/fixtures/findings-v0.6.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 219,
+      "hash": "c7c8f382481244d6"
+    },
+    {
+      "id": "h29",
+      "file": "test/fixtures/refs-corpus.json",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 210,
+      "hash": "32add99618c9fc38"
+    },
+    {
+      "id": "h30",
+      "file": "test/lint.test.ts",
+      "oldFile": "test/lint.test.ts",
+      "oldStart": 259,
+      "oldLines": 3,
+      "newStart": 259,
+      "newLines": 23,
+      "hash": "606e00de985cb734"
+    }
+  ]
+}
