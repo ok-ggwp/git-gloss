@@ -1,0 +1,423 @@
+{
+  "gloss": 4,
+  "commit": "1ac8d4f1e144fc5402a45bd77fbba8dc35f2eb09",
+  "created_at": "2026-10-25T07:14:23.369Z",
+  "annotation": {
+    "version": 1,
+    "task": "A hung test must fail after a bounded time, kill what it started and leave no process behind; Chromium must not outlive a killed test process for hours",
+    "summary": "Adds --test-timeout and a file backstop, routes every test child through test/run.ts (default timeout + SIGKILL, env-overridable), runs Chromium in its own process group killed with the test, and tests the default timeout and the group kill.",
+    "groups": [
+      {
+        "id": "suite-timeouts",
+        "intent": "Run the suite with --test-timeout and the file backstop",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A test that never returns stalls npm test again with no failure; --test-timeout alone does not end the file's process while a child lives",
+        "impact": "contract",
+        "impact_reason": "package.json test script: how CI and every contributor run the tests",
+        "hunks": [
+          "h2"
+        ],
+        "notes": "180 s per test: slowest test 18 s alone, 29 s under 16 CPU hogs."
+      },
+      {
+        "id": "file-backstop",
+        "intent": "End a test file's process 10 min after start, with a message",
+        "necessity": "supporting",
+        "serves": "suite-timeouts",
+        "removal_impact": "After a test timeout, a raw child or socket keeps the file's process (and the suite) alive",
+        "impact": "local",
+        "hunks": [
+          "h16"
+        ],
+        "notes": "Unref'd timer loaded with --import; process.exit runs the tmp.ts cleanups, which kill browsers."
+      },
+      {
+        "id": "child-limits",
+        "intent": "Drop-in spawn/spawnSync/execFileSync with a default 120 s timeout and SIGKILL",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A hung git-gloss, git or server child stalls a test file again; nothing reports which command hung",
+        "evidence": "test/hangguard.test.ts 'the DEFAULT child timeout applies'",
+        "impact": "shared",
+        "impact_reason": "every test child goes through it",
+        "hunks": [
+          "h22"
+        ],
+        "notes": "split() now drops a trailing undefined options argument (it used to silently lose the default timeout). GLOSS_CHILD_TIMEOUT, read once at load, makes the default testable."
+      },
+      {
+        "id": "route-imports",
+        "intent": "Point every test file's child_process import at run.ts",
+        "necessity": "supporting",
+        "serves": "child-limits",
+        "removal_impact": "The helpers in run.ts would not be used by any test, so no test child would be limited",
+        "impact": "local",
+        "hunks": [
+          "h3",
+          "h4",
+          "h5",
+          "h6",
+          "h12",
+          "h13",
+          "h14",
+          "h15",
+          "h18",
+          "h19",
+          "h20",
+          "h21",
+          "h23",
+          "h25",
+          "h26"
+        ]
+      },
+      {
+        "id": "chromium-lifetime",
+        "intent": "Chromium in its own process group, killed and awaited; browse() deadline; timeout wrapper",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Zygote, gpu and renderer helpers outlive a killed browser; a hung step hangs browse() forever; a SIGKILLed test run leaves Chromium for hours",
+        "impact": "local",
+        "hunks": [
+          "h7",
+          "h8",
+          "h9",
+          "h10",
+          "h11"
+        ],
+        "notes": "Group SIGKILL in finally and in the onCleanup hook, then poll until the group is gone. coreutils timeout --signal=KILL 600 wraps Chromium in both browse() and dumpDom (feature-detected). GLOSS_CHROMIUM names another executable (used by the stub test). dumpDom kills the group afterwards, also after its own timeout (raw node spawnSync, since run.ts throws before the pid is known). waitFor takes an abort signal set at the deadline and in finally."
+      },
+      {
+        "id": "guard-test",
+        "intent": "Test the child timeouts, the browse deadline and the process-group kill",
+        "necessity": "supporting",
+        "serves": [
+          "child-limits",
+          "chromium-lifetime",
+          "suite-timeouts"
+        ],
+        "removal_impact": "The default timeout, the undefined-options fix, the group kill (also after a dumpDom timeout) and browse() stopping at its deadline would have no test",
+        "evidence": "hangguard.test.ts",
+        "impact": "local",
+        "hunks": [
+          "h17"
+        ],
+        "notes": "Red-checked: removing the default, removing the undefined stripping, and a parent-only kill each fail a test. The stub browser leaves a marked background helper. Also covers dumpDom's group kill after its own timeout and that browse() stops polling at its deadline (under 10 s)."
+      },
+      {
+        "id": "docs",
+        "intent": "TODO: record what hung, what was done and the follow-up; fix a timing.ts comment",
+        "necessity": "supporting",
+        "serves": [
+          "suite-timeouts",
+          "chromium-lifetime"
+        ],
+        "removal_impact": "The open TODO would still claim there is no per-test timeout, and the risks and the follow-up would not be recorded",
+        "impact": "local",
+        "hunks": [
+          "h1",
+          "h24"
+        ]
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Edit each of the ~160 call sites to add a timeout",
+        "rejected_because": "Shared drop-in helpers cover them with 15 import lines"
+      },
+      {
+        "option": "Rely on --test-timeout alone",
+        "rejected_because": "A timed-out test fails but its file's process keeps running while a child is alive (verified)"
+      }
+    ],
+    "risks": [
+      "The original hang was not reproduced; the guards bound it rather than fix its cause",
+      "A slower machine could hit the 120 s child, 100 s browse or 180 s test limits",
+      "Async spawn children (ary servers in ary.test.ts, untrusted.test.ts) are also SIGKILLed at 120 s",
+      "run.ts kills only the direct child: a hung grandchild (git via raw execFileSync in src/git.ts, no timeout) can hold a pipe open and make spawnSync block past its timeout, a plausible cause of the original hang",
+      "The SIGKILLed-parent 600 s bound is not covered by a test",
+      "detached on spawnSync works on Node 26 but is absent from its typings (cast)",
+      "browse() steps already running at the deadline are not interrupted (only waitFor polling stops) and can touch the profile being cleaned up",
+      "guard.ts ends a legitimate test file that runs over 600 s (GLOSS_FILE_TIMEOUT overrides)",
+      "The timeout wrapper's 600 s bound is lost when node SIGKILLs the wrapper alone; the group kill covers that path"
+    ],
+    "attention": {
+      "level": "careful",
+      "focus": [
+        "child-limits",
+        "chromium-lifetime"
+      ],
+      "reasons": [
+        "package.json test script is a contract-floor file",
+        "chromium-lifetime kills process groups: a wrong pid would signal an unrelated group",
+        "all test-only; no product code changed"
+      ]
+    },
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-sonnet-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 173,
+      "oldLines": 7,
+      "newStart": 173,
+      "newLines": 8,
+      "hash": "a49e03005eb914d6"
+    },
+    {
+      "id": "h2",
+      "file": "package.json",
+      "oldFile": "package.json",
+      "oldStart": 36,
+      "oldLines": 7,
+      "newStart": 36,
+      "newLines": 7,
+      "hash": "25b7c6c9de5d2d4d"
+    },
+    {
+      "id": "h3",
+      "file": "test/ary.test.ts",
+      "oldFile": "test/ary.test.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "9430f11ac7156092"
+    },
+    {
+      "id": "h4",
+      "file": "test/attention.test.ts",
+      "oldFile": "test/attention.test.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "e8acdf6b0a6bfd39"
+    },
+    {
+      "id": "h5",
+      "file": "test/browser.test.ts",
+      "oldFile": "test/browser.test.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "1068287b114ef86a"
+    },
+    {
+      "id": "h6",
+      "file": "test/browser.ts",
+      "oldFile": "test/browser.ts",
+      "oldStart": 1,
+      "oldLines": 4,
+      "newStart": 1,
+      "newLines": 5,
+      "hash": "1744abbc9ba61262"
+    },
+    {
+      "id": "h7",
+      "file": "test/browser.ts",
+      "oldFile": "test/browser.ts",
+      "oldStart": 18,
+      "oldLines": 15,
+      "newStart": 19,
+      "newLines": 42,
+      "hash": "baa13efcc0a8a698"
+    },
+    {
+      "id": "h8",
+      "file": "test/browser.ts",
+      "oldFile": "test/browser.ts",
+      "oldStart": 39,
+      "oldLines": 10,
+      "newStart": 67,
+      "newLines": 11,
+      "hash": "dfe99e827ca659c7"
+    },
+    {
+      "id": "h9",
+      "file": "test/browser.ts",
+      "oldFile": "test/browser.ts",
+      "oldStart": 60,
+      "oldLines": 6,
+      "newStart": 89,
+      "newLines": 9,
+      "hash": "567d6c95af88857a"
+    },
+    {
+      "id": "h10",
+      "file": "test/browser.ts",
+      "oldFile": "test/browser.ts",
+      "oldStart": 81,
+      "oldLines": 21,
+      "newStart": 113,
+      "newLines": 36,
+      "hash": "ebff2cb2fdb33d87"
+    },
+    {
+      "id": "h11",
+      "file": "test/browser.ts",
+      "oldFile": "test/browser.ts",
+      "oldStart": 109,
+      "oldLines": 19,
+      "newStart": 156,
+      "newLines": 12,
+      "hash": "d76dfc111e00a3d9"
+    },
+    {
+      "id": "h12",
+      "file": "test/carry.test.ts",
+      "oldFile": "test/carry.test.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "dc4d68a122a6e1cb"
+    },
+    {
+      "id": "h13",
+      "file": "test/decisions.test.ts",
+      "oldFile": "test/decisions.test.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "c002cb378b9a750b"
+    },
+    {
+      "id": "h14",
+      "file": "test/findings.test.ts",
+      "oldFile": "test/findings.test.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "ef2b36780b7f4f76"
+    },
+    {
+      "id": "h15",
+      "file": "test/gloss.test.ts",
+      "oldFile": "test/gloss.test.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "f0342685252369c6"
+    },
+    {
+      "id": "h16",
+      "file": "test/guard.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 10,
+      "hash": "fc2d483b95f9bd27"
+    },
+    {
+      "id": "h17",
+      "file": "test/hangguard.test.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 83,
+      "hash": "74afec76a5d78772"
+    },
+    {
+      "id": "h18",
+      "file": "test/htmldec.test.ts",
+      "oldFile": "test/htmldec.test.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "dfc0e449daee2c67"
+    },
+    {
+      "id": "h19",
+      "file": "test/impactwarn.test.ts",
+      "oldFile": "test/impactwarn.test.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "6c88fed3d0427075"
+    },
+    {
+      "id": "h20",
+      "file": "test/reviews.test.ts",
+      "oldFile": "test/reviews.test.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "d6cd42b00137144d"
+    },
+    {
+      "id": "h21",
+      "file": "test/reviews.test.ts",
+      "oldFile": "test/reviews.test.ts",
+      "oldStart": 276,
+      "oldLines": 7,
+      "newStart": 276,
+      "newLines": 7,
+      "hash": "6b9c36e74b939c42"
+    },
+    {
+      "id": "h22",
+      "file": "test/run.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 40,
+      "hash": "2505ae5929ccdee6"
+    },
+    {
+      "id": "h23",
+      "file": "test/signals.test.ts",
+      "oldFile": "test/signals.test.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "abf867abda7286e4"
+    },
+    {
+      "id": "h24",
+      "file": "test/timing.ts",
+      "oldFile": "test/timing.ts",
+      "oldStart": 3,
+      "oldLines": 8,
+      "newStart": 3,
+      "newLines": 8,
+      "hash": "307ee0dc21cebadf"
+    },
+    {
+      "id": "h25",
+      "file": "test/tmp.test.ts",
+      "oldFile": "test/tmp.test.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "3b601fb920f30363"
+    },
+    {
+      "id": "h26",
+      "file": "test/untrusted.test.ts",
+      "oldFile": "test/untrusted.test.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 6,
+      "hash": "f21daa18209a4667"
+    }
+  ]
+}
