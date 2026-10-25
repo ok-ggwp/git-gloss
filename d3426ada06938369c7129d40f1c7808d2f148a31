@@ -1,0 +1,210 @@
+{
+  "gloss": 4,
+  "commit": "d3426ada06938369c7129d40f1c7808d2f148a31",
+  "created_at": "2026-10-25T09:04:45.214Z",
+  "annotation": {
+    "version": 1,
+    "task": "Add an advisory, deterministic `git gloss lint [wip|<rev>]` that reports by code what an honesty reviewer checks by eye",
+    "summary": "New lint command over a loaded gloss, built on a structured version of the rating checks that `add` already does; documented and added to the wip-gloss steps.",
+    "groups": [
+      {
+        "id": "rating-issues",
+        "intent": "Expose add's rating checks as data (ratingIssues, whyText) so lint reuses them",
+        "necessity": "supporting",
+        "serves": "lint-command",
+        "removal_impact": "lint would have to duplicate the no-impact, below-floor and attention-floor rules and drift from add",
+        "evidence": "test/impactwarn.test.ts still passes unchanged",
+        "impact": "shared",
+        "impact_reason": "add's warnings and refusal are built from this; wording must stay identical",
+        "hunks": [
+          "h7"
+        ]
+      },
+      {
+        "id": "lint-command",
+        "intent": "The lint command (nine finding codes, text and --json, exit 0) and the shared serves check",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "no way to run the checks, and an incomplete run (broken config) could not be told from clean; the Haiku reviewer keeps doing them by eye",
+        "evidence": "test/lint.test.ts",
+        "impact": "contract",
+        "impact_reason": "new CLI command with a stable --json shape and finding codes that agents will parse",
+        "hunks": [
+          "h6",
+          "h8",
+          "h9"
+        ]
+      },
+      {
+        "id": "lint-register",
+        "intent": "Register lint in the CLI command table",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "`git gloss lint` is an unknown command",
+        "impact": "contract",
+        "impact_reason": "adds a command to the CLI and its usage text",
+        "hunks": [
+          "h4",
+          "h5"
+        ]
+      },
+      {
+        "id": "lint-docs",
+        "intent": "Document lint in the README and the gloss skill's steps",
+        "necessity": "supporting",
+        "serves": "lint-command",
+        "removal_impact": "agents would not know to run lint, and users would not know it exists",
+        "impact": "contract",
+        "impact_reason": "the skill change tells agents to run lint before reporting back",
+        "hunks": [
+          "h1",
+          "h2",
+          "h3"
+        ]
+      },
+      {
+        "id": "lint-tests",
+        "intent": "One test per finding code, output shape, hostile input, wip",
+        "necessity": "supporting",
+        "serves": [
+          "lint-command",
+          "rating-issues"
+        ],
+        "removal_impact": "the finding codes, exit-0 rule and escape handling would be unverified",
+        "impact": "local",
+        "hunks": [
+          "h10"
+        ]
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Reimplement the add checks inside lint",
+        "rejected_because": "two copies of the no-impact and floor rules would drift"
+      }
+    ],
+    "risks": [
+      "mechanical-on-floor skips groups made only of lockfiles/docs/tests (the skill's own lockfile example is mechanical at contract), so it is narrower than 'floor above module'",
+      "required-but-nothing-breaks is a small phrase list; it can miss paraphrases (by design, to avoid false positives)",
+      "lint does not report add's config-edit note (configEdit is dropped from ratingIssues' use in lint)",
+      "in validate, unknown-serves errors now come before self-serve errors for a group (message order only)"
+    ],
+    "attention": {
+      "level": "careful",
+      "focus": [
+        "rating-issues",
+        "lint-command"
+      ],
+      "reasons": [
+        "rating-issues rewires add's checks (behaviour must be unchanged)",
+        "new CLI command and skill instruction (contract)"
+      ]
+    },
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-sonnet-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 15,
+      "oldLines": 6,
+      "newStart": 15,
+      "newLines": 8,
+      "hash": "40c2aeb12750eb42"
+    },
+    {
+      "id": "h2",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 124,
+      "oldLines": 6,
+      "newStart": 126,
+      "newLines": 10,
+      "hash": "75dc042d8c982fcb"
+    },
+    {
+      "id": "h3",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 38,
+      "oldLines": 6,
+      "newStart": 38,
+      "newLines": 7,
+      "hash": "6eb541a76d8b9a33"
+    },
+    {
+      "id": "h4",
+      "file": "src/cli.ts",
+      "oldFile": "src/cli.ts",
+      "oldStart": 7,
+      "oldLines": 6,
+      "newStart": 7,
+      "newLines": 7,
+      "hash": "7e733bb68431b85f"
+    },
+    {
+      "id": "h5",
+      "file": "src/cli.ts",
+      "oldFile": "src/cli.ts",
+      "oldStart": 16,
+      "oldLines": 7,
+      "newStart": 17,
+      "newLines": 7,
+      "hash": "adffbb369dcfdf75"
+    },
+    {
+      "id": "h6",
+      "file": "src/commands/lint.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 94,
+      "hash": "eb6df01093ebcc05"
+    },
+    {
+      "id": "h7",
+      "file": "src/floor.ts",
+      "oldFile": "src/floor.ts",
+      "oldStart": 143,
+      "oldLines": 39,
+      "newStart": 143,
+      "newLines": 61,
+      "hash": "e0490644a857f411"
+    },
+    {
+      "id": "h8",
+      "file": "src/validate.ts",
+      "oldFile": "src/validate.ts",
+      "oldStart": 1,
+      "oldLines": 7,
+      "newStart": 1,
+      "newLines": 10,
+      "hash": "c2fb6a7fcd5816f1"
+    },
+    {
+      "id": "h9",
+      "file": "src/validate.ts",
+      "oldFile": "src/validate.ts",
+      "oldStart": 33,
+      "oldLines": 8,
+      "newStart": 36,
+      "newLines": 8,
+      "hash": "d07d75d822c53527"
+    },
+    {
+      "id": "h10",
+      "file": "test/lint.test.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 261,
+      "hash": "91179c67fa066754"
+    }
+  ]
+}
