@@ -722,9 +722,9 @@
       return pane
     }
     warnings(c, pane)
-    add(pane, attentionCard(c))
     statement(pane, 'Task', c.task)
     statement(pane, 'Summary', c.summary)
+    add(pane, attentionCard(c))
     focusSection(c, ci, pane)
     if (c.groups.length) {
       var nb = necessityBar(c)
