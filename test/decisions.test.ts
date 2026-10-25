@@ -213,8 +213,89 @@ test('a decision whose written line would exceed the reader\'s cap is refused, n
   const { dir, id, sha } = withReview()
   const before = noteLines(dir, sha)
   // Control characters are written as 6-byte escapes: 2 x 2000 of them pass the field checks but not the line cap.
-  const r = decide(dir, 'HEAD', id, '--finding', '\x01'.repeat(2000), '--outcome', 'fixed', '--note', '\x01'.repeat(2000))
+  const r = decide(dir, 'HEAD', id, '--finding', 'f' + '\x01'.repeat(1999), '--outcome', 'fixed', '--note', '\x01'.repeat(2000))
   assert.equal(r.code, 1, r.out)
   assert.match(r.err, /too long to record/)
   assert.deepEqual(noteLines(dir, sha), before)
+})
+
+const INVISIBLE = ['\u200e', '\u200f', '\u061c', '\u200b', '\u180e', '\u2060', '\u2061', '\u2062', '\u2063', '\u2064', '\ufeff', '\u{e0041}', '\u{e007f}', '\u{e0000}']
+const INVISIBLE_RE = /[\u200b\u200e\u200f\u180e\u061c\u2060-\u2064\ufeff\u{e0000}-\u{e007f}]/u
+
+test('bidi marks and zero-width characters never reach terminal output (decision text, commit subject); ZWJ and ZWNJ text passes unchanged', async () => {
+  const { plain } = await import('../src/plain.ts')
+  for (const c of INVISIBLE) assert.doesNotMatch(plain(`a${c}b`), INVISIBLE_RE, `U+${c.codePointAt(0)!.toString(16)} survives plain()`)
+  assert.equal(plain('a‎b', true), 'a b')
+  assert.equal(plain('a­b'), 'a­b', 'soft hyphen is kept')
+  const keep = ['\u{1F468}\u200d\u{1F469}\u200d\u{1F467}', '\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645']
+  for (const k of keep) assert.equal(plain(k), k, 'ZWJ and ZWNJ stay')
+  const { dir, g, id, sha } = withReview()
+  const bad = INVISIBLE.join('x')
+  const hostile = JSON.stringify({ decision: 1, review: id, at: '2026-10-24T10:00:00.000Z', by: 'b' + bad, finding: 'f' + bad, outcome: 'fixed', note: 'n' + bad })
+  execFileSync('git', ['notes', '--ref', 'gloss-reviews', 'add', '-f', '-F', '-', sha], { cwd: dir, input: [...noteLines(dir, sha), hostile].join('\n') + '\n' })
+  g('commit', '-q', '--amend', '--no-edit', '-m', 'subj' + bad)
+  g('notes', '--ref', 'gloss-reviews', 'copy', '-f', sha, g('rev-parse', 'HEAD'))
+  for (const args of [['reviews'], ['show']]) {
+    const r = gloss(dir, args)
+    if (args[0] === 'reviews') assert.equal(r.code, 0, r.err)
+    assert.doesNotMatch(r.out + r.err, INVISIBLE_RE, `${args[0]} output has an invisible character`)
+  }
+  assert.match(gloss(dir, ['reviews']).out, /fixed: f/)
+})
+
+const decisionNote = (id: string, extra: object) => JSON.stringify({ decision: 1, review: id, at: '2026-10-24T10:00:00.000Z', by: 'A', ...extra })
+const setNote = (dir: string, sha: string, lines: string[]) =>
+  execFileSync('git', ['notes', '--ref', 'gloss-reviews', 'add', '-f', '-F', '-', sha], { cwd: dir, input: lines.join('\n') + '\n', maxBuffer: 64 * 1024 * 1024 })
+
+test('a complete marker carries no finding, outcome or note: the reader skips one that does, the writer refuses it, a plain one counts', async () => {
+  const { isValidDecision } = await import('../src/reviews.ts')
+  assert.equal(isValidDecision({ complete: true, note: 'x' }), false)
+  assert.equal(isValidDecision({ complete: true, finding: 'x' }), false)
+  assert.equal(isValidDecision({ complete: true }), true)
+  const { dir, id, sha } = withReview()
+  setNote(dir, sha, [...noteLines(dir, sha), decisionNote(id, { complete: true, note: 'x' })])
+  assert.match(gloss(dir, ['show']).out, /decisions: none yet/)
+  assert.match(decide(dir, 'HEAD', id, '--complete', '--note', 'x').err, /takes no/)
+  assert.equal(decide(dir, 'HEAD', id, '--complete').code, 0)
+  assert.match(gloss(dir, ['show']).out, /decisions: none · complete/)
+})
+
+test('a decision line is read whatever its key order', () => {
+  const { dir, id, sha } = withReview()
+  const line = JSON.stringify({ review: id, by: 'A', outcome: 'fixed', finding: 'reordered', at: '2026-10-24T10:00:00.000Z', decision: 1 })
+  setNote(dir, sha, [...noteLines(dir, sha), line])
+  assert.match(gloss(dir, ['reviews']).out, /fixed: reordered/)
+})
+
+test('over-cap lines: huge junk is skipped fast and silently, an over-cap decision line is silent, an over-cap review line still warns', async () => {
+  const { within } = await import('./timing.ts')
+  const { dir, id, sha } = withReview()
+  const junk = '{"decision":1,"review":"' + id + '","finding":"' + 'A'.repeat(10 * 1024 * 1024) + '"}'
+  const reordered = '{"review":"' + id + '","decision":1,"finding":"' + 'A'.repeat(10 * 1024 * 1024) + '"}'
+  const longReview = '{"review":1,"id":"x","findings":"' + 'B'.repeat(9 * 1024 * 1024) + '"}'
+  const base = noteLines(dir, sha)
+  setNote(dir, sha, [...base, junk, reordered])
+  const t0 = Date.now()
+  const r = gloss(dir, ['show'])
+  within('junk decision lines', Date.now() - t0, 5000)
+  assert.equal(r.code, 0, r.err)
+  assert.doesNotMatch(r.err, /warning/)
+  setNote(dir, sha, [...base, longReview])
+  assert.match(gloss(dir, ['show']).err, /warning: skipped 1 review record/)
+})
+
+test('a whitespace-only finding is refused by the writer and skipped by the reader', () => {
+  const { dir, id, sha } = withReview()
+  assert.equal(decide(dir, 'HEAD', id, '--finding', '   ', '--outcome', 'fixed').code, 1)
+  setNote(dir, sha, [...noteLines(dir, sha), decisionNote(id, { finding: '   ', outcome: 'fixed' })])
+  assert.match(gloss(dir, ['show']).out, /decisions: none yet/)
+})
+
+test('a finding of only invisible characters is refused by the writer and skipped by the reader; visible text with invisible ones works', () => {
+  const { dir, id, sha } = withReview()
+  assert.equal(decide(dir, 'HEAD', id, '--finding', '‎', '--outcome', 'fixed').code, 1)
+  setNote(dir, sha, [...noteLines(dir, sha), decisionNote(id, { finding: '​‎', outcome: 'fixed' })])
+  assert.match(gloss(dir, ['show']).out, /decisions: none yet/)
+  assert.equal(decide(dir, 'HEAD', id, '--finding', 'ok‎', '--outcome', 'fixed').code, 0)
+  assert.match(gloss(dir, ['reviews']).out, /fixed: ok/)
 })

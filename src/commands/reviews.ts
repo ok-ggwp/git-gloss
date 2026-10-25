@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { commitSubject, gitTry, GlossError, resolveCommits } from '../git.ts'
-import { addReviews, checkBy, checkDecision, MAX_DECISION_LINE, MAX_FINDINGS, MAX_REVIEW_LINE, decisionSummary, readDecisions, readReviews, reviewStatus, stamp, statusPhrase, verdictOf, type DecisionRecord, type ReviewRecord } from '../reviews.ts'
+import { addReviews, checkBy, checkDecision, isValidDecision, MAX_DECISION_LINE, MAX_FINDINGS, MAX_REVIEW_LINE, decisionSummary, readDecisions, readReviews, reviewStatus, stamp, statusPhrase, verdictOf, type DecisionRecord, type ReviewRecord } from '../reviews.ts'
 import { findingRefs, labelFindings, orderDecisions, refOf } from '../findings.ts'
 import { plain } from '../plain.ts'
 import { page, style } from '../render.ts'
@@ -62,7 +62,7 @@ export function run(argv: string[]): number {
   if (values.decide !== undefined) {
     const id = values.decide
     if (values.complete) {
-      if (values.finding !== undefined || values.outcome !== undefined || values.note !== undefined) {
+      if (!isValidDecision({ complete: true, finding: values.finding, outcome: values.outcome, note: values.note })) {
         throw new GlossError('--complete marks the review as arbitrated; it takes no --finding, --outcome or --note')
       }
     } else checkDecision(values)

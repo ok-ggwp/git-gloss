@@ -109,7 +109,7 @@ export function readReviews(sha: string): ReviewRecord[] {
   let skipped = 0
   for (const l of new Set(raw.split('\n'))) {
     if (l.length <= MAX_REVIEW_LINE) kept.push(l)
-    else if (!isDecisionLine(l)) skipped++
+    else if (!mayBeDecision(l)) skipped++
   }
   const records = kept.flatMap((line) => {
     try {
@@ -165,24 +165,36 @@ const MAX_BY = 200
 // before it is parsed.
 export const MAX_DECISION_LINE = 16 * 1024
 
-export const isDecisionLine = (line: string) => /^\s*\{\s*"decision"\s*:/.test(line.slice(0, 64))
+// A line over the review cap is told from an over-cap decision line (junk, skipped
+// silently) without parsing it: `"decision"` among its first 64 characters. Key order is
+// free, so this is a heuristic: a rare over-cap review line that mentions it there is
+// silent too; and an over-cap decision line whose "decision" key lies beyond the first 64
+// characters is counted as a skipped review record, with a warning.
+const mayBeDecision = (line: string) => line.slice(0, 64).includes('"decision"')
+
+// The shape rule for a decision, shared by the reader and the writer so they cannot
+// drift: a complete marker has no finding, outcome or note; any other decision has a
+// finding, an outcome and optionally a note.
+export const isValidDecision = (r: { finding?: unknown; outcome?: unknown; note?: unknown; complete?: unknown }): boolean => {
+  const text = (v: unknown) => typeof v === 'string' && v.length <= MAX_TEXT
+  return r.complete === true
+    ? r.finding === undefined && r.outcome === undefined && r.note === undefined
+    : r.complete === undefined && text(r.finding) && plain(r.finding as string).trim().length > 0 &&
+      OUTCOMES.includes(r.outcome as Outcome) && (r.note === undefined || text(r.note))
+}
 
 // Reads the decisions on a commit that answer a review recorded on it.
 export function readDecisions(sha: string): DecisionRecord[] {
   const raw = gitTry(['notes', '--ref', REVIEWS_REF, 'show', sha])
   if (!raw) return []
-  const lines = [...new Set(raw.split('\n'))].filter((l) => l.length <= MAX_DECISION_LINE && isDecisionLine(l))
+  const lines = [...new Set(raw.split('\n'))].filter((l) => l.length <= MAX_DECISION_LINE)
   if (!lines.length) return []
   const ids = new Set(readReviews(sha).map((r) => r.id))
   return lines.flatMap((line) => {
     try {
       const r = JSON.parse(line)
-      const str = (k: string) => typeof r[k] === 'string'
-      const ok = r?.decision === 1 && ids.has(r.review) && str('at') && str('by') &&
-        (r.complete === true
-          ? r.finding === undefined && r.outcome === undefined
-          : str('finding') && r.finding.length > 0 && r.finding.length <= MAX_TEXT &&
-            OUTCOMES.includes(r.outcome) && (r.note === undefined || (str('note') && r.note.length <= MAX_TEXT))) &&
+      const str = (k: string) => typeof r?.[k] === 'string'
+      const ok = r?.decision === 1 && ids.has(r.review) && str('at') && str('by') && isValidDecision(r) &&
         r.at.length <= 64 && r.by.length <= MAX_BY
       return ok ? [r as DecisionRecord] : []
     } catch {
@@ -202,6 +214,8 @@ export const checkDecision = (d: { finding?: string; outcome?: string; note?: st
   for (const [k, v] of [['finding', d.finding], ['note', d.note]] as const) {
     if (v && v.length > MAX_TEXT) throw new GlossError(`--${k} is too long (${v.length} characters; at most ${MAX_TEXT})`)
   }
+  // The reader's rule is the one rule: nothing it would skip is written.
+  if (!isValidDecision(d)) throw new GlossError('that decision is not valid: it needs a finding, an outcome, and optionally a note')
 }
 
 // "3 fixed, 1 rejected · complete", or "2 decided · not marked complete".

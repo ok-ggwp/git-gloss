@@ -195,8 +195,7 @@ git-gloss versions without it copy only review records through adopt and carry
 and drop decision lines. The reason for it: a review record holds the report
 and a verdict, so a reader cannot tell "3 fixed, 2 deferred" from "5 ignored".
 
-- [ ] `plain()` misses the bidi marks U+200E, U+200F and U+061C (README says control characters are removed; say so).
-- [ ] The decision reader and writer disagree on `complete` lines (the reader accepts a `note` on one; the writer refuses it), and `isDecisionLine` requires `decision` to be the first key, so a valid hand-written line with another key order is dropped silently. Parse, then check `decision === 1`. From the honesty review of the decision records.
+- [ ] html page: bidi override and zero-width characters in decision text, subjects and review text are not removed; decide whether to strip them in the page.
 - [ ] Phase 5 (git-gud, other repo): structured findings, so "N still open" can
   be computed.
 
