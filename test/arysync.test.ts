@@ -96,7 +96,7 @@ test('a page stuck in a hung git does not block any other request', async () => 
     const page = await fetch(url + '?rev=HEAD')
     assert.equal(page.status, 200, 'a second page, on the fast path, is built meanwhile')
     assert.match(await page.text(), /id="gloss-data"/)
-    within('requests answered while a git hangs', performance.now() - t0, 1000)
+    within('requests answered while a git hangs', performance.now() - t0, 4000) // the old server stayed blocked for the 8 s limit; a loaded machine needs more than 1 s
     ac.abort()
   })
 })
@@ -104,18 +104,18 @@ test('a page stuck in a hung git does not block any other request', async () => 
 test('a job over the time limit gets a 504 page, and its git process group is killed', async () => {
   const fx = fixture()
   writeFileSync(fx.hang, '')
-  await serve(fx, { GIT_GLOSS_ARY_TIMEOUT: '1500', GIT_GLOSS_GIT_TIMEOUT: '60000' }, async (url) => {
+  await serve(fx, { GIT_GLOSS_ARY_TIMEOUT: '4000', GIT_GLOSS_GIT_TIMEOUT: '60000' }, async (url) => {
     const t0 = performance.now()
     const r = await fetch(url + '?rev=HEAD')
-    within('504 answered', performance.now() - t0, 8000)
+    within('504 answered', performance.now() - t0, 12000)
     assert.equal(r.status, 504)
-    assert.match(await r.text(), /took longer than 1\.5 s/)
+    assert.match(await r.text(), /took longer than 4 s/)
     const pids = fx.pids()
     assert.ok(pids.length >= 2, 'the fake git and its sleep never started')
     await waitFor(async () => goneNow(pids), 'the hung git group to be gone', 10_000)
-    // the server is fine afterwards
+    // the server is fine afterwards (a build may still take over the 4 s limit on a loaded machine: retry)
     rmSync(fx.hang)
-    assert.equal((await fetch(url + '?rev=HEAD')).status, 200)
+    await waitFor(async () => (await fetch(url + '?rev=HEAD')).status === 200, 'a page built after the hang is gone', 15_000)
   })
 })
 

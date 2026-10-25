@@ -725,7 +725,7 @@ test('a pattern that timed out is marked on its hits, in signals, show and the f
 
 // ---- git failing is not "no config" ----
 
-test('a git failure reading the config warns once and uses the defaults; a missing file stays quiet', () => {
+test('a git failure reading the config makes the ratings unverifiable, not relaxed; a missing file stays quiet', () => {
   const quiet = repo({ 'src/auth/login.js': 'check()\n' })
   quiet.write('src/auth/login.js', 'skip()\n')
   const q = gloss(quiet.dir, ['signals', 'wip', '--json'])
@@ -738,20 +738,33 @@ test('a git failure reading the config warns once and uses the defaults; a missi
   r.g('checkout', '-q', '-b', 'feature')
   r.write('app.js', 'stricter()\n')
   r.commit('change')
+  // Glossed while git can still read the config, so lint has a note to check.
+  const note = { version: 1, task: 't', summary: 's', groups: [group('g', ['h1'], { impact: 'sensitive', impact_reason: 'x' })] }
+  assert.equal(gloss(r.dir, ['add', 'HEAD'], JSON.stringify(note)).code, 0)
   const blob = r.g('rev-parse', 'main:.gloss/config.json')
   const loose = join(r.dir, '.git', 'objects', blob.slice(0, 2), blob.slice(2))
   chmodSync(join(r.dir, '.git', 'objects', blob.slice(0, 2)), 0o700)
   rmSync(loose)
   // A commit, not wip: a snapshot would write the file's blob back.
   const out = gloss(r.dir, ['signals', 'HEAD', '--json'])
-  assert.equal(out.code, 0, out.err)
-  const warns = out.err.split('\n').filter((l) => /warning: .*\.gloss\/config\.json/.test(l))
-  assert.equal(warns.length, 1, `one warning, got: ${out.err} | ${out.out.slice(0, 300)}`)
-  assert.match(warns[0], /could not be read from the base branch .*using the built-in defaults/)
+  assert.notEqual(out.code, 0, 'no floor from the defaults alone is reported as if it were the repo\'s')
+  assert.match(out.err, /\.gloss\/config\.json could not be read from the base branch .*cannot be verified/)
   assert.doesNotMatch(out.err, /no base branch/)
+  assert.equal(out.out, '')
+  // add refuses to rate against a config it cannot read.
+  const add = gloss(r.dir, ['add', 'HEAD', '--force'], JSON.stringify(note))
+  assert.notEqual(add.code, 0)
+  assert.match(add.err, /cannot be verified/)
+  // lint and show do not relax either: lint says it is incomplete.
+  const lint = JSON.parse(gloss(r.dir, ['lint', 'HEAD', '--json']).out)
+  assert.equal(lint.incomplete, true)
+  assert.match(gloss(r.dir, ['lint', 'HEAD']).out, /incomplete/)
+  const show = gloss(r.dir, ['show', 'HEAD'])
+  assert.equal(show.code, 0)
+  assert.match(show.err, /warning: signals unavailable: .*cannot be verified/)
 })
 
-test('a failing merge-base is not reported as "no base branch"', () => {
+test('a failing merge-base on every candidate is unverifiable, not "no base branch" and not the defaults', () => {
   const r = repo({ 'app.js': 'run()\n' })
   r.config({ patterns: { sensitive: ['stricter'] } })
   // main exists but is not a commit: git fails for a reason other than "no base".
@@ -759,9 +772,10 @@ test('a failing merge-base is not reported as "no base branch"', () => {
   writeFileSync(join(r.dir, '.git', 'refs', 'heads', 'main'), `${r.g('rev-parse', 'HEAD^{tree}')}\n`)
   r.write('app.js', 'stricter()\n')
   const out = gloss(r.dir, ['signals', 'wip', '--json'])
-  assert.equal(out.code, 0, out.err)
-  assert.doesNotMatch(out.err, /no base branch/)
+  assert.notEqual(out.code, 0)
+  assert.doesNotMatch(out.err, /no base branch|using the built-in defaults/)
   assert.match(out.err, /warning: git failed finding the base branch/)
+  assert.match(out.err, /git failed on every base branch candidate.*cannot be verified/)
 })
 
 test('a config that is not at the base ref (in the change, or only on disk) is the quiet "no file" case', () => {
@@ -790,6 +804,23 @@ test('the base config applies when git-gloss runs from a subdirectory', () => {
   assert.equal(root.floor.impact, 'sensitive')
   assert.equal(JSON.parse(sub.out).floor.impact, 'sensitive', 'same result as from the root')
   assert.equal(sub.err, '')
+})
+
+test('a git failure checking HEAD for the config is unverifiable too: lint says incomplete, nothing throws a raw error', () => {
+  const r = repo({ 'app.js': 'run()\n' })
+  r.write('app.js', 'x()\n')
+  r.commit('change')
+  const note = { version: 1, task: 't', summary: 's', groups: [group('g', ['h1'], { impact: 'module' })] }
+  assert.equal(gloss(r.dir, ['add', 'HEAD'], JSON.stringify(note)).code, 0)
+  const bin = tmp('shim-')
+  const real = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim()
+  writeFileSync(join(bin, 'git'), `#!/bin/sh\nif [ "$1 $2 $3 $4" = "rev-parse --verify -q HEAD" ]; then echo "fatal: shim failure" >&2; exit 128; fi\nexec ${real} "$@"\n`, { mode: 0o755 })
+  const run = (args: string[]) => spawnSync(process.execPath, [BIN, ...args], { cwd: r.dir, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } })
+  const lint = run(['lint', 'HEAD', '--json'])
+  assert.equal(lint.status, 0, lint.stderr)
+  assert.equal(JSON.parse(lint.stdout).incomplete, true)
+  assert.match(lint.stderr, /signals unavailable: git failed finding HEAD/)
+  assert.equal(run(['show', 'HEAD']).status, 0)
 })
 
 test('a broken earlier base candidate warns and the next working one is used', () => {

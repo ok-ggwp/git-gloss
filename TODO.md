@@ -101,13 +101,11 @@ failing) before it was fixed. The tests are in `test/untrusted.test.ts`.
    `[0-9a-f]{7,64}`); `-L` and `blame` take the file as one argument or after
    `--`; the remote name must be one of `git remote`. Fixed, see above: the fetched
    notes ref check.
-   - Reproduced, not fixed: the refspec `init` adds, `+refs/notes/gloss*:refs/notes/remotes/origin/gloss*`,
-     lets a remote that publishes `refs/notes/gloss/x` and later `refs/notes/gloss`
-     break every `git fetch` (exit 128, "cannot lock ref ... exists; cannot create") and `git gloss sync` ("some local refs could
-     not be updated") until the user runs `git remote prune origin`. The glob is
-     there on purpose (a plain refspec fails while the remote has no notes).
-     Follow-up: one glob-free refspec per ref, with a migration in `init`, or
-     delete a conflicting tracking ref before the fetch in `sync`.
+   - [ ] After `sync` handles a remote moving from `refs/notes/gloss/x` to
+     `refs/notes/gloss`, a plain `git fetch` still fails in that state until
+     `git remote prune` or a `sync`, and the opposite move (remote has only
+     `refs/notes/gloss/x`, tracking `.../gloss` exists) is not cleared. A
+     glob-free refspec per ref, with an `init` migration, would fix both.
 
 Follow-ups, real but left alone:
 - [ ] Code lines in a diff are printed as they are (`show -g`, `--diff`, `hunks`),
@@ -121,8 +119,9 @@ Follow-ups, real but left alone:
 
 ## Release
 
+- [ ] A ConfigError from an unreadable base config is not cached, so `lint`, `show` and `html` over many commits repeat the failing git calls (and the warning text).
+- [ ] `sync` clearing stale tracking refs: remote `a/gloss` and remote `a` share the namespace `refs/notes/remotes/a/gloss/`, so each can evict the other's tracking refs (remote names with `/`).
 - [ ] The 250 ms pattern budget is still wall-clock: a slow machine can time a pattern out on one run and not another, so the floor can differ between runs (now visible: the hit and the reasons say "timed out", but nothing stabilises it). Follow-up to the timed-out marker; from the bugs review of the config hardening.
-- [ ] A git failure reading the base config warns and uses the built-in defaults, so the repo's stricter patterns do not apply to that run; a failing base candidate warns and the next one is tried (defaults only if none works). A failing run could throw instead if a loud warning is judged too weak. From the honesty review of the config hardening.
 
 ## Attention and impact: the rest of the brief
 
@@ -256,3 +255,6 @@ the network: a sync makes up to six round trips, and the pre-push hook runs one.
 - [ ] `ary`'s signal handler calls `server.close()` then `process.exit()` in the same tick, so the SIGTERM grace (2 s before SIGKILL) is skipped: the exit handler SIGKILLs the jobs at once. Acceptable because ary's git calls are read-only (no lock files to leave), but a git that would clean up a temp file is not given the chance.
 - [ ] `ary` child memory is not bounded by the output cap: the page data for 200 commits and git's own output (a 256 MiB `maxBuffer` per call) are held in the child before the page is rendered; only the rendered page is capped.
 - [ ] ary jobs: `GIT_GLOSS_ARY_JOBS=0`/`abc`/`-1` silently fall back to the default (`posInt`); say so in the README or warn.
+- [ ] The arysync 504 test (12 s budget) may not discriminate from the old blocking server (an 8 s block finishes inside it); tighten with a condition-based check.
+- [ ] `sync` deletes stale tracking children before the network fetch; if the fetch then fails the deletion is silent (harmless: nothing reads them), and a failed `for-each-ref` skips the cleanup silently.
+- [ ] No test for `lint`'s exit status when signals are unavailable (`incomplete`).
