@@ -41,6 +41,8 @@ git gloss reviews [<commit>|<range>]  the reviews recorded for commits, with the
       --decide <review-id> --finding <text> --outcome fixed|follow-up|rejected|accepted [--note <text>]
                                       record what was decided about one finding
       --decide <review-id> --complete  the arbiter has finished with that review
+      --decide-template <review-id>   print a JSON skeleton with a row per finding
+      --decide <review-id> --decide-file <file|->  record a filled-in skeleton, all or nothing
 git gloss schema                      print the annotation JSON Schema
 ```
 
@@ -189,6 +191,15 @@ A finding must have visible text: one that is empty, whitespace or only invisibl
 git gloss reviews wip --decide <review-id> --finding "Rework: wip rule claim" --outcome follow-up --note "next release"
 git gloss reviews wip --decide <review-id> --complete
 ```
+
+To decide many findings at once, print a skeleton, fill in each `outcome` (and `note`), and record the file:
+
+```bash
+git gloss reviews wip --decide-template <review-id> > d.json    # one row per ref, outcome ""
+git gloss reviews wip --decide <review-id> --decide-file d.json  # or - for stdin
+```
+
+The file is either an array of `{"finding", "outcome", "note"?}` or the template's object `{"review", "complete", "decisions": [...]}` (`review` and unknown keys are ignored, though a `review` that isn't the `--decide` id is refused; `"complete": true` also records the complete marker). Keys may come in any order. Each finding is the ref and the start of its text (`1.2 wording nit`), checked as for the single call, with the same warning for a ref the report lacks. Validation is all or nothing: everything is checked before anything is written (a repeated finding is refused too), and the records go in one write per commit, with a range written commit by commit (so a git failure midway can leave earlier commits written), so a bad row (naming its entry number), an empty `outcome` (an unfilled row), or a file over 500 entries or 1 MiB records nothing. It prints `recorded N decisions on M commits`. It cannot be combined with `--finding`, `--outcome`, `--note`, `--stamp` or `--record`.
 
 The target (`wip`, a commit, a range) is as for `reviews`; the decision is added to every commit there that holds that review, and an unknown review id is an error. `by` is `--by <name>`, else `git config user.name`, else "unknown". `reviews` prints each review's id in its header line (the id `--decide` takes) and lists its decisions under it with a summary ("3 fixed, 2 follow-up · complete", or "4 decided · not marked complete"), and `show` carries the same summary on its reviews line. The HTML view (`html` and `ary`) shows the same under each review in its Reviews pane, with an outcome chip per decision, and adds how far they got to the stage's rail row (the latest 200 decisions of a review are listed). Decisions follow their reviews through `adopt` (so decisions made on `wip` survive committing), `carry`, rebases and `sync`. In the terminal, text from notes (decisions and review records) and commit subjects is shown with control characters, escape sequences, and bidi and zero-width characters (U+200B, U+200E, U+200F, U+061C, U+2060-U+2064, U+FEFF, tag characters) removed (each becomes a space; ZWNJ and ZWJ stay, so Persian words and emoji sequences render intact, and so does the soft hyphen; the html page applies none of this, so bidi overrides there are not removed), since it can arrive from a remote; decision lines over 16 KB are skipped silently, and review lines over 8 MiB or with findings text over 256 KiB are skipped with a warning; unknown outcomes and decisions for a review that is not on the commit are ignored.
 
