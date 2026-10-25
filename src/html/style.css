@@ -123,6 +123,7 @@ kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); 
 .ary-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; min-width: 0; }
 .ary-repo { color: var(--muted); font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
 .ary-field { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.ary-wip { font-size: 13px; }
 .ary-notice { flex-basis: 100%; margin: 0; padding: 6px 10px; border-radius: 8px; border: 1px dashed var(--warn); font-size: 13px; color: var(--ink); }
 .combo { position: relative; }
 .combo-btn, .combo-panel input, .ary-rev input { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; min-height: 36px; padding: 4px 12px; font-size: 13px; }
@@ -220,6 +221,9 @@ button.chip { min-height: 32px; }
 .strip i.none { background: transparent; border: 1.5px dashed var(--attention-none); }
 .commits { display: flex; flex-direction: column; padding: 0 8px 16px; }
 .crow { margin-bottom: 2px; }
+.crow[hidden] { display: none; }
+.cfilter { padding: 0 8px 8px; }
+.cfilter input { width: 100%; box-sizing: border-box; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; min-height: 36px; padding: 4px 12px; font-size: 13px; }
 .crow > .pick { display: block; width: 100%; border: 1px solid transparent; border-radius: 8px; padding: 10px 12px; min-height: 64px; }
 .crow.sel > .pick { background: var(--accent-soft); border-color: var(--accent); }
 .rtop { display: flex; align-items: center; gap: 10px; }

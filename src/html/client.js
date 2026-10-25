@@ -492,8 +492,10 @@
     if (!multi && state.kind === 'group' && dir < 0 && !neighbor(-1)) { selectKind(0, 'overview'); return }
     if (multi && state.kind !== 'group') {
       var order = commitOrder()
-      var next = order[order.indexOf(state.ci) + dir]
-      if (next !== undefined) selectKind(next, 'overview')
+      // The nearest commit the filter shows, not one it hides.
+      for (var j = order.indexOf(state.ci) + dir; j >= 0 && j < order.length; j += dir) {
+        if (!commitHidden(order[j])) { selectKind(order[j], 'overview'); break }
+      }
       return
     }
     var id = neighbor(dir)
@@ -955,7 +957,7 @@
     })
     var box = add(el('div', 'sum'), el('div', 'eyebrow', 'Range at a glance'), strip, line)
     var top = commits[order[0]]
-    if (levelOf(top).level) {
+    if (top && levelOf(top).level) {
       var link = el('a', null, sha7(top) + ' ' + top.subject)
       link.href = '#c-' + sha7(top)
       link.addEventListener('click', function (ev) { ev.preventDefault(); selectKind(order[0], 'overview') })
@@ -964,13 +966,51 @@
     return box
   }
 
+  // The box above a range's commit list. Matching is plain text (lower-cased `includes` on the
+  // short sha, subject and author), never a pattern or markup. The one input is kept across
+  // re-renders so what was typed stays; it is not saved anywhere, so a reload clears it.
+  var railRows = []
+  var filterBox = null
+  var noMatch = el('div', 'emptyrows', 'No commits match.')
+  function commitHidden(ci) {
+    return railRows.some(function (r) { return r.ci === ci && r.node.hidden })
+  }
+  function applyCommitFilter() {
+    var q = filterBox.value.trim().toLowerCase()
+    var shown = 0
+    railRows.forEach(function (r) {
+      var hit = !q || r.text.indexOf(q) >= 0
+      r.node.hidden = !hit
+      if (hit) shown++
+    })
+    noMatch.hidden = !q || !!shown
+  }
+  function commitFilter() {
+    if (!filterBox) {
+      filterBox = el('input')
+      filterBox.type = 'search'
+      filterBox.spellcheck = false
+      filterBox.placeholder = 'Filter commits'
+      filterBox.setAttribute('aria-label', 'Filter commits by message, author or sha')
+      filterBox.addEventListener('input', applyCommitFilter)
+    }
+    return add(el('div', 'cfilter'), filterBox, noMatch)
+  }
+
   function renderRail() {
     railEl.textContent = ''
     if (multi) {
       add(railEl, railSummary(), add(el('div', 'railhead'), el('div', 'eyebrow', state.hot ? 'Hottest first, then newest' : 'Newest first')))
       var list = el('div', 'commits')
-      commitOrder().forEach(function (ci) { list.appendChild(commitRow(ci)) })
-      add(railEl, list)
+      railRows = []
+      commitOrder().forEach(function (ci) {
+        var row = commitRow(ci)
+        var c = commits[ci]
+        railRows.push({ ci: ci, node: row, text: (sha7(c) + ' ' + c.subject + ' ' + c.author).toLowerCase() })
+        list.appendChild(row)
+      })
+      add(railEl, commitFilter(), list)
+      applyCommitFilter()
       if (data.merges.length) {
         var ml = add(el('div', 'mergelist'), el('div', 'eyebrow', 'Merges, not reviewed'))
         data.merges.forEach(function (m) { ml.appendChild(add(el('div'), el('span', 'mono', m.sha.slice(0, 7)), text(' ' + m.subject))) })
