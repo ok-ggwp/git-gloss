@@ -1,0 +1,36 @@
+## honesty (claude:haiku)
+
+## Review of the timing-guard changes
+
+I ran the ratio test and the catastrophic-regex guard. I did not run the browser tests, so those findings are from reading only.
+
+**1. Mismatches**
+
+- **Test names still say "fast" but the budgets are now 30–60 s (read).** `splitting a large new file stays fast` (budget 30 s, `budgets`) and `a review line of 10 MB is skipped with a warning, fast` (budget 30 s, `budgets`) now assert a slow-not-hang bound, not speed. The names overstate what the guards check.
+- **The TODO drops the Reviews-pane flake without saying it is fixed (read).** The `todo` group replaces the whole flaky-timing bullet. The Reviews-pane decisions test, which commit 2a096dd had just flagged as load-sensitive, is no longer tracked as open. The `wait-for` group implies it is covered (the 11 s failure), but nothing in the diff shows that test was run under load.
+- **Evidence for "between loaded-good and attack" is incomplete (read).** The `budgets` evidence lists only mutation times. There are no loaded-good times for the markdown, claims or 10 MB tests. For `claims html`, the attack takes 40 s against a 30 s budget, a margin of about 10 s with no measured loaded-good time behind it.
+
+**2. Misgraded necessity**
+
+- `budgets` (required) and `signals-ratio` (required) are fairly graded. The task asks for reliable guards, so the budget changes are the fix.
+- `wait-for` is labelled supporting and "serves budgets". It is the other half of the same fix, not a separate need, so `supporting` is a reasonable label but the `serves` link is loose.
+- `drop-hostile-timing` (incidental) is accurate. Removing the 3 s check was a deliberate choice to remove a flaky, unmutable assertion, which is what the task asked for.
+- `todo` (supporting) is documentation, not a dependency of the other groups. "Supporting" is defensible, but it is effectively mechanical.
+
+**3. Removal candidates**
+
+None are clearly removable without loss. `time-helper` could be inlined at its 9 call sites, but it centralises the printing and the "slow, not hang" note, so keeping it is better.
+
+**4. Simplifications**
+
+- In `signals.test.ts`, the `assert.equal(analyze(...).hunks.length, ...)` sits inside the timed loop, adding to the measured time. Hoisting the check out of the loop, or checking once before timing, would make the measurement purer.
+- `waitFor` has a `probe` that can throw, and the caller does not distinguish that from "not yet" (see risk 1 below).
+
+**5. Missing risks**
+
+- **`waitFor` swallows every probe error (read).** Errors from `list()` and `evaluate()` are caught as "not yet". Before this change the tab-discovery loop let a `fetch` error propagate at once. Now a dead Chromium or a closed socket stalls for the full 30 s and then reports a generic "timed out waiting for …", hiding the real error. The `ready()` change makes this worse, because a broken page now costs 30 s per `ready` call (a 30 s Chromium start plus 30 s for each `ready`) before failing. The author's note covers "stall up to 30 s", but not the masked error or the cumulative time.
+- **The `wait-for` behaviour change is broader than the note says (read).** Every existing browser test that relied on `ready()` silently continuing now fails hard. That is intended, but it means a page that renders slowly but correctly can now fail where it previously passed through to its own asserts.
+- **Ratio test under load (verified for a clean run only).** I ran `performance: analyze` once on this machine: 100 hunks 15.8 ms, 900 hunks 146.9 ms, a ratio of **9.3x** against the 30x limit, which matches the author's "good code 7–9x". I did not measure it under load, so the claim "2–9x loaded" is unverified here. The best-of-five approach is reasonable, but a stall on the 900-hunk side can still inflate the ratio.
+- **Catastrophic-regex guard (verified).** `within('catastrophic regex', …)` ran at 450 ms against a 30 s budget and the test passed. Its functional asserts were not separately checked.
+
+VERDICT: ISSUES

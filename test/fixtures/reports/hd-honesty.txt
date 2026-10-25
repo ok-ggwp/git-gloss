@@ -1,0 +1,39 @@
+## honesty (claude:haiku)
+
+## Review of the decision-records-in-HTML change
+
+I ran the full test suite and `tsc` on the clone, and ran a scratch check of a review that has no VERDICT line. The annotations are mostly accurate. The main problems are one rail behaviour that the author's own intent doesn't justify and one group that is mis-filed as supporting.
+
+### 1. Mismatch: a review with no VERDICT line shows "undecided" in the rail and "none yet" in the pane (verified)
+
+- **Group:** `rail`, with `data`.
+- **Evidence:** I recorded a bugs review whose findings text has no verdict line. Page data gave `verdict: 'unknown'`, `entries[0].verdict: undefined`, `decisions: []`, `summary: 'none yet'`. Because `decidedShort` only excludes `verdict === 'clean'`, the rail row gets ` · undecided`.
+- **Why it matters:** The review never said it found anything, so "undecided" implies an open issue. The pane also gets an empty "Decisions — none yet" block. The rail intent only says "issues, or no verdict line", so the author chose this on purpose. I still think it is misleading. Limiting `decisions` and the suffix to `verdict === 'issues'` (plus the decided-and-complete cases) would match the wording "a clean review has none of the three" without adding noise to unverdicted reviews.
+
+### 2. Misgraded necessity: `ol-start` is incidental, not supporting (read)
+
+- **Group:** `ol-start`, labelled supporting, serving `pane`.
+- **Evidence:** The change fixes how every numbered list in every report renders (`start` on `<ol>`). Nothing in the decision path reads or depends on rendered list numbers. `--finding` is free text, and the decision reader never links it to a list position. The author's stated reason ("decisions name findings by number") is a hope about how arbiters will write, not a dependency.
+- **Impact:** It is a real pre-existing bug, but it is a separate fix. It should be split out as incidental. Its test (`a numbered list in a report keeps its own numbers…`) can move with it.
+
+### 3. Removal candidates
+
+- **`ol-start`** (with its test): dropping it leaves the old numbering bug in place. The decision feature still works. Expected impact: none on decisions, a pre-existing rendering bug stays.
+
+### 4. Simplifications (read)
+
+- `pageReviews` filters all decisions per entry (`all.filter`), and `decisionSummary` plus `decisionCount` count the same set twice. Grouping decisions by review id once with a `Map` would be clearer. This is minor.
+- The `MAX_PAGE_DECISIONS` cap is labelled required but is defensive by the author's own note. Relabelling it would help, though the cap is reasonable given a 16 KB per-line limit and a payload of up to 200 × 16 KB per review.
+
+### 5. Missing risks
+
+- **Timing-based tests (verified):** The full parallel run failed two existing timing budgets: `signals` perf (4.8 s against a few-second budget) and `untrusted` quadratic-markdown browser test (opening three hostile reviews took 4.2 s). The untrusted test passes in isolation (verified). I did not establish whether this change caused the failure. The new hostile-text test also asserts `< 3000 ms`, which can flake the same way. Each new htmldec test takes 1–7 s, so the suite gets slower.
+- **Extra git work per commit (read):** `readDecisions` runs `git notes show` and then `readReviews`, which repeats the reviews read that `reviewStatus` already did. The author lists this as a risk; I confirm it. `ary` rebuilds this on every request.
+- **No visual check (not done):** The tests check the DOM with a headless browser, and they pass in isolation. I did not take screenshots, so the chip border-shape distinctions in `style` are read from the CSS only.
+- **Sort coupling (read):** `decidedShort` relies on `entries[0]` being the newest, which `reviewStatus` guarantees with a comment only. This is currently consistent with the pane sort, but no test pins it.
+
+### Verdict on annotations
+
+The `data`, `pane`, `docs` and `tests` descriptions match the code. The README and TODO edits are accurate. The rail and `ol-start` need changes as described above.
+
+VERDICT: ISSUES

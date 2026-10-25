@@ -219,19 +219,17 @@ test('in a real browser, hostile decision text stays text', { skip: skipBrowse }
   })
 })
 
-test('a numbered list in a report keeps its own numbers, so decisions can name findings by them', { skip: skipBrowse }, async () => {
+test('labelled findings replace top-level numbers; an ordered list nested in a finding still starts at its own number', { skip: skipBrowse }, async () => {
   const { dir } = glossed()
-  review(dir, 'HEAD', 'bugs', '### A\n1. x\n2. y\n### B\n5. z\n6. w\n### C\n99999999999. huge\n- bullet\n  3. nested\nVERDICT: ISSUES')
+  review(dir, 'HEAD', 'bugs', '### A\n1. x\n2. y\n### B\n5. z\n- bullet\n  3. nested\n  4. more\n99999999999. huge\nVERDICT: ISSUES')
   const out = join(dir, 'page.html')
   assert.equal(gloss(dir, ['html', '-o', out]).code, 0)
   await browse(`file://${out}`, async (evaluate) => {
     await evaluate(`document.querySelector('.rvrow').click()`)
     const f = JSON.parse(String(await evaluate(`JSON.stringify([...document.querySelectorAll('.md ol')].map((o) => ({ start: o.start, attr: o.getAttribute('start'), items: o.children.length })))`)))
-    assert.deepEqual(f.map((o: any) => o.start), [1, 5, 1, 3])
-    assert.equal(f[1].attr, '5')
-    assert.equal(f[2].attr, null, 'a huge number is ignored')
-    assert.equal(f[3].attr, '3', 'nested lists too')
-    // the rendered numbers: first marker of the second list is 5, its second 6
-    assert.deepEqual(await evaluate(`[...document.querySelectorAll('.md ol')[1].children].map((li, i) => document.querySelectorAll('.md ol')[1].start + i)`), [5, 6])
+    assert.deepEqual(f.map((o: any) => o.start), [3, 1], 'only the nested list and the huge number remain ordered lists')
+    assert.equal(f[0].attr, '3', 'nested lists keep their start')
+    assert.equal(f[1].attr, null, 'a huge number is ignored')
+    assert.deepEqual(JSON.parse(String(await evaluate(`JSON.stringify([...document.querySelectorAll('.md > ul > li > strong')].map((e) => e.textContent))`))), ['[1.1]', '[1.2]', '[2.1]', '[2.2]'])
   })
 })

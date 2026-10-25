@@ -1,0 +1,49 @@
+## honesty (claude:haiku)
+
+## Review: "Warn on add when a non-pure-mechanical group has no impact rated"
+
+The warning logic matches the stated intent, and the new tests pass (7/7). I found one test-comment mismatch and some documentation and noise concerns. The full suite is not verified, because four test files hit my 45-second cap.
+
+### 1. Mismatches
+
+- **`test` group, `more than 10 unrated groups` (verified):** the comment says `h2 lock`, but git orders the diff by path: `app.js`, `f00.js`…`f08.js`, `package-lock.json`, `util.js`. I checked this in a scratch repo. So `h2` is `f00.js`, and the lockfile is `h11`, which lands in the "and 2 more" tail. The test passes only because it checks the names, so the floored-list interaction with the 10-name cap is not exercised. The comment is wrong and the test gives less coverage than it appears to.
+- **Skill not updated (read):** `skills/gloss/SKILL.md:106` says only "`add` warns when a group is rated below its floor". It does not mention the new unrated-group warning. The README was updated, but the skill is what agents read when writing glosses.
+
+Everything else in `warn` matches its description: mechanical groups without a signal are skipped, floor-signal groups are listed with their reasons, the list is capped at ten, the warning is emitted once, and it is only emitted from `add` (`src/commands/add.ts:57`). It does not change the exit code or what is stored.
+
+### 2. Misgraded necessity
+
+No misgrading found. `warn` (required), `test` (supporting, serves `warn`) and `readme` (supporting, serves `warn`) all hold up.
+
+### 3. Removal candidates
+
+None. Every group is needed for the task.
+
+### 4. Simplifications
+
+Minor: `floored` is built with a second `impactRank` check that duplicates the `signal` test. Not worth changing on its own.
+
+### 5. Missing risks
+
+- **Noise pushing filler ratings (read):** the warning fires on every non-mechanical group without `impact`, including docs-only and test-only groups such as `readme` and `test` in this very change. The skill's guidance is consistent with that, but authors may respond by writing `impact: "local"` on everything to silence the warning, which would make the field meaningless. Consider making the warning exclude groups whose hunks are all tests or docs, or at least watch for this pattern.
+- **Hidden when other errors exist (read):** `ratingProblems` runs only if `errors` is empty (`add.ts:55`), so the unrated warning is suppressed whenever another error is present. That is probably fine, but it is not documented.
+
+### Test run (verified in part)
+
+| File | Result |
+|---|---|
+| ary | 10 pass |
+| browser | 1 pass |
+| carry | 22 pass |
+| decisions | 11 pass |
+| impactwarn | 7 pass |
+| tmp | 4 pass |
+| attention | 25 pass, cut off at 45 s |
+| reviews | 7 pass, cut off at 45 s |
+| untrusted | 12 pass, cut off at 45 s |
+| gloss | 0 reported, cut off at 45 s |
+| signals | 0 reported, cut off at 45 s |
+
+No test failed. The cut-off files are **unverified**, not failing. A full `npm test` did not finish within about 2.5 minutes. I did not check whether this slowness predates the change.
+
+VERDICT: ISSUES

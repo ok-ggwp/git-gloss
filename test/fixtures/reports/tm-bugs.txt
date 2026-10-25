@@ -1,0 +1,16 @@
+## bugs (claude:sonnet)
+
+The change has one minor weakness in the new signals performance test. I found nothing else worth fixing.
+
+**Minor: the `+ 300` slack weakens the signals ratio test** (`test/signals.test.ts`, the last assert of the "performance" test). **Verified** by running it once, not by simulating a regression.
+- The assert is `msBig <= 30 * msSmall + 300`. On this machine the 100-hunk run takes 23 ms and the 900-hunk run 167 ms (7.2x).
+- A quadratic scan would reach about 81 × 23 ≈ 1.9 s, and the limit is 30 × 23 + 300 ≈ 990 ms, so it would still be caught here.
+- On a faster machine, where the small run is about 5 ms, a quadratic regression would take about 405 ms against a limit of 450 ms, and it would pass. The 300 ms constant dominates the limit whenever `analyze` is fast, so the guard only works at the speed it was tuned on.
+- A tighter factor (about 20x) with a much smaller constant, or a larger input, would keep the test sensitive. This reintroduces some flake risk, which is the trade-off the author was avoiding.
+
+I also read the other changes and found no defects:
+- **`waitFor`:** errors from the probe are swallowed and retried, as before. The timeout message drops the last probe error, which only makes diagnosis harder.
+- **`until` in `ary.test.ts`:** it now throws `Error` instead of calling `assert.fail`, which has the same effect.
+- **Removed wall-time checks:** the checks were replaced with `within` budgets of 20 to 60 s, which only catch hangs. The tests' functional asserts are unchanged.
+
+VERDICT: ISSUES

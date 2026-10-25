@@ -171,7 +171,13 @@ A review holds a report and a verdict, so by itself it cannot tell "3 fixed, 2 d
 {"decision":1,"review":"<review id>","at":"…","by":"…","complete":true}
 ```
 
-`finding` is free text naming the finding (reports are free text, so git-gloss doesn't parse findings out of them); `outcome` is `fixed`, `follow-up`, `rejected` or `accepted`; `note` is optional. The second line says the arbiter has finished and no more decisions are coming, which is what separates "all arbitrated" from "5 ignored". The marker is advisory: decisions added after it are still accepted and counted. A review whose verdict is clean needs none.
+`finding` is free text naming the finding. Reports are free markdown, so git-gloss does not parse findings out of the stored text, but for display (in `reviews` and the html page; the stored report stays raw) it labels every top-level list item `**[S.N]**`, S the section (a `#` heading, a bold-only line such as `**2. Removal**`, or a short plain `3. Title` line with a blank line on each side, followed by a bullet list; its own number if it has one, else the previous section plus one; unnumbered headings before the first item are titles and take none) and N the item's place in it, replacing the source's own bullet or number. Items before the first heading are labelled `[N]` and must be named `N:` or `N)` in `--decide` (`1 wording nit` is free text); a numbered heading (`3. Removal`) counts as the ref `3` for `--decide` although no label is printed for it.
+
+Name a decision's finding by that ref, e.g. `--finding "1.2 wording nit"`: `--decide` warns on stderr (and records anyway) when the report has no such ref.
+
+Decisions whose finding starts with a ref (`1.2 `, `1.2: `, or a bare `3:`, `3)`, `3.`; numbers over 3 digits are text) are listed in ref order (1.2 before 1.10), the others after them in time order.
+
+`outcome` is `fixed`, `follow-up`, `rejected` or `accepted`; `note` is optional. The second line says the arbiter has finished and no more decisions are coming, which is what separates "all arbitrated" from "5 ignored". The marker is advisory: decisions added after it are still accepted and counted. A review whose verdict is clean needs none.
 
 ```bash
 git gloss reviews wip --decide <review-id> --finding "Rework: wip rule claim" --outcome follow-up --note "next release"

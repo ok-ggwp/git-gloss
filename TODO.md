@@ -200,6 +200,8 @@ and a verdict, so a reader cannot tell "3 fixed, 2 deferred" from "5 ignored".
 - [ ] Phase 5 (git-gud, other repo): structured findings, so "N still open" can
   be computed.
 
+- [ ] Finding refs (`1.2`) are stored as text in decision records, but they come from the labelling rules in `src/findings.ts`. If those rules change, old decisions would point at different findings. Keep the rules stable, or version them and keep the old labeller for old reviews. From the honesty review of the finding refs.
+
 ## Sync speed
 
 Measured locally (no network): a sync with nothing to do takes 0.7 to 2.2s

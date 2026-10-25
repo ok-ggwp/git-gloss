@@ -198,7 +198,7 @@ test('in a real browser, findings render as markdown without raw syntax or marku
     await evaluate("document.querySelector('.rvrow').click()")
     const q = (sel: string) => evaluate(`document.querySelectorAll('main ${sel}').length`)
     assert.ok(Number(await q('.md h4')) >= 1 && Number(await q('.md h5')) >= 1, 'headings')
-    assert.ok(Number(await q('.md li')) >= 5 && Number(await q('.md ol li')) === 2, 'lists')
+    assert.ok(Number(await q('.md li')) >= 5 && Number(await q('.md ol li')) === 0, 'lists: top-level numbered items are labelled bullets')
     assert.ok(Number(await q('.md ul ul li')) === 1, 'nesting by indentation')
     assert.ok(Number(await q('.md strong')) >= 1 && Number(await q('.md em')) === 1 && Number(await q('.md code')) >= 2)
     const text = String(await evaluate("document.querySelector('main .entry:not(.old) .md').textContent"))

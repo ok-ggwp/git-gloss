@@ -1,4 +1,5 @@
 import { commitDiff, commitSubject, git } from '../git.ts'
+import { labelFindings, orderDecisions } from '../findings.ts'
 import { decisionSummary, readDecisions, reviewStatus, statusPhrase, verdict } from '../reviews.ts'
 import { parseDiff } from '../diff.ts'
 import { loadGloss } from '../loader.ts'
@@ -121,11 +122,12 @@ function pageReviews(sha: string): PageReview[] {
     verdict: verdict(s),
     phrase: statusPhrase(s),
     entries: s.reviews.map((r): PageEntry => {
-      const entry: PageEntry = { id: r.id, agent: r.agent, model: r.model, mode: r.mode, at: r.at, target: r.target, findings: r.findings }
+      const entry: PageEntry = { id: r.id, agent: r.agent, model: r.model, mode: r.mode, at: r.at, target: r.target, findings: labelFindings(r.findings) }
       const ds = all.filter((d) => d.review === r.id)
       if (r.verdict === 'clean' && !ds.length) return entry
+      // Sorted here only to pick the newest MAX_PAGE_DECISIONS; orderDecisions sets the order shown.
       const done = ds.filter((d) => d.outcome).sort((a, b) => a.at.localeCompare(b.at))
-      entry.decisions = done.slice(-MAX_PAGE_DECISIONS).map((d) => ({ outcome: d.outcome!, finding: d.finding!, ...(d.note ? { note: d.note } : {}), by: d.by, at: d.at }))
+      entry.decisions = orderDecisions(done.slice(-MAX_PAGE_DECISIONS)).map((d) => ({ outcome: d.outcome!, finding: d.finding!, ...(d.note ? { note: d.note } : {}), by: d.by, at: d.at }))
       entry.complete = ds.some((d) => d.complete)
       entry.summary = decisionSummary(ds)
       entry.verdict = r.verdict
