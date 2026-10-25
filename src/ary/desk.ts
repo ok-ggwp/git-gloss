@@ -1,10 +1,10 @@
-import { GlossError, WIP_REF, git, gitTry, resolveCommits } from '../git.ts'
+import { GlossError, WIP_REF, git, gitTry, resolveCommits, wipStaleness } from '../git.ts'
 import { buildPageData } from '../html/data.ts'
 import { renderPage } from '../html/page.ts'
 import { listRefs } from './browse.ts'
 
 // A range page loads and lays out every commit in it, so a huge one would hang
-// the browser. Narrowing it is a better answer than a spinner.
+// the browser: a longer range shows its newest MAX_RANGE_COMMITS, with a notice.
 export const MAX_RANGE_COMMITS = 200
 
 export class BadRequest extends GlossError {}
@@ -48,6 +48,7 @@ const PAGE_HEADERS = { 'content-security-policy': "frame-ancestors 'none'" }
 // Runs git synchronously: only ever called in a job's child process (and by tests).
 export function buildDesk(query: DeskQuery): DeskResult {
   const refs = listRefs()
+  const snapshot = gitTry(['rev-parse', '--verify', '--quiet', WIP_REF])?.trim() || null
   const known = new Set([...refs.branches, ...refs.remotes])
   const { head: wantHead, base: wantBase } = query
   let rev = query.rev
@@ -76,9 +77,14 @@ export function buildDesk(query: DeskQuery): DeskResult {
   if (!rev) {
     // Opening with nothing chosen shows the uncommitted work, if snapshotted;
     // choosing a branch shows that branch.
-    const wip = !wantHead && !wantBase && gitTry(['rev-parse', '--verify', '--quiet', WIP_REF])
+    const wip = !wantHead && !wantBase && snapshot
     rev = wip ? 'wip' : defaultRev(head, base)
-    if (!rev) throw new GlossError(head ? `${head} has no commits to show` : 'there are no branches to show; pass ?rev= to view a commit')
+    if (!rev && head) throw new GlossError(`${head} has no commits to show`)
+    if (!rev) {
+      // No branch to start from (no local branches, a detached HEAD): the checked-out commit.
+      rev = 'HEAD'
+      notice ??= `There are no ${refs.remotes.length ? 'local ' : ''}branches; showing the newest commit (HEAD).`
+    }
     if (!notice) {
       const p = new URLSearchParams({ rev })
       if (head) p.set('head', head)
@@ -88,13 +94,16 @@ export function buildDesk(query: DeskQuery): DeskResult {
   }
   // "wip" is the latest snapshot of uncommitted work. The server never takes
   // one (that is `git gloss hunks wip`): browsing doesn't change anything.
-  const target = rev === 'wip' ? gitTry(['rev-parse', '--verify', '--quiet', WIP_REF])?.trim() : rev
+  const target = rev === 'wip' ? snapshot : rev
   if (!target) throw new GlossError('no snapshot of uncommitted work yet; run `git gloss hunks wip` first')
-  const { shas, merges, range } = resolveCommits(target)
-  if (shas.length > MAX_RANGE_COMMITS) {
-    throw new GlossError(`${rev} has ${shas.length} commits; a page shows at most ${MAX_RANGE_COMMITS}. Pick a narrower range.`)
-  }
+  const { shas, merges, range, total } = resolveCommits(target, MAX_RANGE_COMMITS)
+  if (shas.length < total) notice = `${notice ? notice + ' ' : ''}Showing the newest ${MAX_RANGE_COMMITS} of ${total} non-merge commits; narrow the range to see the rest.`
+  // The wip view says when the working tree has moved on from the snapshot. It never takes a new
+  // one and writes nothing to the repository (see wipStaleness).
+  const stale = rev === 'wip' && snapshot ? wipStaleness(snapshot, true) : null
+  if (stale) notice = `${notice ? notice + ' ' : ''}This snapshot is out of date: ${stale}. Run \`git gloss hunks wip\` for a new one.`
+  if (stale === undefined) notice = `${notice ? notice + ' ' : ''}Could not check whether the working tree has changed since this snapshot was taken (too large or too slow to compare here).`
   const data = buildPageData(shas, range, merges)
-  data.ary = { repo: refs.repo, branches: refs.branches, remotes: refs.remotes, defaultBase: refs.defaultBase, head, base, rev, notice }
+  data.ary = { repo: refs.repo, branches: refs.branches, remotes: refs.remotes, defaultBase: refs.defaultBase, head, base, rev, notice, wip: !!snapshot }
   return { status: 200, type: 'text/html', headers: PAGE_HEADERS, body: renderPage(data) }
 }

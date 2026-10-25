@@ -158,6 +158,14 @@ function aryBar(ary, el, add) {
   function field(label, node) { return add(el('div', 'ary-field'), el('span', null, label), node) }
   var bar = add(el('div', 'ary-bar'), el('span', 'ary-repo', ary.repo),
     field('Branch', headPicker.root), field('Compare with', basePicker.root), field('Revision', form))
+  if (ary.wip) {
+    var wip = el('a', 'ary-wip', 'Uncommitted work (wip)')
+    var q = new URLSearchParams({ rev: 'wip' })
+    if (ary.head) q.set('head', ary.head)
+    if (ary.base) q.set('base', ary.base)
+    wip.href = '/?' + q.toString()
+    bar.appendChild(wip)
+  }
   if (ary.notice) bar.appendChild(el('p', 'ary-notice', ary.notice))
   return bar
 }

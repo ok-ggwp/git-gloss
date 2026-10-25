@@ -1,13 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from './run.ts'
-import { cpSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { Script } from 'node:vm'
 import { GitError, resolveCommit } from '../src/git.ts'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { browse, skipBrowse, sleep, waitFor } from './browser.ts'
+import { browse, chromium, dumpDom, skipBrowse, sleep, waitFor } from './browser.ts'
 import { tmp } from './tmp.ts'
+import { within } from './timing.ts'
 
 const BIN = join(import.meta.dirname, '..', 'bin', 'git-gloss.js')
 
@@ -73,7 +74,7 @@ test('ary serves the desk page itself, with the pickers\' data and no other asse
     const data = dataOf(html)
     assert.equal(data.range, 'main..feature')
     assert.equal(data.commits.length, 2, 'a range shows its unglossed commits too')
-    assert.deepEqual(data.ary, { repo: data.ary.repo, branches: ['feature', 'main'], remotes: [], defaultBase: 'main', head: 'feature', base: 'main', rev: 'main..feature', notice: null })
+    assert.deepEqual(data.ary, { repo: data.ary.repo, branches: ['feature', 'main'], remotes: [], defaultBase: 'main', head: 'feature', base: 'main', rev: 'main..feature', notice: null, wip: false })
     assert.match(html, /function aryBar/)
     assert.doesNotThrow(() => new Script(/<script nonce="[^"]+">\n(.*?)<\/script>/s.exec(html)![1]))
     // The old shell's routes are gone.
@@ -148,24 +149,76 @@ test('ary refuses what it should', async () => {
   })
 })
 
-test('ary refuses to render an oversized range', async () => {
-  const { dir } = repo()
-  // One fast-import stream: 201 commits on top of main.
-  const stream = Array.from({ length: 201 }, (_, i) =>
-    `commit refs/heads/big\ncommitter T <t@e> ${1700000000 + i} +0000\ndata 1\nx\n${i ? '' : 'from refs/heads/main\n'}\n`).join('')
+// One fast-import stream: `n` commits (subjects c0, c1, ...) on top of main.
+function bigBranch(dir: string, n: number) {
+  const stream = Array.from({ length: n }, (_, i) =>
+    `commit refs/heads/big\ncommitter T <t@e> ${1700000000 + i} +0000\ndata ${`c${i}`.length}\nc${i}\n${i ? '' : 'from refs/heads/main\n'}\n`).join('')
   execFileSync('git', ['fast-import', '--quiet'], { cwd: dir, input: stream })
+}
+
+test('a range over 200 commits shows the newest 200 with a notice; the oldest are left out', async () => {
+  const { dir } = repo()
+  bigBranch(dir, 205)
   await withServer(dir, async (url) => {
     const r = await fetch(url + '?rev=main..big')
-    assert.equal(r.status, 422)
-    assert.match(await r.text(), /201 commits/)
+    assert.equal(r.status, 200)
+    const data = dataOf(await r.text())
+    assert.equal(data.commits.length, 200)
+    assert.match(data.ary.notice, /newest 200 of 205 non-merge commits; narrow the range to see the rest/)
+    const subjects = data.commits.map((c: { subject: string }) => c.subject)
+    assert.equal(subjects[0], 'c5', 'the oldest five are the ones left out')
+    assert.equal(subjects[199], 'c204')
+    assert.ok(!subjects.includes('c4') && !subjects.includes('c0'))
+    // Exactly 200 is shown whole, without a notice.
+    const ok = dataOf(await (await fetch(url + '?rev=main..big~5')).text())
+    assert.deepEqual([ok.commits.length, ok.ary.notice], [200, null])
+  })
+})
+
+test('with only remote branches and a detached HEAD the notice says "no local branches"', async () => {
+  const { dir } = repo()
+  execFileSync('git', ['checkout', '-q', '--detach'], { cwd: dir })
+  execFileSync('git', ['update-ref', 'refs/remotes/origin/x', 'HEAD'], { cwd: dir })
+  for (const b of ['main', 'feature']) execFileSync('git', ['branch', '-q', '-D', b], { cwd: dir })
+  await withServer(dir, async (url) => {
+    const data = dataOf(await (await fetch(url)).text())
+    assert.match(data.ary.notice, /no local branches/i)
+  })
+})
+
+test('with no branches and a detached HEAD the page shows HEAD, with a notice', async () => {
+  const { dir, sha } = repo()
+  execFileSync('git', ['checkout', '-q', '--detach'], { cwd: dir })
+  for (const b of ['main', 'feature']) execFileSync('git', ['branch', '-q', '-D', b], { cwd: dir })
+  await withServer(dir, async (url) => {
+    const r = await fetch(url, { redirect: 'manual' })
+    assert.equal(r.status, 200)
+    const data = dataOf(await r.text())
+    assert.equal(data.commits[0].sha, sha[2])
+    assert.deepEqual([data.ary.head, data.ary.branches], [null, []])
+    assert.match(data.ary.notice, /no branches.*newest commit/i)
+  })
+})
+
+test('the desk links to the wip snapshot only when one exists, and says when it is stale', async () => {
+  const { dir } = repo()
+  const wipOf = async (url: string, q: string) => dataOf(await (await fetch(url + q)).text()).ary
+  await withServer(dir, async (url) => {
+    assert.equal((await wipOf(url, '?rev=HEAD')).wip, false)
+    writeFileSync(join(dir, 'app.js'), 'd\n')
+    assert.equal((await wipOf(url, '?rev=HEAD')).wip, false, 'browsing takes no snapshot')
+    execFileSync(process.execPath, [BIN, 'hunks', 'wip'], { cwd: dir, stdio: 'pipe' })
+    assert.equal((await wipOf(url, '?rev=HEAD')).wip, true)
+    assert.equal((await wipOf(url, '?rev=wip')).notice, null, 'fresh: no notice')
+    writeFileSync(join(dir, 'app.js'), 'e\n')
+    assert.match((await wipOf(url, '?rev=wip')).notice, /working tree has changed since this snapshot/)
+    assert.equal((await wipOf(url, '?rev=HEAD')).notice, null, 'only the wip view says it')
   })
 })
 
 test('choosing a branch far ahead of its base shows its newest commit, not an error page', async () => {
   const { dir } = repo()
-  const stream = Array.from({ length: 201 }, (_, i) =>
-    `commit refs/heads/big\ncommitter T <t@e> ${1700000000 + i} +0000\ndata 1\nx\n${i ? '' : 'from refs/heads/main\n'}\n`).join('')
-  execFileSync('git', ['fast-import', '--quiet'], { cwd: dir, input: stream })
+  bigBranch(dir, 201)
   const tip = execFileSync('git', ['rev-parse', 'big'], { cwd: dir, encoding: 'utf8' }).trim()
   await withServer(dir, async (url) => {
     const r = await fetch(url + '?head=big&base=main')
@@ -173,7 +226,7 @@ test('choosing a branch far ahead of its base shows its newest commit, not an er
     assert.equal(new URL(r.url).searchParams.get('rev'), tip)
     const data = dataOf(await r.text())
     assert.deepEqual([data.commits.length, data.commits[0].sha, data.ary.head, data.ary.base], [1, tip, 'big', 'main'], 'the pickers stay')
-    assert.equal((await fetch(url + '?rev=main..big')).status, 422, 'an explicit oversized range is still refused')
+    assert.equal(dataOf(await (await fetch(url + '?rev=main..big')).text()).commits.length, 200, 'an explicit oversized range shows the newest 200')
   })
 })
 
@@ -329,3 +382,197 @@ test('in a browser, the rail fits under a sticky top bar on wide screens (ary an
   })
   await browse(`file://${out}`, (evaluate, send) => check(evaluate, send, 'html range'))
 })
+
+test('a range page carries the commit filter box (no browser needed)', async () => {
+  const { dir } = repo()
+  await withServer(dir, async (url) => {
+    const html = await (await fetch(url + '?rev=main..feature')).text()
+    assert.match(html, /Filter commits/)
+    const script = /<script nonce="[^"]+">\n(.*?)<\/script>/s.exec(html)![1]
+    assert.doesNotThrow(() => new Script(script))
+    // Plain text matching only: the filter never builds a pattern from what is typed.
+    const body = /function applyCommitFilter[\s\S]*?\n  }\n/.exec(script)![0]
+    assert.doesNotMatch(body, /RegExp|\.test\(|\.match\(|\.search\(|innerHTML/)
+  })
+})
+
+test('in a browser, the commit filter narrows by subject, author and sha, and treats hostile text as plain text', { skip: skipBrowse }, async () => {
+  const { dir, sha } = repo()
+  await withServer(dir, async (url) => {
+    await browse(url + '?rev=main..feature&head=feature&base=main', async (evaluate) => {
+      const type = (v: string) => evaluate(`(() => { const i = document.querySelector('.cfilter input'); i.value = ${JSON.stringify(v)}; i.dispatchEvent(new Event('input')) })()`)
+      const shown = () => evaluate("[...document.querySelectorAll('.crow:not([hidden]) .csubject')].map(e => e.textContent).sort().join()")
+      assert.equal(await shown(), 'one,two')
+      await type('ONE')
+      assert.equal(await shown(), 'one', 'subject, any case')
+      await type('test')
+      assert.equal(await shown(), 'one,two', 'author')
+      await type(sha[2].slice(0, 7))
+      assert.equal(await shown(), 'two', 'short sha')
+      await type('nothing like it')
+      assert.equal(await shown(), '')
+      assert.equal(await evaluate("document.querySelector('.cfilter .emptyrows').hidden"), false, 'says nothing matches')
+      await type('')
+      assert.equal(await shown(), 'one,two', 'clearing shows all')
+      // Typed text survives a re-render of the rail (a filter chip or the hot toggle).
+      await type('two')
+      await evaluate("document.querySelector('.crow:not([hidden]) .pick').click()")
+      assert.equal(await evaluate("document.querySelector('.cfilter input').value"), 'two')
+      assert.equal(await shown(), 'two')
+
+      // Hostile text: never markup, never a pattern.
+      for (const bad of ['<img src=x onerror=window.PWNED=1>', '(a+)+$', '^(a|aa)+$' + 'a'.repeat(5000), '[', '.*', '\\']) {
+        const t0 = performance.now()
+        await type(bad)
+        within('commit filter on hostile text', performance.now() - t0, 3000)
+        assert.equal(await shown(), '', `${bad.slice(0, 20)}: matches nothing literally`)
+        assert.equal(await evaluate("document.querySelectorAll('img').length"), 0)
+        assert.equal(await evaluate('typeof window.PWNED'), 'undefined')
+      }
+    })
+    // A reload clears the box, and the wip link is absent without a snapshot.
+    await browse(url + '?rev=main..feature&head=feature&base=main', async (evaluate) => {
+      assert.equal(await evaluate("document.querySelector('.cfilter input').value"), '')
+      assert.equal(await evaluate("document.querySelectorAll('.ary-wip').length"), 0)
+    })
+    writeFileSync(join(dir, 'app.js'), 'd\n')
+    execFileSync(process.execPath, [BIN, 'hunks', 'wip'], { cwd: dir, stdio: 'pipe' })
+    await browse(url + '?rev=main..feature&head=feature&base=main', async (evaluate) => {
+      assert.equal(await evaluate("document.querySelectorAll('.ary-wip').length"), 1)
+      assert.equal(await evaluate("document.querySelector('.ary-wip').textContent"), 'Uncommitted work (wip)')
+      assert.equal(await evaluate("new URL(document.querySelector('.ary-wip').href).search"), '?rev=wip&head=feature&base=main')
+    })
+  })
+})
+
+// What `git count-objects -v` and the unreachable objects say about the repo's object store.
+const objects = (dir: string) => {
+  const g = (...a: string[]) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' })
+  return g('count-objects', '-v') + g('fsck', '--unreachable', '--no-reflogs')
+}
+
+test('viewing wip, even stale, writes nothing to the repository', async () => {
+  const { dir } = repo()
+  writeFileSync(join(dir, 'app.js'), 'd\n')
+  execFileSync(process.execPath, [BIN, 'hunks', 'wip'], { cwd: dir, stdio: 'pipe' })
+  writeFileSync(join(dir, 'app.js'), 'e\n')
+  writeFileSync(join(dir, 'new.txt'), 'untracked\n')
+  writeFileSync(join(dir, 'prod.key'), 'secret\n')
+  await withServer(dir, async (url) => {
+    const before = objects(dir)
+    for (let i = 0; i < 3; i++) {
+      const ary = dataOf(await (await fetch(url + '?rev=wip')).text()).ary
+      assert.match(ary.notice, /working tree has changed since this snapshot/)
+    }
+    assert.equal(objects(dir), before)
+  })
+})
+
+test('a wip view with a huge untracked tree skips the staleness check, saying so', async () => {
+  const { dir } = repo()
+  writeFileSync(join(dir, 'app.js'), 'd\n')
+  execFileSync(process.execPath, [BIN, 'hunks', 'wip'], { cwd: dir, stdio: 'pipe' })
+  mkdirSync(join(dir, 'build'))
+  for (let i = 0; i < 5100; i++) writeFileSync(join(dir, 'build', `f${i}`), '')
+  await withServer(dir, async (url) => {
+    const ary = dataOf(await (await fetch(url + '?rev=wip')).text()).ary
+    assert.match(ary.notice, /could not check/i)
+  })
+})
+
+test('a range cut to the newest 200 lists only the merges that are still in the shown part', async () => {
+  const { dir } = repo()
+  const stream = Array.from({ length: 205 }, (_, i) =>
+    `commit refs/heads/big\ncommitter T <t@e> ${1700000000 + i} +0000\ndata ${`c${i}`.length}\nc${i}\n${i ? '' : 'from refs/heads/main\n'}${i === 1 || i === 203 ? 'merge refs/heads/main\n' : ''}\n`).join('')
+  execFileSync('git', ['fast-import', '--quiet'], { cwd: dir, input: stream })
+  await withServer(dir, async (url) => {
+    const data = dataOf(await (await fetch(url + '?rev=main..big')).text())
+    assert.equal(data.commits.length, 200)
+    assert.deepEqual(data.merges.map((m: { subject: string }) => m.subject), ['c203'], 'the merge c1 is older than the cut')
+  })
+})
+
+test('a range of only merges shows no "No commits match" message while the filter is empty', { skip: chromium ? false : 'no Chromium found' }, async () => {
+  const { dir, sha } = repo()
+  const tree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: dir, encoding: 'utf8' }).trim()
+  const merge = (m: string, at: string) => execFileSync('git', ['commit-tree', tree, '-p', sha[2], '-p', sha[0], '-m', m], { cwd: dir, encoding: 'utf8', env: { ...process.env, GIT_COMMITTER_DATE: at } }).trim()
+  const m1 = merge('m1', '1700000000 +0000')
+  const m2 = merge('m2', '1700000100 +0000')
+  await withServer(dir, async (url) => {
+    const dom = dumpDom(url + `?rev=${m2}..${m1}`)
+    assert.match(dom, /class="cfilter"/, 'the page rendered its filter')
+    assert.doesNotMatch(dom, /class="emptyrows">No commits match/, 'visible with an empty filter')
+    assert.match(dom, /class="emptyrows" hidden="">No commits match/)
+  })
+})
+
+test('the wip staleness check has one total deadline: a slow git gives "could not check", the page still renders', async () => {
+  const { dir } = repo()
+  writeFileSync(join(dir, 'app.js'), 'd\n')
+  execFileSync(process.execPath, [BIN, 'hunks', 'wip'], { cwd: dir, stdio: 'pipe' })
+  writeFileSync(join(dir, 'app.js'), 'e\n')
+  // A git whose `add` and `write-tree` take 6 s each (12 s in all: over the 10 s total, under it per call).
+  const real = execFileSync('which', ['git'], { encoding: 'utf8' }).trim()
+  const shims = tmp('shim-')
+  writeFileSync(join(shims, 'git'), `#!/bin/sh\nfor a in "$@"; do case "$a" in add|write-tree) exec sleep 6;; esac; done\nexec ${real} "$@"\n`)
+  chmodSync(join(shims, 'git'), 0o755)
+  const path = process.env.PATH
+  process.env.PATH = `${shims}:${path}`
+  try {
+    await withServer(dir, async (url) => {
+      const t0 = performance.now()
+      const r = await fetch(url + '?rev=wip')
+      within('wip view with a slow git', performance.now() - t0, 20_000)
+      assert.equal(r.status, 200)
+      assert.match(dataOf(await r.text()).ary.notice, /could not check/i)
+    })
+  } finally { process.env.PATH = path }
+})
+
+test('in a browser, j and k skip the commits the filter hides', { skip: skipBrowse }, async () => {
+  const { dir } = repo()
+  await withServer(dir, async (url) => {
+    await browse(url + '?rev=main..feature&head=feature&base=main', async (evaluate) => {
+      const type = (v: string) => evaluate(`(() => { const i = document.querySelector('.cfilter input'); i.value = ${JSON.stringify(v)}; i.dispatchEvent(new Event('input')) })()`)
+      const open = (name: string) => evaluate(`[...document.querySelectorAll('.crow .pick')].find(b => b.querySelector('.csubject').textContent === ${JSON.stringify(name)}).click()`)
+      const key = (k: string) => evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(k)}, bubbles: true }))`)
+      const current = () => evaluate("document.querySelector('.crow.sel .csubject')?.textContent")
+      await open('one')
+      await key('j')
+      assert.equal(await current(), 'two', 'unfiltered: j steps down the rail (the glossed commit is listed first)')
+      await open('one')
+      await type('one')
+      await key('k')
+      await key('j')
+      assert.equal(await current(), 'one', 'a hidden commit is never opened')
+      await type('')
+      await key('j')
+      assert.equal(await current(), 'two', 'with the filter cleared it steps again')
+    })
+  })
+})
+
+// A git that sleeps `secs` on calls whose joined arguments match the shell pattern `arg` (all else is the real git), and the server run with it (armed once the server is up, so its own startup is not slowed).
+async function withSlowGit(dir: string, arg: string, secs: number, env: Record<string, string>, fn: (url: string) => Promise<void>) {
+  const real = execFileSync('which', ['git'], { encoding: 'utf8' }).trim()
+  const shims = tmp('shim-')
+  writeFileSync(join(shims, 'git'), `#!/bin/sh\n[ -e ${shims}/armed ] && case "$*" in ${arg}) exec sleep ${secs};; esac\nexec ${real} "$@"\n`)
+  chmodSync(join(shims, 'git'), 0o755)
+  const saved = { ...process.env }
+  Object.assign(process.env, { PATH: `${shims}:${process.env.PATH}`, ...env })
+  try { await withServer(dir, (url) => { writeFileSync(join(shims, 'armed'), ''); return fn(url) }) } finally { for (const k of ['PATH', ...Object.keys(env)]) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k] } }
+}
+
+for (const [what, arg] of [['the snapshot\'s tree lookup (git log)', '*%T*'], ['the HEAD lookup (git rev-parse HEAD)', '*"--verify --quiet HEAD"']] as const) {
+  test(`a git timeout in ${what} during the staleness check is "could not check", not an error page`, async () => {
+    const { dir } = repo()
+    writeFileSync(join(dir, 'app.js'), 'd\n')
+    execFileSync(process.execPath, [BIN, 'hunks', 'wip'], { cwd: dir, stdio: 'pipe' })
+    writeFileSync(join(dir, 'app.js'), 'e\n')
+    await withSlowGit(dir, arg, 3, { GIT_GLOSS_GIT_TIMEOUT: '1000' }, async (url) => {
+      const r = await fetch(url + '?rev=wip')
+      assert.equal(r.status, 200)
+      assert.match(dataOf(await r.text()).ary.notice, /could not check/i)
+    })
+  })
+}

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdtempSync, rmSync, statSync, utimesSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Annotation, MAX_NOTE_BYTES, NOTE_FORMAT, type GlossNote } from './schema.ts'
@@ -113,11 +113,32 @@ const looksSensitive = (path: string) => SENSITIVE.some((re) => re.test(path.spl
 // untracked files except ignored ones and ones that look like secrets. Built
 // in a temporary index so the real index is untouched. `excluded` lists the
 // untracked files left out as possible secrets.
-function workingTree(): { tree: string; excluded: string[] } {
+const READ_ONLY_MAX_UNTRACKED = 5000
+// One deadline for the whole read-only check, every git call in it included.
+const READ_ONLY_TOTAL_MS = 10_000
+class TooBig extends Error {}
+
+type Run = (args: string[], env?: Record<string, string>) => string
+
+// A git runner for the read-only check: every call gets what is left of one total deadline
+// (none left: TooBig), and never more than the usual limit.
+function deadlineRun(totalMs: number): Run {
+  const end = Date.now() + totalMs
+  return (args, env = {}) => {
+    const left = end - Date.now()
+    if (left <= 0) throw new TooBig()
+    return git(args, undefined, env, GIT_TIMEOUT ? Math.min(left, GIT_TIMEOUT) : left)
+  }
+}
+
+// `bounded`: the read-only check (see wipStaleness): its runner, and nothing is written to the repo.
+function workingTree(bounded?: Run): { tree: string; excluded: string[] } {
   const dir = mkdtempSync(join(tmpdir(), 'git-gloss-index-'))
+  const readOnly = !!bounded
+  const run: Run = bounded ?? ((args, env = {}) => git(args, undefined, env))
   try {
     const index = join(dir, 'index')
-    const real = git(['rev-parse', '--path-format=absolute', '--git-path', 'index']).trim()
+    const real = run(['rev-parse', '--path-format=absolute', '--git-path', 'index']).trim()
     if (existsSync(real)) {
       copyFileSync(real, index)
       // Keep the index's timestamps: git compares them with file mtimes to
@@ -126,12 +147,19 @@ function workingTree(): { tree: string; excluded: string[] } {
       const { atime, mtime } = statSync(real)
       utimesSync(index, atime, mtime)
     }
-    const env = { GIT_INDEX_FILE: index }
-    const untracked = git(['ls-files', '--others', '--exclude-standard', '-z', '--', ':/']).split('\0').filter(Boolean)
+    const env: Record<string, string> = { GIT_INDEX_FILE: index }
+    const untracked = run(['ls-files', '--others', '--exclude-standard', '-z', '--', ':/']).split('\0').filter(Boolean)
     const excluded = untracked.filter(looksSensitive)
-    git(['add', '-A', '--', ':/'], undefined, env)
-    if (excluded.length) git(['rm', '-q', '--cached', '--', ...excluded.map((p) => `:/${p}`)], undefined, env)
-    return { tree: git(['write-tree'], undefined, env).trim(), excluded }
+    if (readOnly) {
+      if (untracked.length > READ_ONLY_MAX_UNTRACKED) throw new TooBig()
+      // New objects go to the temporary directory (removed below); the repo's own are only read.
+      mkdirSync(join(dir, 'objects'))
+      env.GIT_OBJECT_DIRECTORY = join(dir, 'objects')
+      env.GIT_ALTERNATE_OBJECT_DIRECTORIES = run(['rev-parse', '--path-format=absolute', '--git-path', 'objects']).trim()
+    }
+    run(['add', '-A', '--', ':/'], env)
+    if (excluded.length) run(['rm', '-q', '--cached', '--', ...excluded.map((p) => `:/${p}`)], env)
+    return { tree: run(['write-tree'], env).trim(), excluded }
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -194,11 +222,25 @@ export const dropWipNote = (sha: string) => gitTry(['notes', '--ref', WIP_NOTES_
 export const isWipSnapshot = (sha: string) => gitTry(['log', '-1', '--format=%s', sha])?.trim() === WIP_MESSAGE
 
 // Why the latest snapshot no longer matches the working tree, or null.
-export function wipStaleness(sha: string): string | null {
-  const s = treeAndParent(sha)
-  if (s.parent !== headSha()) return 'HEAD has moved since this snapshot was taken'
-  if (workingTree().tree !== s.tree) return 'the working tree has changed since this snapshot was taken'
-  return null
+// `readOnly` (the ary server): writes nothing to the repository (the check's objects go to a
+// temporary directory), and ONE total deadline covers every git call in it. If that runs out, or
+// git fails, or the tree is too big, the answer is undefined ("could not check"): it is advisory.
+export function wipStaleness(sha: string, readOnly = false): string | null | undefined {
+  if (!readOnly) {
+    const s = treeAndParent(sha)
+    if (s.parent !== headSha()) return 'HEAD has moved since this snapshot was taken'
+    return workingTree().tree !== s.tree ? 'the working tree has changed since this snapshot was taken' : null
+  }
+  try {
+    const run = deadlineRun(READ_ONLY_TOTAL_MS)
+    const [tree, parent] = run(['log', '-1', '--format=%T %P', sha]).trim().split(' ')
+    let head: string | null = null // no commits yet: no HEAD
+    try { head = run(['rev-parse', '--verify', '--quiet', 'HEAD']).trim() } catch (err) { rethrowTimeout(err); if (err instanceof TooBig) throw err }
+    if ((parent || null) !== (head || null)) return 'HEAD has moved since this snapshot was taken'
+    return workingTree(run).tree !== tree ? 'the working tree has changed since this snapshot was taken' : null
+  } catch {
+    return undefined
+  }
 }
 
 // The diff of uncommitted work against HEAD, as a snapshot would have it,
@@ -236,18 +278,27 @@ export function resolveCommit(rev: string): string {
 // Merges are not reviewed (their first-parent diff repeats the merged
 // commits) but are returned so views can say they were skipped: a merge can
 // still carry conflict resolutions or edits of its own.
-export function resolveCommits(arg: string): { shas: string[]; merges: string[]; range: string | null } {
-  if (!arg.includes('..')) return { shas: [resolveCommit(arg)], merges: [], range: null }
+// `newest`: keep only the newest that many non-merge commits (and the merges since the oldest of
+// them); `total` is how many there were. The rev-list still walks the whole range.
+export function resolveCommits(arg: string, newest = Infinity): { shas: string[]; merges: string[]; range: string | null; total: number } {
+  if (!arg.includes('..')) return { shas: [resolveCommit(arg)], merges: [], range: null, total: 1 }
   if (arg.includes('...')) {
     throw new GitError(`${arg}: "..." includes commits from both sides; use A..B for the commits on B since A`)
   }
   // --end-of-options: the argument is a revision range, never an option.
   const list = (...flags: string[]) =>
     git(['rev-list', '--reverse', ...flags, '--end-of-options', arg, '--']).split('\n').filter(Boolean)
-  const shas = list('--no-merges')
-  const merges = list('--merges')
-  if (!shas.length && !merges.length) throw new GitError(`no commits in ${arg}`)
-  return { shas, merges, range: arg }
+  const plain = list('--no-merges')
+  let merges = list('--merges')
+  if (!plain.length && !merges.length) throw new GitError(`no commits in ${arg}`)
+  const shas = plain.slice(-newest)
+  if (shas.length < plain.length) {
+    // Keep the merges after the oldest shown commit, in the order of the whole range.
+    const all = list()
+    const keep = new Set(all.slice(all.indexOf(shas[0])))
+    merges = merges.filter((c) => keep.has(c))
+  }
+  return { shas, merges, range: arg, total: plain.length }
 }
 
 export function commitSubject(sha: string): string {

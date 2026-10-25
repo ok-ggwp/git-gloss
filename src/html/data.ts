@@ -170,6 +170,8 @@ export type AryData = {
   rev: string
   // Said when a head or base in the URL no longer exists.
   notice: string | null
+  // Whether a snapshot of uncommitted work exists (the bar links to it).
+  wip: boolean
 }
 
 // The lines to show for a selection: the @@ header, then the slice, with
