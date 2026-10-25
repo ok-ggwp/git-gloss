@@ -1,6 +1,6 @@
 import { closeSync, openSync, readSync } from 'node:fs'
 import { GlossError } from './git.ts'
-import { checkDecision, MAX_DECISION_LINE, type DecisionRecord } from './reviews.ts'
+import { addReviews, checkDecision, MAX_DECISION_LINE, readDecisions, resolveBy, type DecisionRecord } from './reviews.ts'
 import { findingTexts } from './findings.ts'
 import { plain } from './plain.ts'
 
@@ -8,6 +8,10 @@ import { plain } from './plain.ts'
 export const MAX_BATCH_ENTRIES = 500
 export const MAX_BATCH_BYTES = 1024 * 1024
 export const TEMPLATE_TEXT = 80
+// What one --decide-file may write to a commit (bytes of its record lines): the 1 MiB input
+// cap alone would still let a file add about 1 MiB to every commit of a range. Honest
+// decisions are a few hundred bytes each; this is a guard against bloat, not against unreadable data.
+export const MAX_BATCH_WRITE_BYTES = 512 * 1024
 
 export type BatchEntry = { finding: string; outcome: DecisionRecord['outcome']; note?: string }
 export type Batch = { entries: BatchEntry[]; complete: boolean }
@@ -101,4 +105,55 @@ export function template(reviewId: string, findings: string) {
     review: reviewId, complete: false,
     decisions: rows.map(([ref, text]) => ({ finding: `${ref}${ref.includes('.') ? '' : ':'} ${[...plain(text).replace(/\s+/g, ' ').trim()].slice(0, TEMPLATE_TEXT).join('')}`.trim(), outcome: '', note: '' })),
   }
+}
+
+// Everything `reviews --decide-file` needs before it writes: the checked entries, the
+// holders of the review, and the records (with the complete marker last). Nothing is written.
+export function prepareBatch(src: string, id: string, byArg: string | undefined, holdersOf: (id: string) => string[]) {
+  const batch = parseBatch(readBounded(src), id)
+  const holders = holdersOf(id)
+  const by = resolveBy(byArg)
+  const at = new Date().toISOString()
+  const records: DecisionRecord[] = batch.entries.map((e, i) => {
+    const r: DecisionRecord = { decision: 1, review: id, at, by, finding: e.finding, outcome: e.outcome, ...(e.note ? { note: e.note } : {}) }
+    checkLength(r, `--decide-file: entry ${i + 1}`)
+    return r
+  })
+  if (batch.complete) records.push({ decision: 1, review: id, at, by, complete: true })
+  const bytes = records.reduce((n, r) => n + Buffer.byteLength(JSON.stringify(r)) + 1, 0)
+  if (bytes > MAX_BATCH_WRITE_BYTES) {
+    throw new GlossError(`--decide-file: the ${records.length} records come to ${Math.ceil(bytes / 1024)} KiB as written; at most ${MAX_BATCH_WRITE_BYTES / 1024} KiB per file; shorten the findings and notes or split the file`)
+  }
+  return { batch, holders, records }
+}
+
+// The same decision, whenever it was made: what a re-run must not record twice.
+const sameDecision = (r: DecisionRecord) => JSON.stringify([r.review, r.finding ?? null, r.outcome ?? null, r.note ?? null, r.by, r.complete ?? null])
+
+// The records not yet on that commit: one equal to the LATEST decision for its finding
+// there is left out, but not one equal to an earlier decision that a later one reversed.
+// A re-run of a file after a partly failed write adds only what is missing (each run has
+// its own `at`).
+export function newRecords(sha: string, records: DecisionRecord[]): DecisionRecord[] {
+  const latest = new Map<string, string>()
+  for (const r of [...readDecisions(sha)].sort((a, b) => a.at.localeCompare(b.at))) latest.set(JSON.stringify([r.review, r.finding ?? null]), sameDecision(r))
+  return records.filter((r) => latest.get(JSON.stringify([r.review, r.finding ?? null])) !== sameDecision(r))
+}
+
+// Write the records to each holder, one write per commit, leaving out what it has. Counts
+// as it goes: decisions written (the most any one commit got, so a range counts a file once),
+// whether the complete marker was written, commits written, records skipped.
+export function applyBatch(holders: string[], records: DecisionRecord[]) {
+  let decisions = 0, written = 0, skipped = 0, marked = false
+  for (const sha of holders) {
+    const todo = newRecords(sha, records)
+    skipped += records.length - todo.length
+    if (!todo.length) continue
+    addReviews(sha, todo)
+    written++
+    const fresh = todo.filter((r) => !r.complete).length
+    decisions = Math.max(decisions, fresh)
+    if (todo.some((r) => r.complete)) marked = true
+  }
+  return { decisions, marked, written, skipped }
 }

@@ -2,11 +2,11 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { commitSubject, gitTry, GlossError, resolveCommits } from '../git.ts'
-import { addReviews, checkBy, checkDecision, isValidDecision, MAX_FINDINGS, MAX_REVIEW_LINE, decisionSummary, readDecisions, readReviews, reviewStatus, stamp, statusPhrase, verdictOf, type DecisionRecord, type ReviewRecord } from '../reviews.ts'
-import { findingRefs, labelFindings, orderDecisions, refOf } from '../findings.ts'
+import { addReviews, checkDecision, resolveBy, isValidDecision, MAX_FINDINGS, MAX_REVIEW_LINE, decisionSummary, readDecisions, readReviews, reviewStatus, stamp, statusPhrase, verdictOf, type DecisionRecord, type ReviewRecord } from '../reviews.ts'
+import { findingClashes, findingRefs, labelFindings, orderDecisions, refOf } from '../findings.ts'
 import { plain } from '../plain.ts'
 import { page, style } from '../render.ts'
-import { checkLength, parseBatch, readBounded, template } from '../batch.ts'
+import { applyBatch, checkLength, prepareBatch, template } from '../batch.ts'
 
 export const usage = 'reviews [<commit> | <range> | wip] [--stamp | --record]   the reviews recorded for commits, with their findings and what was decided about them\n  reviews <target> --decide <review-id> --finding <text> --outcome <fixed|follow-up|rejected|accepted> [--note <text>] [--by <name>]\n  reviews <target> --decide <review-id> --complete   the arbiter is done\n  reviews <target> --decide-template <review-id>   print a JSON skeleton of the findings of a review to fill in\n  reviews <target> --decide <review-id> --decide-file <file|->   record every decision of the filled-in skeleton at once, or none; --stamp, --record and --decide are for tools'
 
@@ -82,36 +82,28 @@ export function run(argv: string[]): number {
   }
   const reportOf = (id: string, holders: string[]) => holders.flatMap(readReviews).find((r) => r.id === id)
   // A finding that starts with a ref names a finding of the report: say so when there is none (never refuse).
+  // The refs of a report are computed once, not once per entry.
+  const refsOfReport = new Map<string, Set<string>>()
   const warnUnknownRef = (id: string, report: ReviewRecord | undefined, finding: string, hint = '') => {
     const ref = refOf(finding)
-    if (ref !== null && report && !findingRefs(report.findings).has(ref)) console.error(`git-gloss: review ${plain(id)} has no finding ${ref} (${hint}see the refs in \`git gloss reviews ${target}\`); recording it anyway`)
+    if (ref !== null && report && !(refsOfReport.get(report.findings) ?? refsOfReport.set(report.findings, findingRefs(report.findings)).get(report.findings)!).has(ref)) console.error(`git-gloss: review ${plain(id)} has no finding ${ref} (${hint}see the refs in \`git gloss reviews ${target}\`); recording it anyway`)
   }
   if (values['decide-template'] !== undefined) {
     const id = values['decide-template']
     const report = reportOf(id, holdersOf(id))!
+    const clash = findingClashes(report.findings)
+    if (clash.length) console.error(`git-gloss: review ${plain(id)}: these refs are ambiguous, so the template cannot list every finding under its own: ${clash.join(', ')}; the findings are in \`git gloss reviews ${target}\``)
     console.log(JSON.stringify(template(id, report.findings), null, 2))
     return 0
   }
   if (values['decide-file'] !== undefined) {
     const id = values.decide!
     // Everything is checked before the first write: one bad entry records nothing.
-    const batch = parseBatch(readBounded(values['decide-file']), id)
-    const holders = holdersOf(id)
-    const by = values.by !== undefined ? values.by.trim() : gitTry(['config', 'user.name'])?.trim() || 'unknown'
-    checkBy(by)
-    const at = new Date().toISOString()
-    const records: DecisionRecord[] = batch.entries.map((e, i) => {
-      const r: DecisionRecord = { decision: 1, review: id, at, by, finding: e.finding, outcome: e.outcome, ...(e.note ? { note: e.note } : {}) }
-      checkLength(r, `--decide-file: entry ${i + 1}`)
-      return r
-    })
-    if (batch.complete) records.push({ decision: 1, review: id, at, by, complete: true })
+    const { batch, holders, records } = prepareBatch(values['decide-file'], id, values.by, holdersOf)
     const report = reportOf(id, holders)
     batch.entries.forEach((e, i) => warnUnknownRef(id, report, e.finding, `entry ${i + 1}; `))
-    // One compare-and-swap write per commit, whatever the number of records.
-    for (const sha of holders) addReviews(sha, records)
-    const n = batch.entries.length
-    console.log(`recorded ${n} decision${n === 1 ? '' : 's'} on ${holders.length} commit${holders.length === 1 ? '' : 's'}${batch.complete ? ' and marked the review complete' : ''}`)
+    const { decisions: n, marked, written, skipped } = applyBatch(holders, records)
+    console.log(`recorded ${n} decision${n === 1 ? '' : 's'} on ${written} commit${written === 1 ? '' : 's'}${marked ? ' and marked the review complete' : ''}${skipped ? ` (${skipped} already recorded)` : ''}`)
     return 0
   }
   if (values.decide !== undefined) {
@@ -122,8 +114,7 @@ export function run(argv: string[]): number {
       }
     } else checkDecision(values)
     const holders = holdersOf(id)
-    const by = values.by !== undefined ? values.by.trim() : gitTry(['config', 'user.name'])?.trim() || 'unknown'
-    checkBy(by)
+    const by = resolveBy(values.by)
     const record: DecisionRecord = {
       decision: 1, review: id, at: new Date().toISOString(), by,
       ...(values.complete ? { complete: true } : {

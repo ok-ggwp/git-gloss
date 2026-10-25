@@ -1,6 +1,7 @@
 import { parseArgs } from 'node:util'
 import { GlossError, resolveCommits } from '../git.ts'
 import { loadGloss } from '../loader.ts'
+import { CONFIG_EDIT_NOTE } from '../signals.ts'
 import { ratingIssues, tryAnalyze, whyText } from '../floor.ts'
 import { attentionRank, impactRank } from '../attention.ts'
 import { servesOf } from '../schema.ts'
@@ -43,6 +44,7 @@ export function run(argv: string[]): number {
 
   if (an) {
     const issues = ratingIssues(a, an)
+    if (issues.configEdit) add('config-edit', CONFIG_EDIT_NOTE)
     for (const u of issues.unrated) add('no-impact', `no impact rated${u.signal ? ` (floor ${u.floor}: ${whyText(u.why)})` : ''}`, { group: u.id })
     for (const b of issues.belowFloor) add('impact-below-floor', `impact "${b.impact}" is below its floor "${b.floor}" (${whyText(b.why)})`, { group: b.id })
     if (issues.attention) add('attention-below-floor', `attention "${issues.attention.level}" is below the computed floor "${issues.attention.floor}" (${issues.attention.why}) and has no override_reason`)

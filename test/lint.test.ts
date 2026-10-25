@@ -259,3 +259,23 @@ test('a group id with an escape sequence is refused by the reader, not echoed', 
   assert.equal(r.code, 1)
   assert.doesNotMatch(r.out + r.err, /\x1b/)
 })
+
+test('config-edit: a change that edits .gloss/config.json says it is rated with the base config', () => {
+  const c = repo()
+  mkdirSync(join(c.dir, '.gloss'), { recursive: true })
+  writeFileSync(join(c.dir, '.gloss/config.json'), '{}\n')
+  c.g('add', '-A'); c.g('commit', '-qm', 'config edit')
+  const hunk = run(c.dir, ['hunks', 'HEAD']).out.match(/^(h\d+)\s+\.gloss\/config\.json\s/m)![1]
+  glossed(c, [grp('cfg', [hunk], { impact: 'shared', impact_reason: 'root config' })])
+  const f = codes(c).filter((x) => x.code === 'config-edit')
+  assert.equal(f.length, 1)
+  assert.equal(f[0].group, undefined)
+  assert.match((f[0] as any).message, /config\.json is edited here; this change is rated with the base branch's config/)
+  assert.match(lint(c).out, /^whole gloss\n {2}config-edit +.*config\.json is edited here/m)
+  // advisory like the rest
+  assert.equal(lint(c).code, 0)
+  // and not reported when the change leaves the config alone
+  const c2 = repo()
+  glossed(c2, cleanGroups(c2))
+  assert.ok(!codes(c2).some((x) => x.code === 'config-edit'))
+})
