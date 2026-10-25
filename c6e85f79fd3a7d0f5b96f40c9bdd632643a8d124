@@ -1,0 +1,189 @@
+{
+  "gloss": 4,
+  "commit": "c6e85f79fd3a7d0f5b96f40c9bdd632643a8d124",
+  "created_at": "2026-10-25T06:09:09.599Z",
+  "annotation": {
+    "version": 1,
+    "task": "Close three decision-reader gaps: strip bidi/zero-width characters in terminal output, one shared shape rule for complete markers, any key order for decision lines",
+    "groups": [
+      {
+        "id": "bidi-strip",
+        "intent": "plain() also removes LRM/RLM/ALM, zero-width, word-joiner, BOM, Mongolian separator and tag characters, so they cannot reorder or hide terminal text",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Marks that reorder or hide text would reach the terminal",
+        "impact": "sensitive",
+        "impact_reason": "the hostile-text boundary for all terminal output",
+        "hunks": [
+          "h5"
+        ]
+      },
+      {
+        "id": "shared-shape",
+        "intent": "One shape rule for reader and writer; reader now skips blank findings",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Reader and writer could disagree again on complete lines",
+        "impact": "contract",
+        "impact_reason": "defines which decision lines readers accept",
+        "hunks": [
+          "h3",
+          "h4",
+          "h7",
+          "h8"
+        ],
+        "notes": "The isValidDecision call in checkDecision is defensive: it changes no behaviour today, a drift guard. The reader now skips whitespace-only and invisible-only findings."
+      },
+      {
+        "id": "key-order",
+        "intent": "Decision lines are parsed then checked for decision === 1 instead of requiring it as first key; over-cap lines are told apart by a cheap 64-char check",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Valid decision lines with another key order would be dropped silently",
+        "impact": "contract",
+        "impact_reason": "accepted note line format of decisions",
+        "hunks": [
+          "h6"
+        ]
+      },
+      {
+        "id": "tests",
+        "intent": "Tests for bidi stripping, complete-marker shape, key order and over-cap handling",
+        "necessity": "supporting",
+        "serves": [
+          "bidi-strip",
+          "shared-shape",
+          "key-order"
+        ],
+        "removal_impact": "The three fixes would be untested",
+        "impact": "local",
+        "hunks": [
+          "h9"
+        ]
+      },
+      {
+        "id": "docs",
+        "intent": "README states what the reader accepts and the bidi trade-off; the two done TODO items are removed",
+        "necessity": "supporting",
+        "serves": [
+          "bidi-strip",
+          "shared-shape",
+          "key-order"
+        ],
+        "removal_impact": "Users would not know the reader's rules or the ZWJ trade-off",
+        "impact": "local",
+        "hunks": [
+          "h1",
+          "h2"
+        ]
+      }
+    ],
+    "risks": [
+      "The html page does not apply plain() to decision text, commit subjects or review text, so bidi overrides and zero-width characters can still reorder text there (TODO.md)",
+      "ZWNJ/ZWJ are deliberately kept in terminal output",
+      "An over-cap decision line whose \"decision\" key is past the first 64 chars counts as a skipped review record and warns"
+    ],
+    "attention": {
+      "level": "careful",
+      "focus": [
+        "shared-shape",
+        "bidi-strip"
+      ],
+      "reasons": [
+        "hostile-input boundary for decision lines and terminal text"
+      ]
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 177,
+      "oldLines": 14,
+      "newStart": 177,
+      "newLines": 14,
+      "hash": "8726460f931e901a"
+    },
+    {
+      "id": "h2",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 195,
+      "oldLines": 8,
+      "newStart": 195,
+      "newLines": 7,
+      "hash": "6ff3865a60638c79"
+    },
+    {
+      "id": "h3",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 2,
+      "oldLines": 7,
+      "newStart": 2,
+      "newLines": 7,
+      "hash": "57f0b4f4abd90649"
+    },
+    {
+      "id": "h4",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 62,
+      "oldLines": 7,
+      "newStart": 62,
+      "newLines": 7,
+      "hash": "13ff002e6399467e"
+    },
+    {
+      "id": "h5",
+      "file": "src/plain.ts",
+      "oldFile": "src/plain.ts",
+      "oldStart": 5,
+      "oldLines": 5,
+      "newStart": 5,
+      "newLines": 6,
+      "hash": "a897bc6e402870d9"
+    },
+    {
+      "id": "h6",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 109,
+      "oldLines": 7,
+      "newStart": 109,
+      "newLines": 7,
+      "hash": "577921fefd7359c3"
+    },
+    {
+      "id": "h7",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 165,
+      "oldLines": 24,
+      "newStart": 165,
+      "newLines": 36,
+      "hash": "d8ba512fa3fdc9ea"
+    },
+    {
+      "id": "h8",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 202,
+      "oldLines": 6,
+      "newStart": 214,
+      "newLines": 8,
+      "hash": "32c85785019781ee"
+    },
+    {
+      "id": "h9",
+      "file": "test/decisions.test.ts",
+      "oldFile": "test/decisions.test.ts",
+      "oldStart": 213,
+      "oldLines": 8,
+      "newStart": 213,
+      "newLines": 89,
+      "hash": "d165f59375ca8c86"
+    }
+  ]
+}
