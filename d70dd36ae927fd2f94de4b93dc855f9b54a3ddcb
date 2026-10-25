@@ -1,0 +1,1348 @@
+{
+  "gloss": 4,
+  "commit": "d70dd36ae927fd2f94de4b93dc855f9b54a3ddcb",
+  "created_at": "2026-10-25T19:03:51.863Z",
+  "annotation": {
+    "version": 1,
+    "task": "Structured review findings: reports end with a gloss-findings block, recorded as items; decisions name item ids; --open gate",
+    "summary": "Pivot from heuristic finding labels to a validated block. --record refuses reports without it.",
+    "groups": [
+      {
+        "id": "block-parser",
+        "intent": "Parse and validate the gloss-findings block of a report",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Reports have no machine-readable findings, so nothing can be counted open or decided by id.",
+        "impact": "contract",
+        "hunks": [
+          "h22"
+        ],
+        "notes": "Last backtick fence outside any other fence wins (CommonMark-style tracking); all-or-nothing validation with caps (200 items, 256 KiB, id pattern, enums) and plain() on text. BLOCK_SPEC is the text reviewers are told."
+      },
+      {
+        "id": "record-gate",
+        "intent": "--record refuses a report without a valid block and stores items",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A report with a missing or invalid block would be recorded and its findings could never be decided.",
+        "impact": "contract",
+        "hunks": [
+          "h16"
+        ],
+        "notes": "Non-zero exit, every problem plus the spec on stderr, checked before any write. A report over 256 KiB (raw text, escapes count) is refused with a message that names the report including its block."
+      },
+      {
+        "id": "items-store",
+        "intent": "ReviewRecord.items, reader validation, item statuses, open items",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "No stored findings to decide, no open count, and the reader would accept records with malformed items.",
+        "impact": "shared",
+        "hunks": [
+          "h38",
+          "h39",
+          "h40",
+          "h41",
+          "h42",
+          "h43",
+          "h44",
+          "h45",
+          "h46",
+          "h47"
+        ],
+        "notes": "A record whose items are invalid, or any line that is not a whole review or decision, is skipped and counted (warning on stderr; --open exits 1). Records without items are legacy. openFindings counts every item of every structured review over a target, once per (review, item), decisions unioned across the target's commits; stale reviews are labelled, never dropped; a clean re-run clears nothing. copyReviews (adopt, carry, wip re-snapshot) copies review lines raw, unreadable ones included, so the gate cannot be bypassed by copying; staleness is computed per review (reviewStale)."
+      },
+      {
+        "id": "decide-by-id",
+        "intent": "Decisions name an item id; template, file and single call validate against items",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Decisions would still name guessed labels, and unknown or duplicate ids would only warn.",
+        "impact": "contract",
+        "hunks": [
+          "h7",
+          "h8",
+          "h9",
+          "h10",
+          "h13",
+          "h14",
+          "h17"
+        ],
+        "notes": "Unknown id and duplicate id are errors; legacy reviews are refused; still one compare-and-swap write per commit and idempotent re-runs."
+      },
+      {
+        "id": "table-and-gate",
+        "intent": "reviews prints a findings table and summary; --open is the fail-closed gate; show counts open",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "No way to see status per finding or to gate a hand-off on undecided findings.",
+        "impact": "shared",
+        "hunks": [
+          "h15",
+          "h18",
+          "h19",
+          "h20",
+          "h21"
+        ],
+        "notes": "Table in item order with status. --open: every item of every structured review of the target (stale ones labelled, listed apart), exit 1 on any open item or any unreadable record. show counts open findings only: a legacy review's decisions are no longer summarised on its line (reviews lists them). Decisions are listed once over a range."
+      },
+      {
+        "id": "html-view",
+        "intent": "Desk lists items with status and open counts, raw report under a disclosure",
+        "necessity": "supporting",
+        "serves": "table-and-gate",
+        "removal_impact": "The HTML Reviews view would still show only raw text and old decision lists.",
+        "impact": "module",
+        "hunks": [
+          "h24",
+          "h25",
+          "h26",
+          "h27",
+          "h28",
+          "h29",
+          "h30",
+          "h31",
+          "h32",
+          "h33",
+          "h34",
+          "h35",
+          "h36",
+          "h37"
+        ],
+        "notes": "Text only via DOM text nodes; rail rows and range commit rows show open counts."
+      },
+      {
+        "id": "review-prompt",
+        "intent": "The built-in review prompt asks for the findings block",
+        "necessity": "supporting",
+        "serves": "block-parser",
+        "removal_impact": "Reports from `git gloss review | claude -p` would not be recordable.",
+        "impact": "local",
+        "hunks": [
+          "h11",
+          "h12"
+        ]
+      },
+      {
+        "id": "remove-labels",
+        "intent": "Delete the label machinery (findings.ts, its tests and fixtures)",
+        "necessity": "supporting",
+        "serves": "decide-by-id",
+        "removal_impact": "Two sources of finding references would coexist and old label rules would keep needing compatibility work.",
+        "impact": "module",
+        "hunks": [
+          "h23",
+          "h79",
+          "h80",
+          "h81"
+        ],
+        "notes": "Old decision records stay readable and show as stored text."
+      },
+      {
+        "id": "docs",
+        "intent": "README, skill and TODO describe the block, ids, the gate and what is left",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Reviewers and arbiters are not told the required report format or the --open gate.",
+        "impact": "module",
+        "hunks": [
+          "h1",
+          "h2",
+          "h3",
+          "h4",
+          "h5",
+          "h6"
+        ]
+      },
+      {
+        "id": "test-helper",
+        "intent": "Test helper: report with block, legacy record planting",
+        "necessity": "supporting",
+        "serves": "tests-reviews",
+        "removal_impact": "Tests would repeat the block boilerplate.",
+        "impact": "local",
+        "hunks": [
+          "h65"
+        ]
+      },
+      {
+        "id": "tests-parser",
+        "intent": "Tests for the block parser's hostile boundaries",
+        "necessity": "supporting",
+        "serves": "block-parser",
+        "removal_impact": "The fence rule, caps, __proto__ ids, 10 MB and 100k item inputs would be unguarded.",
+        "impact": "local",
+        "hunks": [
+          "h78",
+          "h105"
+        ]
+      },
+      {
+        "id": "tests-decide",
+        "intent": "Rewrite batch and decision tests for ids, legacy and errors",
+        "necessity": "supporting",
+        "serves": "decide-by-id",
+        "removal_impact": "Id-based decisions, unknown-id errors and legacy refusal would be unguarded.",
+        "impact": "local",
+        "hunks": [
+          "h49",
+          "h50",
+          "h51",
+          "h52",
+          "h53",
+          "h54",
+          "h55",
+          "h56",
+          "h57",
+          "h58",
+          "h59",
+          "h60",
+          "h61",
+          "h62",
+          "h63",
+          "h64",
+          "h66",
+          "h67",
+          "h68",
+          "h69",
+          "h70",
+          "h71",
+          "h72",
+          "h73",
+          "h74",
+          "h75",
+          "h76",
+          "h77"
+        ]
+      },
+      {
+        "id": "tests-reviews",
+        "intent": "Record gate, --open, adopt/carry/sync items tests; adapt record callers",
+        "necessity": "supporting",
+        "serves": "record-gate",
+        "removal_impact": "Refusal of bad reports, the gate and items surviving adopt, carry and sync would be unguarded.",
+        "impact": "local",
+        "hunks": [
+          "h94",
+          "h95",
+          "h96",
+          "h97",
+          "h98",
+          "h99",
+          "h100",
+          "h101",
+          "h102",
+          "h103",
+          "h104"
+        ]
+      },
+      {
+        "id": "tests-html",
+        "intent": "Page data and browser tests for items, status and open counts",
+        "necessity": "supporting",
+        "serves": "html-view",
+        "removal_impact": "The desk's findings rows and open counts would be unguarded.",
+        "impact": "local",
+        "hunks": [
+          "h82",
+          "h83",
+          "h84",
+          "h85",
+          "h86",
+          "h87",
+          "h88",
+          "h89",
+          "h90",
+          "h91",
+          "h92",
+          "h93"
+        ]
+      },
+      {
+        "id": "verdict-words",
+        "intent": "Verdict words for the adversarial and mutate stages",
+        "necessity": "incidental",
+        "serves": "task",
+        "removal_impact": "Reviews of those stages would read as the generic 'no issues' / 'issues found' in summaries.",
+        "impact": "local",
+        "hunks": [
+          "h48"
+        ],
+        "notes": "Scope addition at the coordinator's request, not part of structured findings."
+      }
+    ],
+    "risks": [
+      "git-gud must add the block spec to its prompts before its records succeed",
+      "--open is fail-closed: every item of every structured review must be decided (a clean re-run clears nothing) and any unreadable line exits 1; superseded reviews need bulk decisions",
+      "show and the page count per commit (that commit's decisions), the gate by the union over its target",
+      "A record with an unknown enum or verdict from a newer writer keeps the gate shut until readers are upgraded",
+      "detail cap lowered to 500 characters so the worst block fits",
+      "Raw copying carries junk lines as well as a newer writer's records; both keep the gate shut on the target"
+    ],
+    "attention": {
+      "level": "must-read",
+      "focus": [
+        "record-gate",
+        "items-store",
+        "decide-by-id"
+      ],
+      "reasons": [
+        "changes the stored review record format that sync and adopt copy between machines",
+        "--record now refuses reports, which every reviewing tool must satisfy",
+        "parses untrusted text from reviewers and remote notes"
+      ]
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 38,
+      "oldLines": 10,
+      "newStart": 38,
+      "newLines": 11,
+      "hash": "4eb4d461c2fe2af6"
+    },
+    {
+      "id": "h2",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 166,
+      "oldLines": 9,
+      "newStart": 167,
+      "newLines": 9,
+      "hash": "a3856bacccd0ec94"
+    },
+    {
+      "id": "h3",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 179,
+      "oldLines": 33,
+      "newStart": 180,
+      "newLines": 51,
+      "hash": "0903687aaa349cfe"
+    },
+    {
+      "id": "h4",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 205,
+      "oldLines": 10,
+      "newStart": 205,
+      "newLines": 20,
+      "hash": "c31ecee320660a42"
+    },
+    {
+      "id": "h5",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 241,
+      "oldLines": 9,
+      "newStart": 251,
+      "newLines": 6,
+      "hash": "fd9155f9a0e9250e"
+    },
+    {
+      "id": "h6",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 266,
+      "oldLines": 3,
+      "newStart": 273,
+      "newLines": 6,
+      "hash": "c667f6e777a16bce"
+    },
+    {
+      "id": "h7",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 138,
+      "oldLines": 22,
+      "newStart": 138,
+      "newLines": 34,
+      "hash": "91a733b8c9a08184"
+    },
+    {
+      "id": "h8",
+      "file": "src/batch.ts",
+      "oldFile": "src/batch.ts",
+      "oldStart": 1,
+      "oldLines": 13,
+      "newStart": 1,
+      "newLines": 12,
+      "hash": "5062987ecb582b0a"
+    },
+    {
+      "id": "h9",
+      "file": "src/batch.ts",
+      "oldFile": "src/batch.ts",
+      "oldStart": 47,
+      "oldLines": 9,
+      "newStart": 46,
+      "newLines": 13,
+      "hash": "6cf6ee0505028bc3"
+    },
+    {
+      "id": "h10",
+      "file": "src/batch.ts",
+      "oldFile": "src/batch.ts",
+      "oldStart": 80,
+      "oldLines": 14,
+      "newStart": 83,
+      "newLines": 15,
+      "hash": "980797b353788ae7"
+    },
+    {
+      "id": "h11",
+      "file": "src/batch.ts",
+      "oldFile": "src/batch.ts",
+      "oldStart": 97,
+      "oldLines": 21,
+      "newStart": 101,
+      "newLines": 22,
+      "hash": "145244ac659ef5e6"
+    },
+    {
+      "id": "h12",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 5,
+      "oldLines": 6,
+      "newStart": 5,
+      "newLines": 7,
+      "hash": "3e9d0b58ce986ec9"
+    },
+    {
+      "id": "h13",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 131,
+      "oldLines": 7,
+      "newStart": 132,
+      "newLines": 7,
+      "hash": "593cb711eaac2f0f"
+    },
+    {
+      "id": "h14",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 2,
+      "oldLines": 13,
+      "newStart": 2,
+      "newLines": 13,
+      "hash": "1a293918ddf88123"
+    },
+    {
+      "id": "h15",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 22,
+      "oldLines": 7,
+      "newStart": 22,
+      "newLines": 7,
+      "hash": "14964cfc63f68179"
+    },
+    {
+      "id": "h16",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 36,
+      "oldLines": 6,
+      "newStart": 36,
+      "newLines": 13,
+      "hash": "bb9f661b3da2051b"
+    },
+    {
+      "id": "h17",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 51,
+      "oldLines": 14,
+      "newStart": 58,
+      "newLines": 18,
+      "hash": "7d04fbe240c2ccb6"
+    },
+    {
+      "id": "h18",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 80,
+      "oldLines": 51,
+      "newStart": 91,
+      "newLines": 44,
+      "hash": "a38c9c3caed49c11"
+    },
+    {
+      "id": "h19",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 137,
+      "oldLines": 21,
+      "newStart": 141,
+      "newLines": 67,
+      "hash": "f3d28399d258b255"
+    },
+    {
+      "id": "h20",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 162,
+      "oldLines": 3,
+      "newStart": 212,
+      "newLines": 12,
+      "hash": "23630e88f4884f62"
+    },
+    {
+      "id": "h21",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 6,
+      "oldLines": 7,
+      "newStart": 6,
+      "newLines": 7,
+      "hash": "6fd5b28e830dee6d"
+    },
+    {
+      "id": "h22",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 141,
+      "oldLines": 13,
+      "newStart": 141,
+      "newLines": 12,
+      "hash": "67cffc7325db61a6"
+    },
+    {
+      "id": "h23",
+      "file": "src/findings-block.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 149,
+      "hash": "77f1b13a6dd152a4"
+    },
+    {
+      "id": "h24",
+      "file": "src/findings.ts",
+      "oldFile": "src/findings.ts",
+      "oldStart": 1,
+      "oldLines": 304,
+      "newStart": 0,
+      "newLines": 0,
+      "hash": "acf58053a91ba542"
+    },
+    {
+      "id": "h25",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 264,
+      "oldLines": 12,
+      "newStart": 264,
+      "newLines": 18,
+      "hash": "717061c532920adf"
+    },
+    {
+      "id": "h26",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 382,
+      "oldLines": 6,
+      "newStart": 388,
+      "newLines": 7,
+      "hash": "d144360557aedab6"
+    },
+    {
+      "id": "h27",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 405,
+      "oldLines": 6,
+      "newStart": 412,
+      "newLines": 28,
+      "hash": "77d0954afbf2a68d"
+    },
+    {
+      "id": "h28",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 416,
+      "oldLines": 10,
+      "newStart": 445,
+      "newLines": 10,
+      "hash": "7cb16b21c9c90438"
+    },
+    {
+      "id": "h29",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 928,
+      "oldLines": 6,
+      "newStart": 957,
+      "newLines": 7,
+      "hash": "38244c0af2cc6ad5"
+    },
+    {
+      "id": "h30",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 5,
+      "hash": "96f311123dba6c77"
+    },
+    {
+      "id": "h31",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 83,
+      "oldLines": 6,
+      "newStart": 82,
+      "newLines": 8,
+      "hash": "180b458dad5a6267"
+    },
+    {
+      "id": "h32",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 90,
+      "oldLines": 6,
+      "newStart": 91,
+      "newLines": 10,
+      "hash": "9f2721e3caf43ae7"
+    },
+    {
+      "id": "h33",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 104,
+      "oldLines": 12,
+      "newStart": 109,
+      "newLines": 16,
+      "hash": "19ca31cc03402a19"
+    },
+    {
+      "id": "h34",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 122,
+      "oldLines": 21,
+      "newStart": 131,
+      "newLines": 27,
+      "hash": "90d1f3ae246b8f82"
+    },
+    {
+      "id": "h35",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 144,
+      "oldLines": 6,
+      "newStart": 159,
+      "newLines": 7,
+      "hash": "9cd741b0bb97f7d0"
+    },
+    {
+      "id": "h36",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 297,
+      "oldLines": 7,
+      "newStart": 313,
+      "newLines": 7,
+      "hash": "747ef886769ef8a4"
+    },
+    {
+      "id": "h37",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 319,
+      "oldLines": 7,
+      "newStart": 335,
+      "newLines": 7,
+      "hash": "534c9574ccedb08f"
+    },
+    {
+      "id": "h38",
+      "file": "src/html/style.css",
+      "oldFile": "src/html/style.css",
+      "oldStart": 356,
+      "oldLines": 6,
+      "newStart": 356,
+      "newLines": 14,
+      "hash": "acde21bbf622c819"
+    },
+    {
+      "id": "h39",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 4,
+      "oldLines": 6,
+      "newStart": 4,
+      "newLines": 7,
+      "hash": "1183931050841cbb"
+    },
+    {
+      "id": "h40",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 35,
+      "oldLines": 6,
+      "newStart": 36,
+      "newLines": 10,
+      "hash": "a585a18af3c30d96"
+    },
+    {
+      "id": "h41",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 98,
+      "oldLines": 8,
+      "newStart": 103,
+      "newLines": 11,
+      "hash": "721881606004222e"
+    },
+    {
+      "id": "h42",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 108,
+      "oldLines": 6,
+      "newStart": 116,
+      "newLines": 7,
+      "hash": "2fdaf712bd76d0fd"
+    },
+    {
+      "id": "h43",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 121,
+      "oldLines": 21,
+      "newStart": 130,
+      "newLines": 33,
+      "hash": "01f79092a412298c"
+    },
+    {
+      "id": "h44",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 215,
+      "oldLines": 14,
+      "newStart": 236,
+      "newLines": 58,
+      "hash": "124aeb67d2b18a18"
+    },
+    {
+      "id": "h45",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 237,
+      "oldLines": 8,
+      "newStart": 302,
+      "newLines": 9,
+      "hash": "1a776647e6b1c461"
+    },
+    {
+      "id": "h46",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 260,
+      "oldLines": 11,
+      "newStart": 326,
+      "newLines": 27,
+      "hash": "193a20aed28fa271"
+    },
+    {
+      "id": "h47",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 330,
+      "oldLines": 7,
+      "newStart": 412,
+      "newLines": 9,
+      "hash": "2862b5c85c41c834"
+    },
+    {
+      "id": "h48",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 338,
+      "oldLines": 12,
+      "newStart": 422,
+      "newLines": 67,
+      "hash": "f14110bddf506b81"
+    },
+    {
+      "id": "h49",
+      "file": "src/reviews.ts",
+      "oldFile": "src/reviews.ts",
+      "oldStart": 352,
+      "oldLines": 6,
+      "newStart": 491,
+      "newLines": 8,
+      "hash": "d6d0ae734a7566b3"
+    },
+    {
+      "id": "h50",
+      "file": "test/batch.test.ts",
+      "oldFile": "test/batch.test.ts",
+      "oldStart": 5,
+      "oldLines": 7,
+      "newStart": 5,
+      "newLines": 7,
+      "hash": "74a50ee0ca0dc148"
+    },
+    {
+      "id": "h51",
+      "file": "test/batch.test.ts",
+      "oldFile": "test/batch.test.ts",
+      "oldStart": 30,
+      "oldLines": 11,
+      "newStart": 30,
+      "newLines": 11,
+      "hash": "1db9e0f4a318f0a2"
+    },
+    {
+      "id": "h52",
+      "file": "test/batch.test.ts",
+      "oldFile": "test/batch.test.ts",
+      "oldStart": 44,
+      "oldLines": 14,
+      "newStart": 44,
+      "newLines": 19,
+      "hash": "ca219d48ed35455e"
+    },
+    {
+      "id": "h53",
+      "file": "test/batch.test.ts",
+      "oldFile": "test/batch.test.ts",
+      "oldStart": 66,
+      "oldLines": 7,
+      "newStart": 71,
+      "newLines": 7,
+      "hash": "5ec2b1b31eaf7a89"
+    },
+    {
+      "id": "h54",
+      "file": "test/batch.test.ts",
+      "oldFile": "test/batch.test.ts",
+      "oldStart": 74,
+      "oldLines": 20,
+      "newStart": 79,
+      "newLines": 28,
+      "hash": "916ed9ad76401f05"
+    },
+    {
+      "id": "h55",
+      "file": "test/batch.test.ts",
+      "oldFile": "test/batch.test.ts",
+      "oldStart": 104,
+      "oldLines": 35,
+      "newStart": 117,
+      "newLines": 39,
+      "hash": "67516fddb3eab31e"
+    },
+    {
+      "id": "h56",
+      "file": "test/batch.test.ts",
+      "oldFile": "test/batch.test.ts",
+      "oldStart": 142,
+      "oldLines": 27,
+      "newStart": 159,
+      "newLines": 28,
+      "hash": "50e6ca8f97a7c11c"
+    },
+    {
+      "id": "h57",
+      "file": "test/batch.test.ts",
+      "oldFile": "test/batch.test.ts",
+      "oldStart": 175,
+      "oldLines": 23,
+      "newStart": 193,
+      "newLines": 25,
+      "hash": "3d968e4a6d5758c9"
+    },
+    {
+      "id": "h58",
+      "file": "test/batch.test.ts",
+      "oldFile": "test/batch.test.ts",
+      "oldStart": 202,
+      "oldLines": 9,
+      "newStart": 222,
+      "newLines": 11,
+      "hash": "323c624563ad3c73"
+    },
+    {
+      "id": "h59",
+      "file": "test/batch.test.ts",
+      "oldFile": "test/batch.test.ts",
+      "oldStart": 214,
+      "oldLines": 7,
+      "newStart": 236,
+      "newLines": 7,
+      "hash": "4a68ff8294653a2d"
+    },
+    {
+      "id": "h60",
+      "file": "test/batch.test.ts",
+      "oldFile": "test/batch.test.ts",
+      "oldStart": 224,
+      "oldLines": 9,
+      "newStart": 246,
+      "newLines": 22,
+      "hash": "58452d93b23666f5"
+    },
+    {
+      "id": "h61",
+      "file": "test/batch.test.ts",
+      "oldFile": "test/batch.test.ts",
+      "oldStart": 234,
+      "oldLines": 27,
+      "newStart": 269,
+      "newLines": 18,
+      "hash": "683f5484be81e665"
+    },
+    {
+      "id": "h62",
+      "file": "test/batch.test.ts",
+      "oldFile": "test/batch.test.ts",
+      "oldStart": 267,
+      "oldLines": 7,
+      "newStart": 293,
+      "newLines": 7,
+      "hash": "b05a451f09a43b97"
+    },
+    {
+      "id": "h63",
+      "file": "test/batch.test.ts",
+      "oldFile": "test/batch.test.ts",
+      "oldStart": 278,
+      "oldLines": 44,
+      "newStart": 304,
+      "newLines": 7,
+      "hash": "a5420edf9625a664"
+    },
+    {
+      "id": "h64",
+      "file": "test/batch.test.ts",
+      "oldFile": "test/batch.test.ts",
+      "oldStart": 324,
+      "oldLines": 85,
+      "newStart": 313,
+      "newLines": 55,
+      "hash": "caf00c16767e7088"
+    },
+    {
+      "id": "h65",
+      "file": "test/batch.test.ts",
+      "oldFile": "test/batch.test.ts",
+      "oldStart": 415,
+      "oldLines": 92,
+      "newStart": 374,
+      "newLines": 57,
+      "hash": "695f390624015eb8"
+    },
+    {
+      "id": "h66",
+      "file": "test/block.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 29,
+      "hash": "fef03edfc7d0c5aa"
+    },
+    {
+      "id": "h67",
+      "file": "test/decisions.test.ts",
+      "oldFile": "test/decisions.test.ts",
+      "oldStart": 4,
+      "oldLines": 6,
+      "newStart": 4,
+      "newLines": 7,
+      "hash": "54e5c10137170e3c"
+    },
+    {
+      "id": "h68",
+      "file": "test/decisions.test.ts",
+      "oldFile": "test/decisions.test.ts",
+      "oldStart": 28,
+      "oldLines": 11,
+      "newStart": 29,
+      "newLines": 11,
+      "hash": "af273215f3139178"
+    },
+    {
+      "id": "h69",
+      "file": "test/decisions.test.ts",
+      "oldFile": "test/decisions.test.ts",
+      "oldStart": 57,
+      "oldLines": 52,
+      "newStart": 58,
+      "newLines": 86,
+      "hash": "c4780c97f685bd04"
+    },
+    {
+      "id": "h70",
+      "file": "test/decisions.test.ts",
+      "oldFile": "test/decisions.test.ts",
+      "oldStart": 112,
+      "oldLines": 7,
+      "newStart": 147,
+      "newLines": 7,
+      "hash": "cf9104ed4d792d59"
+    },
+    {
+      "id": "h71",
+      "file": "test/decisions.test.ts",
+      "oldFile": "test/decisions.test.ts",
+      "oldStart": 128,
+      "oldLines": 13,
+      "newStart": 163,
+      "newLines": 14,
+      "hash": "51e39c5e468adc98"
+    },
+    {
+      "id": "h72",
+      "file": "test/decisions.test.ts",
+      "oldFile": "test/decisions.test.ts",
+      "oldStart": 144,
+      "oldLines": 24,
+      "newStart": 180,
+      "newLines": 25,
+      "hash": "67d72342b484eefe"
+    },
+    {
+      "id": "h73",
+      "file": "test/decisions.test.ts",
+      "oldFile": "test/decisions.test.ts",
+      "oldStart": 169,
+      "oldLines": 28,
+      "newStart": 206,
+      "newLines": 48,
+      "hash": "a39ba917506b62d6"
+    },
+    {
+      "id": "h74",
+      "file": "test/decisions.test.ts",
+      "oldFile": "test/decisions.test.ts",
+      "oldStart": 207,
+      "oldLines": 16,
+      "newStart": 264,
+      "newLines": 19,
+      "hash": "881de77748039931"
+    },
+    {
+      "id": "h75",
+      "file": "test/decisions.test.ts",
+      "oldFile": "test/decisions.test.ts",
+      "oldStart": 231,
+      "oldLines": 7,
+      "newStart": 291,
+      "newLines": 7,
+      "hash": "4f02fdd9d0d13a3d"
+    },
+    {
+      "id": "h76",
+      "file": "test/decisions.test.ts",
+      "oldFile": "test/decisions.test.ts",
+      "oldStart": 240,
+      "oldLines": 7,
+      "newStart": 300,
+      "newLines": 7,
+      "hash": "85dfc1cacc0eac9d"
+    },
+    {
+      "id": "h77",
+      "file": "test/decisions.test.ts",
+      "oldFile": "test/decisions.test.ts",
+      "oldStart": 254,
+      "oldLines": 17,
+      "newStart": 314,
+      "newLines": 17,
+      "hash": "69b4d6a70efa2f3b"
+    },
+    {
+      "id": "h78",
+      "file": "test/decisions.test.ts",
+      "oldFile": "test/decisions.test.ts",
+      "oldStart": 288,
+      "oldLines": 14,
+      "newStart": 348,
+      "newLines": 37,
+      "hash": "77b795c1f86f74fa"
+    },
+    {
+      "id": "h79",
+      "file": "test/findings-block.test.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 192,
+      "hash": "931d601b6f64c57c"
+    },
+    {
+      "id": "h80",
+      "file": "test/findings.test.ts",
+      "oldFile": "test/findings.test.ts",
+      "oldStart": 1,
+      "oldLines": 418,
+      "newStart": 0,
+      "newLines": 0,
+      "hash": "0031c73ff5abaa93"
+    },
+    {
+      "id": "h81",
+      "file": "test/fixtures/findings-v0.6.ts",
+      "oldFile": "test/fixtures/findings-v0.6.ts",
+      "oldStart": 1,
+      "oldLines": 219,
+      "newStart": 0,
+      "newLines": 0,
+      "hash": "9b6247b241cc3a54"
+    },
+    {
+      "id": "h82",
+      "file": "test/fixtures/refs-corpus.json",
+      "oldFile": "test/fixtures/refs-corpus.json",
+      "oldStart": 1,
+      "oldLines": 210,
+      "newStart": 0,
+      "newLines": 0,
+      "hash": "28ea10a8ba5366e8"
+    },
+    {
+      "id": "h83",
+      "file": "test/htmldec.test.ts",
+      "oldFile": "test/htmldec.test.ts",
+      "oldStart": 6,
+      "oldLines": 6,
+      "newStart": 6,
+      "newLines": 7,
+      "hash": "f8a26628206dba88"
+    },
+    {
+      "id": "h84",
+      "file": "test/htmldec.test.ts",
+      "oldFile": "test/htmldec.test.ts",
+      "oldStart": 44,
+      "oldLines": 9,
+      "newStart": 45,
+      "newLines": 9,
+      "hash": "0106821c08b3c6bd"
+    },
+    {
+      "id": "h85",
+      "file": "test/htmldec.test.ts",
+      "oldFile": "test/htmldec.test.ts",
+      "oldStart": 58,
+      "oldLines": 31,
+      "newStart": 59,
+      "newLines": 40,
+      "hash": "869f58541cb530bb"
+    },
+    {
+      "id": "h86",
+      "file": "test/htmldec.test.ts",
+      "oldFile": "test/htmldec.test.ts",
+      "oldStart": 99,
+      "oldLines": 23,
+      "newStart": 109,
+      "newLines": 26,
+      "hash": "74516feda12212a3"
+    },
+    {
+      "id": "h87",
+      "file": "test/htmldec.test.ts",
+      "oldFile": "test/htmldec.test.ts",
+      "oldStart": 123,
+      "oldLines": 14,
+      "newStart": 136,
+      "newLines": 14,
+      "hash": "5f559e2349d3c73a"
+    },
+    {
+      "id": "h88",
+      "file": "test/htmldec.test.ts",
+      "oldFile": "test/htmldec.test.ts",
+      "oldStart": 138,
+      "oldLines": 10,
+      "newStart": 151,
+      "newLines": 10,
+      "hash": "d71c8404a0b7f7ff"
+    },
+    {
+      "id": "h89",
+      "file": "test/htmldec.test.ts",
+      "oldFile": "test/htmldec.test.ts",
+      "oldStart": 149,
+      "oldLines": 9,
+      "newStart": 162,
+      "newLines": 9,
+      "hash": "eb4a2a7bff18a70c"
+    },
+    {
+      "id": "h90",
+      "file": "test/htmldec.test.ts",
+      "oldFile": "test/htmldec.test.ts",
+      "oldStart": 163,
+      "oldLines": 7,
+      "newStart": 176,
+      "newLines": 18,
+      "hash": "6ff10a9bf10fb238"
+    },
+    {
+      "id": "h91",
+      "file": "test/htmldec.test.ts",
+      "oldFile": "test/htmldec.test.ts",
+      "oldStart": 172,
+      "oldLines": 7,
+      "newStart": 196,
+      "newLines": 7,
+      "hash": "7ab440589025bd2a"
+    },
+    {
+      "id": "h92",
+      "file": "test/htmldec.test.ts",
+      "oldFile": "test/htmldec.test.ts",
+      "oldStart": 180,
+      "oldLines": 17,
+      "newStart": 204,
+      "newLines": 20,
+      "hash": "f8e8b72f0ed279a3"
+    },
+    {
+      "id": "h93",
+      "file": "test/htmldec.test.ts",
+      "oldFile": "test/htmldec.test.ts",
+      "oldStart": 199,
+      "oldLines": 9,
+      "newStart": 226,
+      "newLines": 10,
+      "hash": "9e46138fc20b889c"
+    },
+    {
+      "id": "h94",
+      "file": "test/htmldec.test.ts",
+      "oldFile": "test/htmldec.test.ts",
+      "oldStart": 212,
+      "oldLines": 24,
+      "newStart": 240,
+      "newLines": 101,
+      "hash": "e0c638d36f73af97"
+    },
+    {
+      "id": "h95",
+      "file": "test/reviews.test.ts",
+      "oldFile": "test/reviews.test.ts",
+      "oldStart": 5,
+      "oldLines": 6,
+      "newStart": 5,
+      "newLines": 8,
+      "hash": "ebb10421ffeed670"
+    },
+    {
+      "id": "h96",
+      "file": "test/reviews.test.ts",
+      "oldFile": "test/reviews.test.ts",
+      "oldStart": 35,
+      "oldLines": 9,
+      "newStart": 37,
+      "newLines": 9,
+      "hash": "9f37dfea78eb5de8"
+    },
+    {
+      "id": "h97",
+      "file": "test/reviews.test.ts",
+      "oldFile": "test/reviews.test.ts",
+      "oldStart": 187,
+      "oldLines": 10,
+      "newStart": 189,
+      "newLines": 11,
+      "hash": "3635a38627a36737"
+    },
+    {
+      "id": "h98",
+      "file": "test/reviews.test.ts",
+      "oldFile": "test/reviews.test.ts",
+      "oldStart": 198,
+      "oldLines": 7,
+      "newStart": 201,
+      "newLines": 7,
+      "hash": "377a955012055966"
+    },
+    {
+      "id": "h99",
+      "file": "test/reviews.test.ts",
+      "oldFile": "test/reviews.test.ts",
+      "oldStart": 280,
+      "oldLines": 7,
+      "newStart": 283,
+      "newLines": 7,
+      "hash": "d0b035b09a93f112"
+    },
+    {
+      "id": "h100",
+      "file": "test/reviews.test.ts",
+      "oldFile": "test/reviews.test.ts",
+      "oldStart": 311,
+      "oldLines": 7,
+      "newStart": 314,
+      "newLines": 7,
+      "hash": "30ab68e99b1d5b30"
+    },
+    {
+      "id": "h101",
+      "file": "test/reviews.test.ts",
+      "oldFile": "test/reviews.test.ts",
+      "oldStart": 324,
+      "oldLines": 11,
+      "newStart": 327,
+      "newLines": 515,
+      "hash": "90e7200320dbfb4a"
+    },
+    {
+      "id": "h102",
+      "file": "test/timeout.test.ts",
+      "oldFile": "test/timeout.test.ts",
+      "oldStart": 222,
+      "oldLines": 7,
+      "newStart": 222,
+      "newLines": 7,
+      "hash": "12f6d71f1a30b45c"
+    },
+    {
+      "id": "h103",
+      "file": "test/untrusted.test.ts",
+      "oldFile": "test/untrusted.test.ts",
+      "oldStart": 7,
+      "oldLines": 6,
+      "newStart": 7,
+      "newLines": 7,
+      "hash": "610eef6fe0f14939"
+    },
+    {
+      "id": "h104",
+      "file": "test/untrusted.test.ts",
+      "oldFile": "test/untrusted.test.ts",
+      "oldStart": 527,
+      "oldLines": 18,
+      "newStart": 528,
+      "newLines": 18,
+      "hash": "75bf1ece2c3a567d"
+    },
+    {
+      "id": "h105",
+      "file": "test/untrusted.test.ts",
+      "oldFile": "test/untrusted.test.ts",
+      "oldStart": 551,
+      "oldLines": 8,
+      "newStart": 552,
+      "newLines": 8,
+      "hash": "56e76f0fd1141be3"
+    }
+  ]
+}
