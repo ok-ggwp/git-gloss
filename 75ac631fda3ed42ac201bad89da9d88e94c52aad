@@ -1,0 +1,380 @@
+{
+  "gloss": 4,
+  "commit": "75ac631fda3ed42ac201bad89da9d88e94c52aad",
+  "created_at": "2026-10-25T15:17:04.305Z",
+  "annotation": {
+    "version": 1,
+    "task": "Close four small review-desk gaps: detached HEAD without branches, wip link and stale notice, ranges over 200 commits, commit filter box",
+    "summary": "The desk now renders HEAD when there are no branches, links to the wip snapshot and says when it is stale, shows the newest 200 commits of a bigger range with a notice, and filters a range's commit list by plain text in the client.",
+    "groups": [
+      {
+        "id": "detached-head",
+        "intent": "Fall back to rev=HEAD, with a notice, when there is no branch",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "/ still answers 422 in a repo with no branches and a detached HEAD, and the error page link loops",
+        "evidence": "test/ary.test.ts 'with no branches and a detached HEAD'",
+        "impact": "module",
+        "hunks": [
+          "h5:3-9"
+        ]
+      },
+      {
+        "id": "range-cap",
+        "intent": "Show the newest 200 commits of a bigger range, and the merges since",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A range over 200 commits is still an error page, so its single commits cannot be browsed",
+        "evidence": "test/ary.test.ts 'a range over 200 commits shows the newest 200'",
+        "impact": "module",
+        "hunks": [
+          "h3:3-4",
+          "h6:3-8",
+          "h12"
+        ],
+        "notes": "resolveCommits takes the cut and returns the total; the notice counts non-merge commits, and merges older than the oldest shown commit are dropped. The rev-list still walks the whole range (TODO). A branch chosen from the picker still opens its newest commit alone when its range is over 200 (TODO)."
+      },
+      {
+        "id": "wip-link",
+        "intent": "Link to wip and flag a stale snapshot, writing nothing to the repo",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "No way back to the snapshot from the pickers, no sign that it is stale, or (if it wrote objects) every wip view would add objects to the repo",
+        "evidence": "test/ary.test.ts 'the desk links to the wip snapshot only when one exists'",
+        "impact": "contract",
+        "impact_reason": "the server's read-only guarantee (no objects added) rests on this check",
+        "hunks": [
+          "h3:1-2",
+          "h4",
+          "h5:1-2",
+          "h6:1-2",
+          "h6:9-15",
+          "h7",
+          "h8",
+          "h9",
+          "h10",
+          "h11",
+          "h16",
+          "h17"
+        ],
+        "notes": "wipStaleness(sha, true) builds the tree in a temporary object directory with the repo's objects as an alternate. One 10 s deadline, started at the top of the function, covers every git call in it (log, rev-parse, ls-files, add, rm, write-tree); any timeout, git failure or more than 5000 untracked files gives 'could not check', never an error page. Cost: a full temporary-index add -A per wip view, proportional to the tree. The CLI path is unchanged. The snapshot's own rev-parse in buildDesk is outside it (the page needs it)."
+      },
+      {
+        "id": "commit-filter",
+        "intent": "Add a client-side text filter above a range's commit list",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Commits of a range cannot be searched by message, author or sha",
+        "evidence": "test/ary.test.ts 'in a browser, the commit filter narrows'",
+        "impact": "module",
+        "hunks": [
+          "h13",
+          "h14",
+          "h15",
+          "h18"
+        ],
+        "notes": "Plain lower-cased includes, never a regex or markup; the one input is kept across rail re-renders, not saved. The 'No commits match' line shows only for a non-empty filter, and a range of only merges no longer breaks the rail (top commit guarded). j/k skip the commits the filter hides."
+      },
+      {
+        "id": "desk-tests",
+        "intent": "Test the four behaviours, hostile filter text included",
+        "necessity": "supporting",
+        "serves": [
+          "detached-head",
+          "range-cap",
+          "wip-link",
+          "commit-filter"
+        ],
+        "removal_impact": "None of the four gaps would be guarded against regressing",
+        "impact": "local",
+        "hunks": [
+          "h19",
+          "h20",
+          "h21",
+          "h22",
+          "h23"
+        ]
+      },
+      {
+        "id": "desk-docs",
+        "intent": "README for the new desk behaviour; drop the fixed TODO lines",
+        "necessity": "supporting",
+        "serves": [
+          "detached-head",
+          "range-cap",
+          "wip-link",
+          "commit-filter"
+        ],
+        "removal_impact": "Users would not know the filter, wip link or the 200 cap behaviour; the TODO would list fixed gaps",
+        "impact": "local",
+        "hunks": [
+          "h1",
+          "h2"
+        ]
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Search commits on the server",
+        "rejected_because": "Needs a query, state and a request per keystroke; the loaded list is at most 200 commits"
+      },
+      {
+        "option": "Take a fresh snapshot to compare with the working tree",
+        "rejected_because": "The server is read-only; wipStaleness compares without writing a ref"
+      }
+    ],
+    "risks": [
+      "The filter only searches loaded commits, so a capped range cannot find older ones",
+      "git's own alternate-object setup is trusted: GIT_OBJECT_DIRECTORY is set for the check only",
+      "Each wip view costs a full temporary-index add -A (proportional to the working tree), bounded by one 10 s total and 5000 untracked files"
+    ],
+    "attention": {
+      "level": "careful",
+      "focus": [
+        "wip-link",
+        "range-cap"
+      ],
+      "reasons": [
+        "wip-link carries the server's no-writes guarantee (tested with count-objects and fsck)",
+        "range-cap changes resolveCommits, shared with the CLI (default unchanged)",
+        "the filter handles untrusted commit text but never as markup or a pattern (tested)"
+      ]
+    },
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-sonnet-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 258,
+      "oldLines": 9,
+      "newStart": 258,
+      "newLines": 9,
+      "hash": "020751b6a9bfa87f"
+    },
+    {
+      "id": "h2",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 166,
+      "oldLines": 17,
+      "newStart": 166,
+      "newLines": 11,
+      "hash": "5e6ee8ed39f2f590"
+    },
+    {
+      "id": "h3",
+      "file": "src/ary/desk.ts",
+      "oldFile": "src/ary/desk.ts",
+      "oldStart": 1,
+      "oldLines": 10,
+      "newStart": 1,
+      "newLines": 10,
+      "hash": "647e7982385c39c6"
+    },
+    {
+      "id": "h4",
+      "file": "src/ary/desk.ts",
+      "oldFile": "src/ary/desk.ts",
+      "oldStart": 48,
+      "oldLines": 6,
+      "newStart": 48,
+      "newLines": 7,
+      "hash": "64ff811f8ebbac95"
+    },
+    {
+      "id": "h5",
+      "file": "src/ary/desk.ts",
+      "oldFile": "src/ary/desk.ts",
+      "oldStart": 76,
+      "oldLines": 9,
+      "newStart": 77,
+      "newLines": 14,
+      "hash": "8e584b09a5e0b0b2"
+    },
+    {
+      "id": "h6",
+      "file": "src/ary/desk.ts",
+      "oldFile": "src/ary/desk.ts",
+      "oldStart": 88,
+      "oldLines": 13,
+      "newStart": 94,
+      "newLines": 16,
+      "hash": "5fb472fe9addf718"
+    },
+    {
+      "id": "h7",
+      "file": "src/ary/picker.js",
+      "oldFile": "src/ary/picker.js",
+      "oldStart": 158,
+      "oldLines": 6,
+      "newStart": 158,
+      "newLines": 14,
+      "hash": "349ae03a16f2779f"
+    },
+    {
+      "id": "h8",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 1,
+      "oldLines": 5,
+      "newStart": 1,
+      "newLines": 5,
+      "hash": "72fd86dbfed7709b"
+    },
+    {
+      "id": "h9",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 113,
+      "oldLines": 11,
+      "newStart": 113,
+      "newLines": 32,
+      "hash": "1af1d331ac963123"
+    },
+    {
+      "id": "h10",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 126,
+      "oldLines": 12,
+      "newStart": 147,
+      "newLines": 19,
+      "hash": "5cc0dc96e6e5ab71"
+    },
+    {
+      "id": "h11",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 194,
+      "oldLines": 11,
+      "newStart": 222,
+      "newLines": 25,
+      "hash": "ba88f8a70c7070a2"
+    },
+    {
+      "id": "h12",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 236,
+      "oldLines": 18,
+      "newStart": 278,
+      "newLines": 27,
+      "hash": "9c2983cd57bc851c"
+    },
+    {
+      "id": "h13",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 492,
+      "oldLines": 8,
+      "newStart": 492,
+      "newLines": 10,
+      "hash": "e0301cd45b11508e"
+    },
+    {
+      "id": "h14",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 955,
+      "oldLines": 7,
+      "newStart": 957,
+      "newLines": 7,
+      "hash": "fd5f69ba7b089372"
+    },
+    {
+      "id": "h15",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 964,
+      "oldLines": 13,
+      "newStart": 966,
+      "newLines": 51,
+      "hash": "404230640f8cdd3a"
+    },
+    {
+      "id": "h16",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 170,
+      "oldLines": 6,
+      "newStart": 170,
+      "newLines": 8,
+      "hash": "4998bea6f092a3a6"
+    },
+    {
+      "id": "h17",
+      "file": "src/html/style.css",
+      "oldFile": "src/html/style.css",
+      "oldStart": 123,
+      "oldLines": 6,
+      "newStart": 123,
+      "newLines": 7,
+      "hash": "2b388f56e2026031"
+    },
+    {
+      "id": "h18",
+      "file": "src/html/style.css",
+      "oldFile": "src/html/style.css",
+      "oldStart": 220,
+      "oldLines": 6,
+      "newStart": 221,
+      "newLines": 9,
+      "hash": "425845a9a951c2b7"
+    },
+    {
+      "id": "h19",
+      "file": "test/ary.test.ts",
+      "oldFile": "test/ary.test.ts",
+      "oldStart": 1,
+      "oldLines": 13,
+      "newStart": 1,
+      "newLines": 14,
+      "hash": "7cb9a233c3996712"
+    },
+    {
+      "id": "h20",
+      "file": "test/ary.test.ts",
+      "oldFile": "test/ary.test.ts",
+      "oldStart": 73,
+      "oldLines": 7,
+      "newStart": 74,
+      "newLines": 7,
+      "hash": "d78bcb5e4da27c81"
+    },
+    {
+      "id": "h21",
+      "file": "test/ary.test.ts",
+      "oldFile": "test/ary.test.ts",
+      "oldStart": 148,
+      "oldLines": 24,
+      "newStart": 149,
+      "newLines": 76,
+      "hash": "d1f04be8d086dfe6"
+    },
+    {
+      "id": "h22",
+      "file": "test/ary.test.ts",
+      "oldFile": "test/ary.test.ts",
+      "oldStart": 173,
+      "oldLines": 7,
+      "newStart": 226,
+      "newLines": 7,
+      "hash": "6ce1142691c5c2a1"
+    },
+    {
+      "id": "h23",
+      "file": "test/ary.test.ts",
+      "oldFile": "test/ary.test.ts",
+      "oldStart": 329,
+      "oldLines": 3,
+      "newStart": 382,
+      "newLines": 197,
+      "hash": "e1161c362c1a5b59"
+    }
+  ]
+}
