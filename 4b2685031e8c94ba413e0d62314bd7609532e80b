@@ -1,0 +1,626 @@
+{
+  "gloss": 4,
+  "commit": "4b2685031e8c94ba413e0d62314bd7609532e80b",
+  "created_at": "2026-10-25T14:34:28.811Z",
+  "annotation": {
+    "version": 1,
+    "task": "Untrusted-input hardening follow-ups: a refused gloss no longer fails a whole range, a gloss note has a total size cap, adopt/carry/versions are tested against hostile notes (versions fixed), and the html page strips bidi/zero-width characters",
+    "summary": "One hostile note can no longer break show/html/review/why of a range or be read or written past 8 MiB; versions cleans what it prints and checks what it restores; the html page cleans commit and decision text like the terminal does and marks a refused gloss.",
+    "groups": [
+      {
+        "id": "range-skip",
+        "intent": "Skip a refused gloss in a range (show, html, review, why) with a warning; mark it on the page",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "One refused gloss in a range again fails the whole show or html of that range (test: a range of 3 with a bad middle commit).",
+        "evidence": "test/hardnotes.test.ts, first test; mutation (rethrow in loadGlossInRange) turns it red",
+        "impact": "module",
+        "impact_reason": "Changes what show and html print for a range, no data format or API change.",
+        "hunks": [
+          "h15",
+          "h16",
+          "h17",
+          "h11",
+          "h12",
+          "h13",
+          "h14",
+          "h24",
+          "h25",
+          "h39",
+          "h40",
+          "h41",
+          "h32",
+          "h38",
+          "h29",
+          "h30"
+        ],
+        "notes": "In a range, show and html load each gloss with loadGlossInRange: a GlossError that is not a GitError (malformed, over caps, claims too many lines, too big) skips that commit with a stderr warning and lists it as unglossed; single-commit targets still call loadGloss and fail with the error. review and why use the same loadGlossInRange; the html page gets glossRefused (cleaned reason) and the client says \"Gloss refused\" where it said \"No gloss\". lint takes one commit only, so it is unchanged. loadGlossOf (loader.ts) is shared with versions --restore."
+      },
+      {
+        "id": "note-cap",
+        "intent": "Cap a gloss note at 8 MiB when read and written; parseNote shared with versions",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Nothing bounds a note's total size again (60 MB took 1-2 s per read and was accepted), and parseNote is not available to versions.",
+        "evidence": "test 'a gloss note over the size cap is refused fast'; mutations of both checks turn it red",
+        "impact": "contract",
+        "impact_reason": "A stored-note size limit is a format contract: an existing note over 8 MiB becomes unreadable.",
+        "hunks": [
+          "h26",
+          "h27",
+          "h28",
+          "h42"
+        ],
+        "notes": "Cap a gloss note's total size at MAX_NOTE_BYTES (8 MiB): readNote refuses a bigger note before parsing, writeNote will not write one, and readNote's parsing moves into parseNote so versions can validate a stored gloss with the same rules. 8 MiB rather than 4: the hunk records are not capped by count and cost about 170 bytes each, so a legitimate gloss of a 25,000-hunk commit would otherwise be refused. git adds a newline to a stored note, which counts."
+      },
+      {
+        "id": "versions-clean",
+        "intent": "Make versions clean what it prints and check a version before restoring it",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "versions again prints escape sequences from a notes commit's message and a note, lists every group id of a huge note, and --restore can plant a gloss that readers refuse (malformed or claiming too many lines).",
+        "evidence": "the eight versions tests in test/hardnotes.test.ts were red before (control character in the output) and mutations of how, summary size and restore validation turn them red",
+        "impact": "module",
+        "impact_reason": "Output and restore checks of one command.",
+        "hunks": [
+          "h18",
+          "h19",
+          "h20",
+          "h21",
+          "h22",
+          "h23"
+        ],
+        "notes": "Make versions safe on hostile history: clean the notes commit's subject and date (attacker-controlled), size-check a blob before reading its summary and list at most 20 group ids with cleaned ids and task, pass --show through plain(), and validate a version with parseNote before --restore writes or merges it. --show now passes the blob through plain(): control characters, escape sequences and bidi/zero-width characters become spaces, so it is NOT byte-identical to the stored blob (a valid blob with none of those is). --restore parses with parseNote and then runs loadGlossOf (the readers' own checks, including the claims limit) for the commit it goes on; the wip merge path runs carriedErrors."
+      },
+      {
+        "id": "add-stdin",
+        "intent": "add reads piped stdin with a retry on EAGAIN instead of readFileSync(0)",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "A gloss of several MB from a pipe whose writer pauses fails with a stack trace (EAGAIN), which matters now that notes up to 8 MiB are allowed.",
+        "evidence": "test 'add reads a gloss of about 7 MiB from a pipe, also from a slow writer' (red before, red when the EAGAIN branch is disabled)",
+        "impact": "local",
+        "impact_reason": "One input path of add.",
+        "hunks": [
+          "h8",
+          "h9",
+          "h10"
+        ],
+        "notes": "readSync loop, 10 ms wait on EAGAIN (Atomics.wait), EOF ends it."
+      },
+      {
+        "id": "page-strip",
+        "intent": "Strip bidi/zero-width characters from commit and decision text in the html page",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Bidi overrides, zero-width characters and BOMs in a commit subject, author or decision reach the page and can reorder or hide text.",
+        "evidence": "test 'the html page strips bidi, zero-width and BOM characters' (red on subject, author and decision before); mutations of subject and decision by turn it red",
+        "impact": "module",
+        "impact_reason": "Page data only; code lines and file names are deliberately left alone (they must match git).",
+        "hunks": [
+          "h31",
+          "h33",
+          "h34",
+          "h35",
+          "h36",
+          "h37"
+        ],
+        "notes": "Run the terminal sanitiser (plain) over the text the html page gets from git and from decision records: commit subjects, merge subjects, author names and dates, and decision finding, note, by and at (gloss and review text were already cleaned when read)."
+      },
+      {
+        "id": "tests",
+        "intent": "New hostile-note tests; the old huge-list test uses 20,000 items",
+        "necessity": "supporting",
+        "serves": [
+          "range-skip",
+          "note-cap",
+          "versions-clean",
+          "page-strip",
+          "add-stdin"
+        ],
+        "removal_impact": "The four behaviours above are unguarded, and the old test fails on the size cap's message.",
+        "impact": "local",
+        "impact_reason": "Test files.",
+        "hunks": [
+          "h43",
+          "h44"
+        ],
+        "notes": "test/hardnotes.test.ts holds the new tests (range skip, size cap, html strip, adopt/carry/versions against huge, malformed, prototype-keyed and escape-laden notes: hostile data on purpose). The old huge-list test in untrusted.test.ts now uses 20,000 items, because 200,000 would be refused for size before the item cap. The fixtures contain escape sequences, bidi characters and __proto__ keys on purpose."
+      },
+      {
+        "id": "docs",
+        "intent": "README and TODO for the cap, the range skip and the page cleaning",
+        "necessity": "supporting",
+        "serves": [
+          "range-skip",
+          "note-cap",
+          "page-strip"
+        ],
+        "removal_impact": "The docs say the html page applies no cleaning and list fixed items as open.",
+        "impact": "local",
+        "impact_reason": "Documentation.",
+        "hunks": [
+          "h1",
+          "h2",
+          "h3",
+          "h4",
+          "h5",
+          "h6",
+          "h7"
+        ],
+        "notes": "README says the page strips these characters, and that a note over 8 MiB is refused and a refused gloss is skipped in a range; TODO.md drops the fixed items and records what is left (add's stdin EAGAIN, over-256 MB notes, file names and code lines on the page)."
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Skip a refused gloss silently in a range",
+        "rejected_because": "the reader would take a commit for unglossed; the warning says it was refused"
+      },
+      {
+        "option": "A 4 MiB cap",
+        "rejected_because": "hunk records (about 170 bytes each, uncapped) put a legitimate 25,000-hunk commit over it"
+      }
+    ],
+    "risks": [
+      "An existing gloss note over 8 MiB is now refused when read (it can be replaced with add --force).",
+      "In a range a git failure that is not a timeout still fails the whole command; only GlossErrors that are not GitErrors are skipped.",
+      "The html page still shows file names and code lines as they are (TODO).",
+      "add's piped-stdin read failed with EAGAIN on an 8 MB pipe; not investigated (TODO).",
+      "versions --show output is cleaned, so it is not byte-identical to the stored note when that holds control or bidi characters.",
+      "The stdin retry waits in 10 ms steps and never gives up: a writer that never closes leaves add waiting, as before."
+    ],
+    "attention": {
+      "level": "look",
+      "focus": [
+        "note-cap",
+        "versions-clean"
+      ],
+      "reasons": [
+        "a stored-note limit changes what readers accept",
+        "versions now validates and cleans what it prints"
+      ]
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 201,
+      "oldLines": 7,
+      "newStart": 201,
+      "newLines": 7,
+      "hash": "e74a0dda2cbc4c52"
+    },
+    {
+      "id": "h2",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 254,
+      "oldLines": 7,
+      "newStart": 254,
+      "newLines": 7,
+      "hash": "eff08ddc6a8b2cda"
+    },
+    {
+      "id": "h3",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 269,
+      "oldLines": 6,
+      "newStart": 269,
+      "newLines": 7,
+      "hash": "1e471e0d47847382"
+    },
+    {
+      "id": "h4",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 48,
+      "oldLines": 6,
+      "newStart": 48,
+      "newLines": 19,
+      "hash": "f9251bec8ea6b562"
+    },
+    {
+      "id": "h5",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 112,
+      "oldLines": 12,
+      "newStart": 125,
+      "newLines": 12,
+      "hash": "6392ba7ed176ddd2"
+    },
+    {
+      "id": "h6",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 199,
+      "oldLines": 7,
+      "newStart": 212,
+      "newLines": 6,
+      "hash": "6d13cf7664d4d907"
+    },
+    {
+      "id": "h7",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 256,
+      "oldLines": 3,
+      "newStart": 268,
+      "newLines": 5,
+      "hash": "72f37244ddac5fc8"
+    },
+    {
+      "id": "h8",
+      "file": "src/commands/add.ts",
+      "oldFile": "src/commands/add.ts",
+      "oldStart": 1,
+      "oldLines": 4,
+      "newStart": 1,
+      "newLines": 4,
+      "hash": "ef575cdaf1a29e69"
+    },
+    {
+      "id": "h9",
+      "file": "src/commands/add.ts",
+      "oldFile": "src/commands/add.ts",
+      "oldStart": 8,
+      "oldLines": 6,
+      "newStart": 8,
+      "newLines": 25,
+      "hash": "95bb2ae3532e929b"
+    },
+    {
+      "id": "h10",
+      "file": "src/commands/add.ts",
+      "oldFile": "src/commands/add.ts",
+      "oldStart": 28,
+      "oldLines": 7,
+      "newStart": 47,
+      "newLines": 7,
+      "hash": "a409eae14840e1ea"
+    },
+    {
+      "id": "h11",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 3,
+      "oldLines": 7,
+      "newStart": 3,
+      "newLines": 7,
+      "hash": "8e6f005890ccd95f"
+    },
+    {
+      "id": "h12",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 26,
+      "oldLines": 11,
+      "newStart": 26,
+      "newLines": 12,
+      "hash": "d2dc247723a627e7"
+    },
+    {
+      "id": "h13",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 83,
+      "oldLines": 7,
+      "newStart": 84,
+      "newLines": 10,
+      "hash": "db3304ee4149cb33"
+    },
+    {
+      "id": "h14",
+      "file": "src/commands/review.ts",
+      "oldFile": "src/commands/review.ts",
+      "oldStart": 97,
+      "oldLines": 7,
+      "newStart": 101,
+      "newLines": 7,
+      "hash": "4fdc86c3d64e9a33"
+    },
+    {
+      "id": "h15",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 2,
+      "oldLines": 7,
+      "newStart": 2,
+      "newLines": 7,
+      "hash": "e1eb24d9ffb7b271"
+    },
+    {
+      "id": "h16",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 94,
+      "oldLines": 7,
+      "newStart": 94,
+      "newLines": 10,
+      "hash": "6070108f8879a744"
+    },
+    {
+      "id": "h17",
+      "file": "src/commands/show.ts",
+      "oldFile": "src/commands/show.ts",
+      "oldStart": 107,
+      "oldLines": 13,
+      "newStart": 110,
+      "newLines": 14,
+      "hash": "d531e05fd8314ce3"
+    },
+    {
+      "id": "h18",
+      "file": "src/commands/versions.ts",
+      "oldFile": "src/commands/versions.ts",
+      "oldStart": 1,
+      "oldLines": 8,
+      "newStart": 1,
+      "newLines": 11,
+      "hash": "3e31aa4a28f245b4"
+    },
+    {
+      "id": "h19",
+      "file": "src/commands/versions.ts",
+      "oldFile": "src/commands/versions.ts",
+      "oldStart": 43,
+      "oldLines": 19,
+      "newStart": 46,
+      "newLines": 29,
+      "hash": "057dc332a5619baf"
+    },
+    {
+      "id": "h20",
+      "file": "src/commands/versions.ts",
+      "oldFile": "src/commands/versions.ts",
+      "oldStart": 77,
+      "oldLines": 12,
+      "newStart": 90,
+      "newLines": 29,
+      "hash": "deb0b2dc96b5c33f"
+    },
+    {
+      "id": "h21",
+      "file": "src/commands/versions.ts",
+      "oldFile": "src/commands/versions.ts",
+      "oldStart": 92,
+      "oldLines": 8,
+      "newStart": 122,
+      "newLines": 8,
+      "hash": "a9a6af947f1f3490"
+    },
+    {
+      "id": "h22",
+      "file": "src/commands/versions.ts",
+      "oldFile": "src/commands/versions.ts",
+      "oldStart": 101,
+      "oldLines": 6,
+      "newStart": 131,
+      "newLines": 10,
+      "hash": "3b1adb84a5561e01"
+    },
+    {
+      "id": "h23",
+      "file": "src/commands/versions.ts",
+      "oldFile": "src/commands/versions.ts",
+      "oldStart": 114,
+      "oldLines": 7,
+      "newStart": 148,
+      "newLines": 7,
+      "hash": "2f4fc46783a70eae"
+    },
+    {
+      "id": "h24",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 1,
+      "oldLines": 7,
+      "newStart": 1,
+      "newLines": 7,
+      "hash": "3b00feaae4836122"
+    },
+    {
+      "id": "h25",
+      "file": "src/commands/why.ts",
+      "oldFile": "src/commands/why.ts",
+      "oldStart": 23,
+      "oldLines": 7,
+      "newStart": 23,
+      "newLines": 12,
+      "hash": "fa19edd01b88e53b"
+    },
+    {
+      "id": "h26",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 2,
+      "oldLines": 7,
+      "newStart": 2,
+      "newLines": 7,
+      "hash": "aa63f72dfd6ac4b5"
+    },
+    {
+      "id": "h27",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 289,
+      "oldLines": 11,
+      "newStart": 289,
+      "newLines": 23,
+      "hash": "622567d4435d533e"
+    },
+    {
+      "id": "h28",
+      "file": "src/git.ts",
+      "oldFile": "src/git.ts",
+      "oldStart": 318,
+      "oldLines": 7,
+      "newStart": 330,
+      "newLines": 11,
+      "hash": "21c8558c2cbe6c42"
+    },
+    {
+      "id": "h29",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 653,
+      "oldLines": 6,
+      "newStart": 653,
+      "newLines": 7,
+      "hash": "fcb0b804ba6913ed"
+    },
+    {
+      "id": "h30",
+      "file": "src/html/client.js",
+      "oldFile": "src/html/client.js",
+      "oldStart": 714,
+      "oldLines": 9,
+      "newStart": 715,
+      "newLines": 10,
+      "hash": "da17586ae10b727e"
+    },
+    {
+      "id": "h31",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 2,
+      "oldLines": 7,
+      "newStart": 2,
+      "newLines": 8,
+      "hash": "9d12902f72de34a9"
+    },
+    {
+      "id": "h32",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 60,
+      "oldLines": 6,
+      "newStart": 61,
+      "newLines": 8,
+      "hash": "d1cf530cfea5a8bf"
+    },
+    {
+      "id": "h33",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 113,
+      "oldLines": 6,
+      "newStart": 116,
+      "newLines": 12,
+      "hash": "43ee0dafb7fe0f41"
+    },
+    {
+      "id": "h34",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 127,
+      "oldLines": 7,
+      "newStart": 136,
+      "newLines": 7,
+      "hash": "be5b2e8ce5356c3f"
+    },
+    {
+      "id": "h35",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 222,
+      "oldLines": 7,
+      "newStart": 231,
+      "newLines": 7,
+      "hash": "627e807cdb8c3653"
+    },
+    {
+      "id": "h36",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 272,
+      "oldLines": 7,
+      "newStart": 281,
+      "newLines": 7,
+      "hash": "3a67e026f42cbb41"
+    },
+    {
+      "id": "h37",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 290,
+      "oldLines": 14,
+      "newStart": 299,
+      "newLines": 15,
+      "hash": "cb70c757a83767df"
+    },
+    {
+      "id": "h38",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 314,
+      "oldLines": 12,
+      "newStart": 324,
+      "newLines": 14,
+      "hash": "34545d606dadf921"
+    },
+    {
+      "id": "h39",
+      "file": "src/loader.ts",
+      "oldFile": "src/loader.ts",
+      "oldStart": 1,
+      "oldLines": 4,
+      "newStart": 1,
+      "newLines": 5,
+      "hash": "e26a466f73b91df8"
+    },
+    {
+      "id": "h40",
+      "file": "src/loader.ts",
+      "oldFile": "src/loader.ts",
+      "oldStart": 70,
+      "oldLines": 7,
+      "newStart": 71,
+      "newLines": 12,
+      "hash": "5c7865616af94056"
+    },
+    {
+      "id": "h41",
+      "file": "src/loader.ts",
+      "oldFile": "src/loader.ts",
+      "oldStart": 102,
+      "oldLines": 3,
+      "newStart": 108,
+      "newLines": 18,
+      "hash": "59e9732eb36fadc3"
+    },
+    {
+      "id": "h42",
+      "file": "src/schema.ts",
+      "oldFile": "src/schema.ts",
+      "oldStart": 57,
+      "oldLines": 6,
+      "newStart": 57,
+      "newLines": 8,
+      "hash": "a03cb474356aa59e"
+    },
+    {
+      "id": "h43",
+      "file": "test/hardnotes.test.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 401,
+      "hash": "9ba69725f1a7354c"
+    },
+    {
+      "id": "h44",
+      "file": "test/untrusted.test.ts",
+      "oldFile": "test/untrusted.test.ts",
+      "oldStart": 465,
+      "oldLines": 8,
+      "newStart": 465,
+      "newLines": 9,
+      "hash": "54f8e3e0cafbe925"
+    }
+  ]
+}
