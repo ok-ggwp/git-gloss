@@ -1,5 +1,5 @@
 import { parseArgs } from 'node:util'
-import { commitSubject, gitTry, readNote, resolveCommits } from '../git.ts'
+import { commitSubject, gitTry, readNote, resolveCommits, rethrowTimeout } from '../git.ts'
 import type { Hunk } from '../diff.ts'
 import { refLabel, sliceStats, sliceText } from '../selection.ts'
 import { loadGloss, type LoadedGloss, type LoadedGroup } from '../loader.ts'
@@ -69,7 +69,8 @@ export function run(argv: string[]): number {
         try {
           const groups = readNote(c)?.annotation.groups.map((g) => g.id) ?? []
           return missing.every((id) => groups.includes(id))
-        } catch {
+        } catch (err) {
+          rethrowTimeout(err)
           return false
         }
       })

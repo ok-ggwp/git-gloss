@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util'
 import { existsSync, readFileSync } from 'node:fs'
-import { commitDiff, git, GlossError, readNote, resolveCommit, resolveCommits, writeNote } from '../git.ts'
+import { commitDiff, git, GlossError, readNote, rethrowTimeout, resolveCommit, resolveCommits, writeNote } from '../git.ts'
 import { matchHunks } from '../loader.ts'
 import { findOrigins } from '../origins.ts'
 import { location, parseDiff } from '../diff.ts'
@@ -21,6 +21,7 @@ export function targetState(sha: string): 'none' | 'glossed' | 'carried' | 'brok
     // A carried gloss is a starting point that a better one may replace, as add allows.
     return note ? (note.sources || note.carried_from ? 'carried' : 'glossed') : 'none'
   } catch (err) {
+    rethrowTimeout(err)
     if (err instanceof GlossError) return 'broken'
     throw err
   }
@@ -40,6 +41,7 @@ export function carry(sourceShas: string[], target: string): CarryResult {
     if (sha === target) continue
     let note
     try { note = readNote(sha) } catch (err) {
+      rethrowTimeout(err)
       if (!(err instanceof GlossError)) throw err
       unreadable.push(`${sha.slice(0, 7)} (${err.message.replace(/^the gloss on \S+ /, '')})`)
       continue

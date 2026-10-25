@@ -15,19 +15,42 @@ const split = (a: any[]): [any, any] => { while (a.length > 1 && a.at(-1) === un
 const limited = (o: any) => ({ timeout: CHILD_TIMEOUT, killSignal: 'SIGKILL', ...o })
 const timedOut = (e: any) => e?.code === 'ETIMEDOUT'
 
+// Sync children run under coreutils `timeout --signal=KILL`, which puts the child in its own
+// process group and SIGKILLs the whole group at the limit, so a grandchild (a git, a helper)
+// does not outlive a timed-out test. node's own timeout (a few seconds later) stays as the
+// backstop and only reaches the direct child. Without `timeout` (no coreutils) only that
+// backstop applies. (spawnSync cannot expose a pid to kill a group itself; `spawn` is not
+// wrapped, since tests kill and signal those children by pid.)
+const HAVE_TIMEOUT = cp.spawnSync('timeout', ['--version'], { stdio: 'ignore' }).status === 0
+const GRACE = 5000
+// A timed-out wrapped child ends by SIGKILL at about the limit; both tell it from a child that
+// killed itself (which ends sooner).
+const wrap = (cmd: any, args: any, opts: any) => {
+  if (!HAVE_TIMEOUT || !(opts.timeout > 0) || typeof cmd !== 'string') return null
+  return {
+    cmd: 'timeout', args: ['--signal=KILL', String(opts.timeout / 1000), cmd, ...(Array.isArray(args) ? args : [])],
+    opts: { ...opts, timeout: opts.timeout + GRACE },
+  }
+}
+const expired = (signal: unknown, t0: number, limit: number) => signal === 'SIGKILL' && Date.now() - t0 >= limit - 100
+
 export const spawnSync = ((...a: any[]) => {
   const [rest, o] = split(a)
   const opts = limited(o)
-  const r = (cp.spawnSync as any)(...rest, opts)
-  if (timedOut(r.error)) throw new Error(`timed out after ${opts.timeout} ms: ${label(rest[0], rest[1])}`)
+  const w = Array.isArray(rest[1]) || rest[1] === undefined ? wrap(rest[0], rest[1], opts) : null
+  const t0 = Date.now()
+  const r = w ? (cp.spawnSync as any)(w.cmd, w.args, w.opts) : (cp.spawnSync as any)(...rest, opts)
+  if (timedOut(r.error) || (w && expired(r.signal, t0, opts.timeout))) throw new Error(`timed out after ${opts.timeout} ms: ${label(rest[0], rest[1])}`)
   return r
 }) as typeof cp.spawnSync
 
 export const execFileSync = ((...a: any[]) => {
   const [rest, o] = split(a)
   const opts = limited(o)
-  try { return (cp.execFileSync as any)(...rest, opts) } catch (e: any) {
-    if (timedOut(e)) throw new Error(`timed out after ${opts.timeout} ms: ${label(rest[0], rest[1])}`, { cause: e })
+  const w = Array.isArray(rest[1]) || rest[1] === undefined ? wrap(rest[0], rest[1], opts) : null
+  const t0 = Date.now()
+  try { return w ? (cp.execFileSync as any)(w.cmd, w.args, w.opts) : (cp.execFileSync as any)(...rest, opts) } catch (e: any) {
+    if (timedOut(e) || (w && expired(e?.signal, t0, opts.timeout))) throw new Error(`timed out after ${opts.timeout} ms: ${label(rest[0], rest[1])}`, { cause: e })
     throw e
   }
 }) as typeof cp.execFileSync

@@ -1,5 +1,5 @@
 import { parseArgs } from 'node:util'
-import { commitDiff, git, gitTry, GlossError, NOTES_REF, resolveCommit, WIP_NOTES_REF, WIP_REF, writeNote } from '../git.ts'
+import { commitDiff, git, gitTry, GlossError, NOTES_REF, resolveCommit, WIP_NOTES_REF, WIP_REF, rethrowTimeout, writeNote } from '../git.ts'
 import { location, parseDiff } from '../diff.ts'
 import { mergeGlosses } from '../merge.ts'
 import { noteFormat, type GlossNote } from '../schema.ts'
@@ -49,7 +49,8 @@ function summary(blob: string): string {
     const a = note.annotation
     const from = note.sources ? `carried from ${note.sources.map((s: string) => s.slice(0, 7)).join(', ')}; ` : ''
     return `${from}${a.groups.length} group${a.groups.length === 1 ? '' : 's'}: ${a.groups.map((g: { id: string }) => g.id).join(', ')}\n       task: ${JSON.stringify(a.task)}`
-  } catch {
+  } catch (err) {
+    rethrowTimeout(err)
     return '(not a readable gloss: joined notes from a squash, or not JSON)'
   }
 }
