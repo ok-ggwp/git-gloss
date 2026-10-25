@@ -143,39 +143,61 @@ export type RatingProblems = {
   underrated: string | null
 }
 
-export function ratingProblems(a: Annotation, an: Analysis): RatingProblems {
-  const warnings: string[] = []
-  if (an.signals.floor.reasons.includes(CONFIG_EDIT_NOTE)) warnings.push(CONFIG_EDIT_NOTE)
+// The rating checks as data: `add` words them as warnings and errors, `lint` reports them by code.
+export type RatingIssues = {
+  configEdit: boolean
+  // A declared impact below the group's floor (a floor of plain module or below is no signal).
+  belowFloor: { id: string; impact: Impact; floor: Impact; why: string[] }[]
+  // No impact on a group that should have one: every group except a mechanical one on plain source.
+  unrated: { id: string; floor: Impact; why: string[]; signal: boolean }[]
+  // The declared attention is below the floor with no override_reason.
+  attention: { level: AttentionLevel; floor: AttentionLevel; why: string } | null
+}
+
+// Where a floor comes from, for messages.
+export const whyText = (why: string[]): string => why.join('; ') || 'computed from the diff'
+
+export function ratingIssues(a: Annotation, an: Analysis): RatingIssues {
+  const belowFloor: RatingIssues['belowFloor'] = []
+  const unrated: RatingIssues['unrated'] = []
   for (const g of a.groups) {
     const f = an.groups.get(g.id)
-    // A floor of plain "module" is the baseline for source files, not a signal
-    // to warn about: a private helper may honestly be `local`.
-    if (!g.impact || !f || impactRank(f.floor) <= impactRank('module') || impactRank(g.impact) >= impactRank(f.floor)) continue
-    warnings.push(`group "${g.id}" is rated impact "${g.impact}" but its floor is "${f.floor}" (${f.why.join('; ') || 'computed from the diff'}); raise it, or say why in impact_reason`)
-  }
-  // Every group but a pure rename or reformat should say how far it reaches.
-  // A mechanical group on a floor signal (lockfile, config, CI, sensitive path)
-  // is not pure; plain module is the baseline for source files.
-  const unrated: string[] = []
-  const floored: string[] = []
-  for (const g of a.groups) {
-    if (g.impact) continue
-    const f = an.groups.get(g.id)
+    if (g.impact) {
+      // A floor of plain "module" is the baseline for source files, not a signal
+      // to warn about: a private helper may honestly be `local`.
+      if (f && impactRank(f.floor) > impactRank('module') && impactRank(g.impact) < impactRank(f.floor)) belowFloor.push({ id: g.id, impact: g.impact, floor: f.floor, why: f.why })
+      continue
+    }
+    // A mechanical group on a floor signal (lockfile, config, CI, sensitive path)
+    // is not pure; plain module is the baseline for source files.
     const signal = !!f && impactRank(f.floor) > impactRank('module')
     if (g.necessity === 'mechanical' && !signal) continue
-    unrated.push(`"${g.id}"`)
-    if (signal) floored.push(`${g.id}: floor ${f!.floor}: ${f!.why.join('; ') || 'computed from the diff'}`)
+    unrated.push({ id: g.id, floor: f?.floor ?? 'local', why: f?.why ?? [], signal })
   }
+  let attention: RatingIssues['attention'] = null
+  const att = a.attention
+  if (att && attentionRank(att.level) < attentionRank(an.floor) && !att.override_reason) {
+    const why = an.signals.floor.reasons.length ? an.signals.floor.reasons.join('; ') : `${an.signals.floor.impact}: ordinary source changes`
+    attention = { level: att.level, floor: an.floor, why }
+  }
+  return { configEdit: an.signals.floor.reasons.includes(CONFIG_EDIT_NOTE), belowFloor, unrated, attention }
+}
+
+export function ratingProblems(a: Annotation, an: Analysis): RatingProblems {
+  const issues = ratingIssues(a, an)
+  const warnings: string[] = []
+  if (issues.configEdit) warnings.push(CONFIG_EDIT_NOTE)
+  for (const b of issues.belowFloor) {
+    warnings.push(`group "${b.id}" is rated impact "${b.impact}" but its floor is "${b.floor}" (${whyText(b.why)}); raise it, or say why in impact_reason`)
+  }
+  const unrated = issues.unrated.map((u) => `"${u.id}"`)
+  const floored = issues.unrated.filter((u) => u.signal).map((u) => `${u.id}: floor ${u.floor}: ${whyText(u.why)}`)
   if (unrated.length) {
     const names = unrated.slice(0, 10).join(', ') + (unrated.length > 10 ? ` and ${unrated.length - 10} more` : '')
     warnings.push(`no impact rated on group ${names}${floored.length ? ` (${floored.join('; ')})` : ''}; rate impact on every group except a mechanical one on plain source (floor module or below), see the gloss skill`)
   }
-  let underrated: string | null = null
-  const att = a.attention
-  if (att && attentionRank(att.level) < attentionRank(an.floor) && !att.override_reason) {
-    const why = an.signals.floor.reasons.length ? an.signals.floor.reasons.join('; ') : `${an.signals.floor.impact}: ordinary source changes`
-    underrated = `attention.level "${att.level}" is below the computed floor "${an.floor}" (${why}); raise it, or explain with attention.override_reason`
-  }
+  const att = issues.attention
+  const underrated = att && `attention.level "${att.level}" is below the computed floor "${att.floor}" (${att.why}); raise it, or explain with attention.override_reason`
   return { warnings, underrated }
 }
 
