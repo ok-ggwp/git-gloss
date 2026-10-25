@@ -2,7 +2,8 @@ import { commitDiff, commitSubject, git } from '../git.ts'
 import { labelFindings, orderDecisions } from '../findings.ts'
 import { decisionSummary, readDecisions, reviewStatus, statusPhrase, verdict } from '../reviews.ts'
 import { parseDiff } from '../diff.ts'
-import { loadGloss } from '../loader.ts'
+import { loadGlossInRange, loadGloss, refusedWarning } from '../loader.ts'
+import { plain } from '../plain.ts'
 import type { Hunk } from '../diff.ts'
 import type { GroupHunk, LoadedGloss } from '../loader.ts'
 import { belowFloor } from '../render.ts'
@@ -60,6 +61,8 @@ export type CommitData = {
   author: string
   date: string
   glossed: boolean
+  // Set on an unglossed commit whose gloss exists but was refused (in a range): why, as clean text.
+  glossRefused?: string
   task: string
   summary?: string
   // The declared attention, or null when the gloss declares none ("unrated").
@@ -113,6 +116,12 @@ export type PageEntry = {
   decisionCount?: number
 }
 
+// The page shows commit text as it shows a terminal's: without escape sequences or characters that reorder or hide text.
+const authorAndDate = (sha: string): [string, string] => {
+  const [author, date] = git(['log', '-1', '--format=%an%x00%aI', sha]).trim().split('\0')
+  return [plain(author), plain(date)]
+}
+
 function pageReviews(sha: string): PageReview[] {
   const all = readDecisions(sha)
   return reviewStatus(sha).map((s) => ({
@@ -127,7 +136,7 @@ function pageReviews(sha: string): PageReview[] {
       if (r.verdict === 'clean' && !ds.length) return entry
       // Sorted here only to pick the newest MAX_PAGE_DECISIONS; orderDecisions sets the order shown.
       const done = ds.filter((d) => d.outcome).sort((a, b) => a.at.localeCompare(b.at))
-      entry.decisions = orderDecisions(done.slice(-MAX_PAGE_DECISIONS)).map((d) => ({ outcome: d.outcome!, finding: d.finding!, ...(d.note ? { note: d.note } : {}), by: d.by, at: d.at }))
+      entry.decisions = orderDecisions(done.slice(-MAX_PAGE_DECISIONS)).map((d) => ({ outcome: d.outcome!, finding: plain(d.finding!), ...(d.note ? { note: plain(d.note) } : {}), by: plain(d.by), at: plain(d.at) }))
       entry.complete = ds.some((d) => d.complete)
       entry.summary = decisionSummary(ds)
       entry.verdict = r.verdict
@@ -222,7 +231,7 @@ export function reviewOrder(groups: PageGroup[], focus: string[] = []): string[]
 const allLines = (h: Hunk) => Array.from({ length: changedCount(h) }, (_, i) => i + 1)
 
 export function commitData(gloss: LoadedGloss): CommitData {
-  const [author, date] = git(['log', '-1', '--format=%an%x00%aI', gloss.sha]).trim().split('\0')
+  const [author, date] = authorAndDate(gloss.sha)
   const a = gloss.note.annotation
   const an = tryAnalyze(gloss)
   // Same threshold as `show`: derived impact badges only where the diff puts a group above module.
@@ -272,7 +281,7 @@ export function commitData(gloss: LoadedGloss): CommitData {
 
   return {
     sha: gloss.sha,
-    subject: gloss.subject,
+    subject: plain(gloss.subject),
     author,
     date,
     glossed: true,
@@ -290,14 +299,15 @@ export function commitData(gloss: LoadedGloss): CommitData {
   }
 }
 
-function unglossedData(sha: string): CommitData {
-  const [author, date] = git(['log', '-1', '--format=%an%x00%aI', sha]).trim().split('\0')
+function unglossedData(sha: string, refused?: string): CommitData {
+  const [author, date] = authorAndDate(sha)
   return {
     sha,
-    subject: commitSubject(sha),
+    subject: plain(commitSubject(sha)),
     author,
     date,
     glossed: false,
+    ...(refused ? { glossRefused: plain(refused).slice(0, 300) } : {}),
     task: '',
     attention: null,
     computed: null,
@@ -314,12 +324,14 @@ function unglossedData(sha: string): CommitData {
 export function buildPageData(shas: string[], range: string | null = null, merges: string[] = []): PageData {
   return {
     range,
-    merges: merges.map((sha) => ({ sha, subject: commitSubject(sha) })),
+    merges: merges.map((sha) => ({ sha, subject: plain(commitSubject(sha)) })),
     necessity: NECESSITY.map((name) => ({ name, help: NECESSITY_HELP[name] })),
     impact: IMPACT.map((name) => ({ name, help: IMPACT_HELP[name] })),
     commits: shas.map((sha) => {
-      const gloss = loadGloss(sha)
-      return gloss ? commitData(gloss) : unglossedData(sha)
+      // In a range, a refused gloss is skipped (with a warning) like an unglossed commit.
+      const { gloss, refused } = range ? loadGlossInRange(sha) : { gloss: loadGloss(sha), refused: undefined }
+      if (refused) console.error(refusedWarning(sha, refused))
+      return gloss ? commitData(gloss) : unglossedData(sha, refused)
     }),
     generated: new Date().toISOString(),
   }

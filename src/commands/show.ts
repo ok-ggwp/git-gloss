@@ -2,7 +2,7 @@ import { parseArgs } from 'node:util'
 import { commitSubject, gitTry, readNote, resolveCommits, rethrowTimeout } from '../git.ts'
 import type { Hunk } from '../diff.ts'
 import { refLabel, sliceStats, sliceText } from '../selection.ts'
-import { loadGloss, type LoadedGloss, type LoadedGroup } from '../loader.ts'
+import { loadGloss, loadGlossInRange, refusedWarning, type LoadedGloss, type LoadedGroup } from '../loader.ts'
 import { impactRank } from '../attention.ts'
 import { showsImpact, tryAnalyze } from '../floor.ts'
 import { IMPACT, NECESSITY, isImpact, isNecessity, type Group, type Impact, type Necessity } from '../schema.ts'
@@ -94,7 +94,10 @@ export function run(argv: string[]): number {
     console.error('error: -g needs a single commit; pick one from the range, e.g. git gloss show <commit> -g <group>')
     return 2
   }
-  const glosses = shas.map((sha) => loadGloss(sha))
+  const loaded = shas.map((sha) => loadGlossInRange(sha))
+  const glosses = loaded.map((l) => l.gloss)
+  const refused = loaded.filter((l) => l.refused).length
+  loaded.forEach((l, i) => { if (l.refused) console.error(refusedWarning(shas[i], l.refused)) })
   const glossed = glosses.filter(Boolean).length
   const stale = glosses.filter((g) => g?.stale).length
   // How many glossed commits had their gloss checked: an honesty review that
@@ -107,13 +110,14 @@ export function run(argv: string[]): number {
       (glossed ? style(vetted === glossed ? 'green' : 'yellow', `, ${vetted} honesty-reviewed`) : '') +
       (flagged ? style('yellow', ` (${flagged} with issues)`) : '') +
       (stale ? style('red', ` (${stale} stale)`) : '') +
+      (refused ? style('red', ` (${refused} refused)`) : '') +
       (merges.length ? style('dim', `  (${merges.length} merge${merges.length === 1 ? '' : 's'} not shown)`) : ''),
   ]
   shas.forEach((sha, i) => {
     out.push('', style('dim', '─'.repeat(Math.min(termWidth(), 60))))
     const gloss = glosses[i]
     if (!gloss) {
-      out.push(`${style('yellow', sha.slice(0, 10))} ${style('bold', plain(commitSubject(sha)))}`, style('dim', 'no gloss for this commit'))
+      out.push(`${style('yellow', sha.slice(0, 10))} ${style('bold', plain(commitSubject(sha)))}`, style('dim', loaded[i].refused ? 'gloss refused (see the warning)' : 'no gloss for this commit'))
       return
     }
     // An --only filter can leave a commit with nothing to show; say so and move on.

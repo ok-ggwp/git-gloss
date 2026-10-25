@@ -1,4 +1,5 @@
-import { commitDiff, commitSubject, GlossError, readNote } from './git.ts'
+import { commitDiff, commitSubject, GitError, GlossError, readNote } from './git.ts'
+import { plain } from './plain.ts'
 import { parseDiff, type Hunk } from './diff.ts'
 import type { GlossNote, Group, HunkLocation } from './schema.ts'
 import { changedCount, claimsProblem, selections, uncovered, type Claim, type Uncovered } from './selection.ts'
@@ -70,7 +71,12 @@ export function matchHunks(stored: HunkLocation[], current: Hunk[]): Map<string,
 // the wrong code under a group without anyone noticing.
 export function loadGloss(sha: string): LoadedGloss | null {
   const note = readNote(sha)
-  if (!note) return null
+  return note && loadGlossOf(sha, note)
+}
+
+// The same, for a note already read: what `versions --restore` checks a version
+// with before it becomes the gloss, so it can never restore what readers refuse.
+export function loadGlossOf(sha: string, note: GlossNote): LoadedGloss {
 
   const current = parseDiff(commitDiff(sha))
   const resolved = matchHunks(note.hunks, current)
@@ -102,3 +108,18 @@ export function loadGloss(sha: string): LoadedGloss | null {
 
   return { sha, subject: commitSubject(sha), note, hunks: current, groups, unannotated, stale: warnings.length > 0, warnings }
 }
+
+// For a range: a commit whose gloss is refused (too big, malformed, over the
+// caps, claims too many lines) is skipped like an unglossed one, and the
+// reason comes back for the caller to warn about, so one hostile note does not
+// fail the whole range. A git failure or timeout is not a refusal and still throws.
+export function loadGlossInRange(sha: string): { gloss: LoadedGloss | null; refused?: string } {
+  try {
+    return { gloss: loadGloss(sha) }
+  } catch (err) {
+    if (!(err instanceof GlossError) || err instanceof GitError) throw err
+    return { gloss: null, refused: err.message }
+  }
+}
+
+export const refusedWarning = (sha: string, why: string) => `warning: skipping the gloss on ${sha.slice(0, 10)}, which ${plain(why).replace(/^the gloss on \S+ /, '')}`

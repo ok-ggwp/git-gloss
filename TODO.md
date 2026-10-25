@@ -48,6 +48,19 @@ failing) before it was fixed. The tests are in `test/untrusted.test.ts`.
      at; a tree made `git gloss add` fail ("not a commit") until the ref was
      deleted by hand. It now refuses a fetched notes ref that is not a commit.
      Test: "sync does not adopt".
+   - Fixed, a refused gloss (too many claims, over the caps, invalid) in a range no
+     longer fails the whole `show` or `html`: the commit is skipped with a warning.
+     A note's total size is capped at 8 MiB (`MAX_NOTE_BYTES`) on read and write.
+     `adopt`, `carry` and `versions` were run with huge, malformed, prototype-keyed
+     and escape-laden notes (`test/hardnotes.test.ts`); `versions` printed a notes
+     commit's subject, group ids and `--show` raw (escape sequences reached the
+     terminal), listed every group id of a huge note, and `--restore` took a version
+     without checking it (a malformed one could be planted as the gloss): all fixed. The html page
+     now strips bidi, zero-width and format characters from subjects, authors and
+     decisions (gloss and review text were already cleaned on read). `add` read an
+     8 MB pipe with `readFileSync(0)` and failed with EAGAIN; it now retries.
+     `review` and `why` over a range skip a refused gloss like `show`; `lint` takes
+     one commit only. `versions --restore` runs the same checks as the readers.
    - Not exploitable: deep nesting (the readers fail cleanly in under a second),
      `__proto__` keys (zod drops them), huge strings (linear, 1 to 2 s for 60 MB),
      many hunk references (1 s). Test: "deeply nested or prototype-keyed notes".
@@ -112,12 +125,12 @@ failing) before it was fixed. The tests are in `test/untrusted.test.ts`.
 Follow-ups, real but left alone:
 - [ ] Code lines in a diff are printed as they are (`show -g`, `--diff`, `hunks`),
   as `git diff` does; a commit that contains escape sequences reaches the terminal.
-- [ ] A refused gloss (too many claims, over the caps) fails the whole `html` or
-  `show` of a range; skip that commit with a warning instead, as for an unglossed one.
 - Fixed in the same audit: a review stage named `constructor` or `__proto__` printed `undefined` in the verdict phrase (a plain-object lookup).
-- [ ] No cap on a note's total size (all costs are linear in it: 60 MB took 1 to 2 s).
-- [ ] Not tried: `adopt`, `carry` and `versions` end to end with a hostile note
-  (they use the same readers); catastrophic regexes in `rev=HEAD^{/...}` (git's own).
+- [ ] Not tried: catastrophic regexes in `rev=HEAD^{/...}` (git's own).
+- [ ] A note over 256 MB (git()'s `maxBuffer`) fails the read as a git failure, not
+  as "over the size limit", and in a range that is not skipped (only refusals are).
+- [ ] The html page still shows file names and diff code lines as they are (bidi and
+  zero-width characters in them are not removed; file names must stay as git has them).
 
 ## Release
 
@@ -199,7 +212,6 @@ git-gloss versions without it copy only review records through adopt and carry
 and drop decision lines. The reason for it: a review record holds the report
 and a verdict, so a reader cannot tell "3 fixed, 2 deferred" from "5 ignored".
 
-- [ ] html page: bidi override and zero-width characters in decision text, subjects and review text are not removed; decide whether to strip them in the page.
 - [ ] Phase 5 (git-gud, other repo): structured findings, so "N still open" can
   be computed.
 
@@ -256,3 +268,5 @@ the network: a sync makes up to six round trips, and the pre-push hook runs one.
 - [ ] `ary`'s signal handler calls `server.close()` then `process.exit()` in the same tick, so the SIGTERM grace (2 s before SIGKILL) is skipped: the exit handler SIGKILLs the jobs at once. Acceptable because ary's git calls are read-only (no lock files to leave), but a git that would clean up a temp file is not given the chance.
 - [ ] `ary` child memory is not bounded by the output cap: the page data for 200 commits and git's own output (a 256 MiB `maxBuffer` per call) are held in the child before the page is rendered; only the rendered page is capped.
 - [ ] ary jobs: `GIT_GLOSS_ARY_JOBS=0`/`abc`/`-1` silently fall back to the default (`posInt`); say so in the README or warn.
+- [ ] `versions --show` and `--restore` read a whole historical blob before any size check (`--show` has no bound); check `cat-file -s` first.
+- [ ] `versions --restore` rewrites other modules' error text with regexes; give `parseNote`/`loadGlossOf` a structured reason instead.

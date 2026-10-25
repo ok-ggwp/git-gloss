@@ -57,6 +57,8 @@ export const ATTENTION_HELP: Record<AttentionLevel, string> = {
 // shares lines with) and spread lists into function calls. Real glosses have
 // a few dozen groups; these are far above that.
 export const MAX_GROUPS = 500
+// A gloss note's total size, read or written: the other caps do not bound it (hunk records, long texts).
+export const MAX_NOTE_BYTES = 8 * 1024 * 1024
 export const MAX_ITEMS = 500
 
 export const Group = z.object({

@@ -3,7 +3,7 @@ import { plain } from '../plain.ts'
 import { commitDiff, commitSubject, isWipSnapshot, resolveCommits } from '../git.ts'
 import { parseDiff, type Hunk } from '../diff.ts'
 import { refLabel, sliceText } from '../selection.ts'
-import { loadGloss, type LoadedGloss } from '../loader.ts'
+import { loadGloss, loadGlossInRange, refusedWarning, type LoadedGloss } from '../loader.ts'
 import { NECESSITY_HELP, servesOf } from '../schema.ts'
 
 export const usage = 'review [<commit> | <range>] [--material]   print a review prompt for a commit or a branch (pipe it to an agent, e.g. `| claude -p`); --material prints only the gloss and code, for other review prompts'
@@ -26,11 +26,12 @@ const hunkLine = (h: Hunk) =>
 
 // The material for one commit: its gloss and the code under each group, or,
 // for an unglossed commit in a range, its whole diff.
-function commitMaterial(sha: string, gloss: LoadedGloss | null): string[] {
+function commitMaterial(sha: string, gloss: LoadedGloss | null, refused?: string): string[] {
   if (!gloss) {
     return [
       `## Commit ${sha.slice(0, 10)}: ${plain(commitSubject(sha))}`,
-      'This commit has no gloss. Review its changes as unexplained.',
+      refused ? "This commit's gloss was refused (reason below), so it is not shown. Review its changes as unexplained." : 'This commit has no gloss. Review its changes as unexplained.',
+      ...(refused ? [`Reason: ${q(plain(refused).slice(0, 300))}`] : []),
       fenced('diff', parseDiff(commitDiff(sha)).map((h) => `# ${plain(h.file)}\n${h.text}`).join('\n')),
     ]
   }
@@ -83,7 +84,10 @@ function commitMaterial(sha: string, gloss: LoadedGloss | null): string[] {
 export function run(argv: string[]): number {
   const { values, positionals } = parseArgs({ args: argv, allowPositionals: true, options: { material: { type: 'boolean' } } })
   const { shas, merges, range } = resolveCommits(positionals[0] ?? 'HEAD')
-  const glosses = shas.map((sha) => loadGloss(sha))
+  // In a range a refused gloss is skipped with a warning; a single commit fails with the error.
+  const loaded = shas.map((sha) => (range ? loadGlossInRange(sha) : { gloss: loadGloss(sha), refused: undefined }))
+  loaded.forEach((l, i) => { if (l.refused) console.error(refusedWarning(shas[i], l.refused)) })
+  const glosses = loaded.map((l) => l.gloss)
   if (!range && !glosses[0]) {
     console.error(`${shas[0].slice(0, 10)} has no gloss to review`)
     return 1
@@ -97,7 +101,7 @@ export function run(argv: string[]): number {
         ? `\n\nMerge commits in the range are not included below. A merge can still carry conflict resolutions or edits of its own; check them with \`git show <sha>\`:\n\n${list(merges)}`
         : ''))
   }
-  shas.forEach((sha, i) => material.push(...commitMaterial(sha, glosses[i])))
+  shas.forEach((sha, i) => material.push(...commitMaterial(sha, glosses[i], loaded[i].refused)))
   // Just the material, for a reviewer that brings its own instructions. Its
   // author text is quoted but not framed as untrusted; the caller must say so.
   if (values.material) {
