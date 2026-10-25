@@ -138,7 +138,7 @@ When the user asks you to help review a branch or pull request, start from its g
 
 ## Arbitrating a review
 
-Needs a git-gloss whose reviews carry structured findings (the report's `gloss-findings` block). Reviews recorded before that are legacy: they list and show, but have no findings to decide.
+Needs git-gloss 0.8 or later, whose reviews carry structured findings (the report's `gloss-findings` block). Reviews recorded before that are legacy: they list and show, but have no findings to decide.
 
 Every finding of a review has an id (`f1`, `f2`, ...), shown by `git gloss reviews <target>` in a table with its severity, kind, basis and status. When you decide what to do about them (you are the orchestrator or arbiter, or a person), decide each as one of: `fixed` (a change was made), `follow-up` (real, recorded for later), `rejected` (wrong or not worth it; say why in `--note`) or `accepted` (noted, no action). Then record them all at once: template, fill, file.
 
