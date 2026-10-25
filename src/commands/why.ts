@@ -1,7 +1,7 @@
 import { plain } from '../plain.ts'
 import { parseArgs } from 'node:util'
 import { blameRange, commitSubject, lineHistory, type BlameResult } from '../git.ts'
-import { loadGloss, type LoadedGloss } from '../loader.ts'
+import { loadGlossInRange, refusedWarning, type LoadedGloss } from '../loader.ts'
 import { servesOf, type Group } from '../schema.ts'
 import { field, groupHeader, style } from '../render.ts'
 import { bodyLines, formatRanges } from '../selection.ts'
@@ -23,7 +23,12 @@ type Step = {
 // refer to it; each load diffs the commit.
 const glossCache = new Map<string, LoadedGloss | null>()
 function glossFor(commit: string): LoadedGloss | null {
-  if (!glossCache.has(commit)) glossCache.set(commit, loadGloss(commit))
+  if (!glossCache.has(commit)) {
+    // A refused gloss (hostile or broken) is skipped with a warning, once, not a failed command.
+    const { gloss, refused } = loadGlossInRange(commit)
+    if (refused) console.error(refusedWarning(commit, refused))
+    glossCache.set(commit, gloss)
+  }
   return glossCache.get(commit)!
 }
 

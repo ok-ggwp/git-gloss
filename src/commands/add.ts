@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { z } from 'zod'
 import { commitDiff, isWipSnapshot, NOTES_REF, readNote, resolveCommit, WIP_NOTES_REF, writeNote } from '../git.ts'
@@ -7,6 +7,25 @@ import { Annotation, noteFormat } from '../schema.ts'
 import { validate } from '../validate.ts'
 import { loadConfig } from '../config.ts'
 import { analyzeGroups, groupInputsFor, ratingProblems } from '../floor.ts'
+
+// readFileSync(0) throws EAGAIN when the pipe is non-blocking and momentarily empty
+// (a big gloss from a slower writer): wait a moment and read on.
+function readStdin(): string {
+  const chunks: Buffer[] = []
+  const buf = Buffer.alloc(1 << 20)
+  for (;;) {
+    let n: number
+    try { n = readSync(0, buf) } catch (err) {
+      const code = (err as { code?: string }).code
+      if (code === 'EAGAIN') { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10); continue }
+      if (code === 'EOF') break
+      throw err
+    }
+    if (n === 0) break
+    chunks.push(Buffer.from(buf.subarray(0, n)))
+  }
+  return Buffer.concat(chunks).toString('utf8')
+}
 
 export const usage = 'add [<commit>] [-f <file>] [--force] [--partial] [--allow-underrate] [--dry-run]   attach an annotation (JSON from file or stdin)'
 
@@ -28,7 +47,7 @@ export function run(argv: string[]): number {
     console.error('error: pipe annotation JSON on stdin or pass -f <file> (see `git gloss schema`)')
     return 2
   }
-  const raw = readFileSync(values.file ?? 0, 'utf8')
+  const raw = values.file ? readFileSync(values.file, 'utf8') : readStdin()
 
   let json: unknown
   try {

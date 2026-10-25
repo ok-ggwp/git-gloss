@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdtempSync, rmSync, statSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Annotation, NOTE_FORMAT, type GlossNote } from './schema.ts'
+import { Annotation, MAX_NOTE_BYTES, NOTE_FORMAT, type GlossNote } from './schema.ts'
 import { parsePath, unquote } from './diff.ts'
 import { plain } from './plain.ts'
 
@@ -289,11 +289,23 @@ function cleanStrings<T>(v: T): T {
   return v
 }
 
+// A note's total size, which no other cap bounds (each cost is linear in it, but
+// 60 MB took seconds, and the hunk records are not capped by count).
+export const noteSizeProblem = (bytes: number): string | null =>
+  bytes > MAX_NOTE_BYTES ? `${(bytes / 1024 / 1024).toFixed(1)} MiB, over the size limit of ${MAX_NOTE_BYTES / 1024 / 1024} MiB (MAX_NOTE_BYTES in src/schema.ts)` : null
+
 export function readNote(sha: string): GlossNote | null {
   // A commit's gloss, or a wip snapshot's (they are never the same object).
   const raw = rawNote(NOTES_REF, sha) ?? rawNote(WIP_NOTES_REF, sha)
   if (raw === null) return null
-  const at = `the gloss on ${sha.slice(0, 10)}`
+  return parseNote(raw, `the gloss on ${sha.slice(0, 10)}`)
+}
+
+// A stored gloss's text as a note, or a GlossError saying why it can't be one
+// (`at` names it in the message). Also used for glosses read from the notes history.
+export function parseNote(raw: string, at: string): GlossNote {
+  const big = noteSizeProblem(Buffer.byteLength(raw))
+  if (big) throw new GlossError(`${at} is ${big}; replace it with \`git gloss add --force\``)
   let data: Partial<GlossNote>
   try {
     data = JSON.parse(raw)
@@ -318,7 +330,11 @@ export function readNote(sha: string): GlossNote | null {
 }
 
 export function writeNote(sha: string, note: GlossNote, ref: string = NOTES_REF): void {
-  git(['notes', '--ref', ref, 'add', '-f', '-F', '-', sha], JSON.stringify(note, null, 2) + '\n')
+  const text = JSON.stringify(note, null, 2) + '\n'
+  // Readers refuse a bigger note, so it is not written.
+  const big = noteSizeProblem(Buffer.byteLength(text))
+  if (big) throw new GlossError(`the gloss is ${big}; write less text, or fewer or smaller groups`)
+  git(['notes', '--ref', ref, 'add', '-f', '-F', '-', sha], text)
 }
 
 export type LineStep = { commit: string; file: string; lines: number[] }

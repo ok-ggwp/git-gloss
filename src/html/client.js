@@ -653,6 +653,7 @@
   function unannotatedBox(c) {
     var box = add(el('div', 'unannotated'), el('p', null, c.glossed
       ? 'These changes are in the commit but no group explains them.'
+      : c.glossRefused ? 'This commit\'s gloss was refused, so nothing explains these changes.'
       : 'This commit has no gloss, so nothing explains these changes.'))
     c.unannotated.forEach(function (h) { box.appendChild(hunkView(c, h, 'un')) })
     return box
@@ -714,9 +715,10 @@
     if (multi) add(pane, el('div', 'eyebrow', 'Commit ' + (ci + 1) + ' of ' + commits.length + ' · ' + new Date(c.date).toLocaleDateString()))
     add(pane, el('h1', 'title', c.subject), commitMeta(c))
     if (!c.glossed) {
-      var w = add(el('section', 'warnbox'), el('div', 't', 'No gloss on this commit'),
+      var w = add(el('section', 'warnbox'), el('div', 't', c.glossRefused ? 'Gloss refused on this commit' : 'No gloss on this commit'),
+        c.glossRefused ? el('p', null, 'The gloss on this commit was refused: ' + c.glossRefused) : null,
         el('p', null, 'Its whole diff is unannotated, so there is no attention level, no groups and no reasons to read.'),
-        el('p', 'cmd', 'git gloss add ' + sha7(c)))
+        el('p', 'cmd', 'git gloss add ' + sha7(c) + (c.glossRefused ? ' --force' : '')))
       add(pane, w)
       add(pane, changesHead('Changes (' + c.unannotated.length + ')'), unannotatedBox(c))
       return pane

@@ -1,8 +1,11 @@
 import { parseArgs } from 'node:util'
-import { commitDiff, git, gitTry, GlossError, NOTES_REF, resolveCommit, WIP_NOTES_REF, WIP_REF, rethrowTimeout, writeNote } from '../git.ts'
+import { commitDiff, git, GitError, gitTry, GlossError, noteSizeProblem, NOTES_REF, parseNote, resolveCommit, WIP_NOTES_REF, WIP_REF, rethrowTimeout, writeNote } from '../git.ts'
+import { plain } from '../plain.ts'
 import { location, parseDiff } from '../diff.ts'
+import { loadGlossOf } from '../loader.ts'
+import { carriedErrors } from '../validate.ts'
 import { mergeGlosses } from '../merge.ts'
-import { noteFormat, type GlossNote } from '../schema.ts'
+import { noteFormat } from '../schema.ts'
 import { refLabel } from '../selection.ts'
 
 export const usage = 'versions [<commit> | wip] [--show <n> | --restore <n>]   every gloss a commit has had (replaced, carried, merged), newest first; wip: every gloss of uncommitted work, including dropped groups'
@@ -43,19 +46,29 @@ function history(ref: string, only?: string): Version[] {
   return out
 }
 
+// How many group ids the listing names for one version.
+const MAX_LISTED = 20
+
+// Everything a version of the history prints comes from a note that may have been
+// pushed by anyone: it is size-checked before it is read, cleaned, and bounded.
 function summary(blob: string): string {
+  const size = Number(gitTry(['cat-file', '-s', blob]))
+  const big = noteSizeProblem(size)
+  if (big) return `(not read: ${big})`
   try {
     const note = JSON.parse(git(['cat-file', 'blob', blob]))
     const a = note.annotation
-    const from = note.sources ? `carried from ${note.sources.map((s: string) => s.slice(0, 7)).join(', ')}; ` : ''
-    return `${from}${a.groups.length} group${a.groups.length === 1 ? '' : 's'}: ${a.groups.map((g: { id: string }) => g.id).join(', ')}\n       task: ${JSON.stringify(a.task)}`
+    const from = Array.isArray(note.sources) ? `carried from ${note.sources.slice(0, 5).map((s: unknown) => plain(String(s)).slice(0, 7)).join(', ')}; ` : ''
+    const ids = a.groups.slice(0, MAX_LISTED).map((g: { id: unknown }) => plain(String(g.id)).slice(0, 40))
+    const n = a.groups.length
+    return `${from}${n} group${n === 1 ? '' : 's'}: ${ids.join(', ')}${n > MAX_LISTED ? `, and ${n - MAX_LISTED} more` : ''}\n       task: ${JSON.stringify(plain(String(a.task)).slice(0, 200))}`
   } catch (err) {
     rethrowTimeout(err)
     return '(not a readable gloss: joined notes from a squash, or not JSON)'
   }
 }
 
-const when = (iso: string) => iso.slice(0, 16).replace('T', ' ')
+const when = (iso: string) => plain(iso).slice(0, 16).replace('T', ' ')
 
 export function run(argv: string[]): number {
   const { values, positionals } = parseArgs({ args: argv, allowPositionals: true, options: { show: { type: 'string' }, restore: { type: 'string' } } })
@@ -77,12 +90,29 @@ export function run(argv: string[]): number {
     return { n, v: v as Version & { blob: string } }
   }
   if (values.show !== undefined) {
-    process.stdout.write(git(['cat-file', 'blob', pick(values.show, '--show').v.blob]))
+    // Cleaned like everything else printed (control characters, escape sequences, bidi and
+    // zero-width characters become spaces), so not byte-identical to the stored blob.
+    process.stdout.write(plain(git(['cat-file', 'blob', pick(values.show, '--show').v.blob]), true))
     return 0
   }
   if (values.restore !== undefined) {
     const { n, v } = pick(values.restore, '--restore')
+    // Only a gloss that readers accept is brought back (a restore must not plant what they refuse).
+    const text = git(['cat-file', 'blob', v.blob])
+    let note
+    try { note = parseNote(text, `version ${n}`) } catch (err) {
+      if (!(err instanceof GlossError) || err instanceof GitError) throw err
+      throw new GlossError(`${err.message.replace(/; (replace it|re-gloss it|upgrade).*$/, '')}, so it is not restored (read it with --show ${n})`)
+    }
+    // What readers refuse for the commit it would go on (too many claimed lines).
+    const checkOn = (target: string) => {
+      try { loadGlossOf(target, note) } catch (err) {
+        if (!(err instanceof GlossError) || err instanceof GitError) throw err
+        throw new GlossError(`version ${n} would be refused on ${target.slice(0, 7)}: ${err.message.replace(/^the gloss on \S+ is refused: /, '')} (not restored; read it with --show ${n})`)
+      }
+    }
     if (!wip) {
+      checkOn(sha!)
       git(['notes', '--ref', ref, 'add', '-f', '-C', v.blob, sha!])
       console.log(`restored version ${n} as the gloss of ${label}`)
       return 0
@@ -92,8 +122,8 @@ export function run(argv: string[]): number {
     // work as it is now; copy it as is only if that old snapshot is gone.
     const onto = gitTry(['rev-parse', '-q', '--verify', WIP_REF])?.trim()
     if (!onto) throw new GlossError('there is no snapshot of uncommitted work to restore onto; run git gloss hunks wip first')
-    const note = JSON.parse(git(['cat-file', 'blob', v.blob])) as GlossNote
     if (v.object === onto || gitTry(['cat-file', '-e', `${v.object}^{commit}`]) === null) {
+      checkOn(onto)
       git(['notes', '--ref', ref, 'add', '-f', '-C', v.blob, onto])
       console.log(`restored version ${n} onto the wip snapshot ${onto.slice(0, 7)}` +
         (v.object === onto ? '' : `; its snapshot ${v.object.slice(0, 7)} is gone, so hunk references may not match: check with git gloss show wip`))
@@ -101,6 +131,10 @@ export function run(argv: string[]): number {
     }
     const current = parseDiff(commitDiff(onto))
     const merged = mergeGlosses([{ sha: v.object, note, hunks: parseDiff(commitDiff(v.object)) }], current)
+    if (merged.annotation) {
+      const errors = carriedErrors(merged.annotation, current)
+      if (errors.length) throw new GlossError(`version ${n} doesn't fit the uncommitted work: ${errors.join('; ')} (not restored)`)
+    }
     if (!merged.annotation) throw new GlossError(`none of version ${n}'s glossed changes are in the uncommitted work any more; read it with --show ${n}`)
     writeNote(onto, {
       gloss: noteFormat(merged.annotation), commit: onto, created_at: new Date().toISOString(),
@@ -114,7 +148,7 @@ export function run(argv: string[]): number {
 
   console.log(`glosses of ${label}, newest first:`)
   versions.forEach((v, i) => {
-    const head = `${String(i + 1).padStart(3)}  ${when(v.at)}  ${v.how}${wip ? `  (snapshot ${v.object.slice(0, 7)})` : ''}`
+    const head = `${String(i + 1).padStart(3)}  ${when(v.at)}  ${plain(v.how)}${wip ? `  (snapshot ${v.object.slice(0, 7)})` : ''}`
     console.log(`${head}${i === 0 && v.blob && !wip ? '  [current]' : ''}`)
     console.log(`       ${v.blob ? summary(v.blob) : 'removed'}`)
   })

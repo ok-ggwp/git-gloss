@@ -465,8 +465,9 @@ test('a review stage named like an Object property is shown as a stage', () => {
 
 test('huge alternatives and attention reasons lists are refused, not a crash (show spreads them into a call)', () => {
   const { dir, g, sha } = repo()
-  const alternatives = Array.from({ length: 200_000 }, (_, i) => ({ option: `o${i}`, rejected_because: 'r' }))
-  const reasons = Array.from({ length: 200_000 }, (_, i) => `reason ${i}`)
+  // (200,000 would now be refused for the note's size first; this is far over the item cap and under the size cap)
+  const alternatives = Array.from({ length: 20_000 }, (_, i) => ({ option: `o${i}`, rejected_because: 'r' }))
+  const reasons = Array.from({ length: 20_000 }, (_, i) => `reason ${i}`)
   // one list at a time, so each cap has to do its own work
   for (const extra of [{ alternatives }, { attention: { level: 'careful', reasons } }]) {
     plantGloss(g, sha, { task: 't', groups: [group(1)], ...extra })
