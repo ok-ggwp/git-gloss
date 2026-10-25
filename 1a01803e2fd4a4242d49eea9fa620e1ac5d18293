@@ -1,0 +1,319 @@
+{
+  "gloss": 4,
+  "commit": "1a01803e2fd4a4242d49eea9fa620e1ac5d18293",
+  "created_at": "2026-10-25T04:30:05.672Z",
+  "annotation": {
+    "version": 1,
+    "task": "Give every review finding a stable section.item ref (1.1, 1.2, 2.1) shown on the finding, and have decision records use those refs",
+    "summary": "A pure, linear-time labelFindings rewrites a report for display only; the html page data and `reviews` print the labels, --decide warns on an unknown ref, and decisions are listed in ref order. Stored reports, verdicts and review keys stay raw.",
+    "groups": [
+      {
+        "id": "label-core",
+        "intent": "labelFindings (# , bold-only headings) and ref parsing",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "Findings carry no stable refs; nothing else in the change has anything to print or check",
+        "evidence": "test/findings.test.ts",
+        "impact": "contract",
+        "impact_reason": "the [S.N] format is what arbiters copy into decision records",
+        "hunks": [
+          "h7:1-75,93-192"
+        ],
+        "notes": "Single pass over lines, no backtracking regexes, bounded work per line. Title rule: an unnumbered first heading with no list item before the next heading takes no number. Idempotent: an earlier label is stripped before relabelling. Headings: # lines, bold-only lines, and conservative plain \"1. Title\" lines. Unnumbered headings before the first item are titles."
+      },
+      {
+        "id": "show-labels",
+        "intent": "Print labelled findings in `reviews` and the html page data",
+        "necessity": "required",
+        "serves": "task",
+        "removal_impact": "The refs exist but neither an arbiter nor a page reader sees them",
+        "evidence": "test/findings.test.ts 'the page data and `reviews` carry the labels'",
+        "impact": "contract",
+        "impact_reason": "changes what `reviews` prints and the page data's findings text",
+        "hunks": [
+          "h4",
+          "h6:1-2",
+          "h8",
+          "h9:1-2"
+        ],
+        "notes": "Storage, verdictOf and record keys deliberately keep the raw text."
+      },
+      {
+        "id": "decide-warn",
+        "intent": "Warn on stderr when --decide names a ref the report lacks",
+        "necessity": "defensive",
+        "serves": "task",
+        "removal_impact": "A mistyped ref is recorded silently and points at nothing; the arbiter loses only the warning",
+        "evidence": "test/findings.test.ts '--decide warns, never refuses'",
+        "impact": "module",
+        "hunks": [
+          "h5"
+        ],
+        "notes": "Never refuses: the decision is still recorded. Computed over the review's raw report with the same function."
+      },
+      {
+        "id": "decision-order",
+        "intent": "List decisions in ref order, refless ones after in time order",
+        "necessity": "incidental",
+        "serves": "task",
+        "removal_impact": "Decisions stay in time order; nothing else needs the ordering",
+        "evidence": "test/findings.test.ts 'orderDecisions'",
+        "impact": "local",
+        "hunks": [
+          "h6:3-4",
+          "h7:193-212",
+          "h9:3-5"
+        ]
+      },
+      {
+        "id": "plain-title",
+        "intent": "Treat a plain `1. Title` line as a section heading, conservatively",
+        "necessity": "speculative",
+        "serves": "label-core",
+        "removal_impact": "Reports with plain numbered titles get items labelled under the wrong section; only synthetic tests exercise it, kept as a conservative best effort",
+        "evidence": "test/findings.test.ts plain title test",
+        "impact": "local",
+        "hunks": [
+          "h7:76-92"
+        ]
+      },
+      {
+        "id": "docs-refs",
+        "intent": "README and gloss skill: name findings by their printed refs",
+        "necessity": "supporting",
+        "serves": [
+          "show-labels",
+          "decide-warn"
+        ],
+        "removal_impact": "Arbiters would not know to use the refs or that --decide checks them",
+        "impact": "contract",
+        "impact_reason": "the skill changes how arbiter agents write --finding",
+        "hunks": [
+          "h1",
+          "h3"
+        ]
+      },
+      {
+        "id": "refs-tests",
+        "intent": "Tests for labelling shapes, real-report fixtures, hostile input, CLI, page data, browser",
+        "necessity": "supporting",
+        "serves": [
+          "label-core",
+          "show-labels",
+          "decide-warn",
+          "decision-order",
+          "plain-title"
+        ],
+        "removal_impact": "Labelling rules, the linear-time bound and the hostile-text rendering would be unverified",
+        "impact": "module",
+        "hunks": [
+          "h10",
+          "h11",
+          "h12",
+          "h13",
+          "h14"
+        ]
+      },
+      {
+        "id": "old-tests-adapt",
+        "intent": "Adapt two browser tests to top-level numbers becoming labelled bullets",
+        "necessity": "mechanical",
+        "serves": "show-labels",
+        "removal_impact": "Two existing tests would fail because top-level numbered items no longer render as ordered lists; the nested ol-start fix stays covered",
+        "impact": "local",
+        "hunks": [
+          "h15",
+          "h16"
+        ]
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Label in storage at --record time",
+        "rejected_because": "Would change stored reports, verdict detection and review keys; display-only keeps old notes valid"
+      }
+    ],
+    "risks": [
+      "Top-level numbered items now render as bullets with a bold ref, so a reader loses the source's own numbers",
+      "Refs for plain `N. Title` headings depend on the blank-line rule (blank before and after)",
+      "A numbered finding with blank lines around it and sub-bullets (`1. Race` / blank / `- evidence` / blank / `2. Leak`) is read as a section title: its sub-bullets get 1.1/1.2 and the finding itself is unlabelled; that layout is plausible, not unusual"
+    ],
+    "attention": {
+      "level": "careful",
+      "focus": [
+        "label-core",
+        "show-labels"
+      ],
+      "reasons": [
+        "label-core parses and renders untrusted text of up to 256 KiB",
+        "changes what an arbiter reads and the page shows; hostile and timing tests cover it"
+      ]
+    },
+    "author": {
+      "agent": "claude-code",
+      "model": "claude-sonnet-5-5"
+    }
+  },
+  "hunks": [
+    {
+      "id": "h1",
+      "file": "README.md",
+      "oldFile": "README.md",
+      "oldStart": 171,
+      "oldLines": 7,
+      "newStart": 171,
+      "newLines": 13,
+      "hash": "d13426611a2c6c19"
+    },
+    {
+      "id": "h2",
+      "file": "TODO.md",
+      "oldFile": "TODO.md",
+      "oldStart": 200,
+      "oldLines": 6,
+      "newStart": 200,
+      "newLines": 8,
+      "hash": "d7a2e6733217bd19"
+    },
+    {
+      "id": "h3",
+      "file": "skills/gloss/SKILL.md",
+      "oldFile": "skills/gloss/SKILL.md",
+      "oldStart": 142,
+      "oldLines": 9,
+      "newStart": 142,
+      "newLines": 9,
+      "hash": "083c6a754be71ba0"
+    },
+    {
+      "id": "h4",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 3,
+      "oldLines": 6,
+      "newStart": 3,
+      "newLines": 7,
+      "hash": "abfd142692ab7129"
+    },
+    {
+      "id": "h5",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 82,
+      "oldLines": 6,
+      "newStart": 83,
+      "newLines": 12,
+      "hash": "ee72002de6d336e1"
+    },
+    {
+      "id": "h6",
+      "file": "src/commands/reviews.ts",
+      "oldFile": "src/commands/reviews.ts",
+      "oldStart": 104,
+      "oldLines": 11,
+      "newStart": 111,
+      "newLines": 11,
+      "hash": "ae58144ecf57b09e"
+    },
+    {
+      "id": "h7",
+      "file": "src/findings.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 212,
+      "hash": "1ba26ca7a953ab18"
+    },
+    {
+      "id": "h8",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 1,
+      "oldLines": 4,
+      "newStart": 1,
+      "newLines": 5,
+      "hash": "61d4d67f8c47af5f"
+    },
+    {
+      "id": "h9",
+      "file": "src/html/data.ts",
+      "oldFile": "src/html/data.ts",
+      "oldStart": 121,
+      "oldLines": 11,
+      "newStart": 122,
+      "newLines": 12,
+      "hash": "a96ac48661a40a84"
+    },
+    {
+      "id": "h10",
+      "file": "test/findings.test.ts",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 255,
+      "hash": "649e6aadd57d6789"
+    },
+    {
+      "id": "h11",
+      "file": "test/fixtures/reports/hd-honesty.txt",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 39,
+      "hash": "abaea031bad228c9"
+    },
+    {
+      "id": "h12",
+      "file": "test/fixtures/reports/iw-honesty.txt",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 49,
+      "hash": "5809c5489a559391"
+    },
+    {
+      "id": "h13",
+      "file": "test/fixtures/reports/tm-bugs.txt",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 16,
+      "hash": "8335ad7f9c71a356"
+    },
+    {
+      "id": "h14",
+      "file": "test/fixtures/reports/tm-honesty.txt",
+      "oldFile": null,
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 36,
+      "hash": "f89cf09415fd4a17"
+    },
+    {
+      "id": "h15",
+      "file": "test/htmldec.test.ts",
+      "oldFile": "test/htmldec.test.ts",
+      "oldStart": 219,
+      "oldLines": 19,
+      "newStart": 219,
+      "newLines": 17,
+      "hash": "f5fbe337f15b5c41"
+    },
+    {
+      "id": "h16",
+      "file": "test/reviews.test.ts",
+      "oldFile": "test/reviews.test.ts",
+      "oldStart": 198,
+      "oldLines": 7,
+      "newStart": 198,
+      "newLines": 7,
+      "hash": "e04b19258cb2cd32"
+    }
+  ]
+}
